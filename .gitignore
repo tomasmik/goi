@@ -20,7 +20,6 @@ coverage*.out
 /server
 /backup
 /devdata
-/screens/
 
 .DS_Store
 ._*
