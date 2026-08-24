@@ -885,7 +885,8 @@
       return;
     }
     const visible = visibleCaption();
-    const nextCaption = visible.text;
+    const transcriptLine = transcriptRuntime.automatic ? currentTranscriptLine() : undefined;
+    const nextCaption = transcriptLine ? transcriptLine.text : visible.text;
     if (nextCaption && nextCaption !== caption) {
       clearTimeout(captionClearTimer);
       captionClearTimer = undefined;
@@ -1924,25 +1925,33 @@
     transcriptRuntime.state = "checking";
     transcriptRuntime.observedRevision += 1;
     updateCoverageLabel();
+    readCaption();
     analyzeFullTranscript(generation, attempt || 0);
   }
 
-  function currentTranscriptLineID() {
+  function currentTranscriptLine() {
     if (!transcriptRuntime.lines.length) {
-      const active = coverageRuntime.activeOccurrence && !coverageRuntime.activeOccurrence.historyReplay
-        ? coverageRuntime.activeOccurrence.id
-        : undefined;
-      return Number.isSafeInteger(active) ? active : undefined;
+      return undefined;
     }
     const video = player?.querySelector("video") || activePlayer()?.querySelector("video");
     if (!video || !Number.isFinite(video.currentTime)) {
       return undefined;
     }
     const currentMS = Math.max(0, Math.round(video.currentTime * 1000));
-    const line = transcriptRuntime.lines.find(function (candidate) {
+    return transcriptRuntime.lines.findLast(function (candidate) {
       return candidate.sourcePositionMs <= currentMS && candidate.endPositionMs > currentMS;
     });
-    return line && line.id;
+  }
+
+  function currentTranscriptLineID() {
+    if (transcriptRuntime.lines.length) {
+      const line = currentTranscriptLine();
+      return line && line.id;
+    }
+    const active = coverageRuntime.activeOccurrence && !coverageRuntime.activeOccurrence.historyReplay
+      ? coverageRuntime.activeOccurrence.id
+      : undefined;
+    return Number.isSafeInteger(active) ? active : undefined;
   }
 
   function subtitleLine(occurrence) {

@@ -326,6 +326,42 @@ test("reuses full-transcript tokens for the matching live caption", async () => 
   assert.equal(known.textContent, "猫");
 });
 
+test("shows the complete automatic transcript cue instead of rolling words", async () => {
+  const fullCaption = "こちらのホテルは高崎駅から歩いて3分くらいで着く";
+  const nextCaption = "本当に便利なホテルです";
+  const harness = createHarness("こちら", {
+    currentTime: 1,
+    transcriptResponse: {
+      ok: true,
+      state: "ready",
+      automatic: true,
+      cues: [
+        { startMs: 0, endMs: 5000, text: fullCaption },
+        { startMs: 2000, endMs: 7000, text: nextCaption },
+      ],
+    },
+    coverageResponse(blocks) {
+      return {
+        summary: { known_occurrences: 0, total_occurrences: 0, unknown_unique: 0, excluded_names: 0 },
+        blocks: blocks.map(function (block) { return { id: block.id, tokens: [] }; }),
+      };
+    },
+  });
+
+  await harness.start();
+  await new Promise(setImmediate);
+  assert.equal(harness.activeCaption(), fullCaption);
+
+  harness.setCaption("こちらのホテルは");
+  harness.readCaption();
+  assert.equal(harness.activeCaption(), fullCaption);
+
+  harness.video.currentTime = 2.5;
+  harness.setCaption("本当に");
+  harness.readCaption();
+  assert.equal(harness.activeCaption(), nextCaption);
+});
+
 test("uses live caption analysis for highlighting and mining", async () => {
   const coverageResponse = function (blocks) {
     const block = blocks[0];
