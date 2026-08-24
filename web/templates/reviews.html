@@ -1,0 +1,41 @@
+{{template "header" .}}
+<section class="page-heading page-heading-compact">
+  <div>
+    <h1>Reviews</h1>
+  </div>
+  <div class="page-heading-actions">
+    <a class="button button-secondary" href="/practice">Extra practice</a>
+  </div>
+</section>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+
+{{if .Active}}
+<section class="review-launch">
+  <div>
+    <strong>{{.Active.WordCompleted}} / {{.Active.WordTotal}}</strong>
+    <h2>review session in progress</h2>
+    <p>{{.Active.WordsRemaining}} words remaining{{if .Active.ActiveRetry}} · retry in progress{{end}}</p>
+  </div>
+  <a class="button button-strong" href="/reviews/session/{{.Active.ID}}">Resume reviews <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+</section>
+{{else if .Due}}
+<section class="review-launch">
+  <div>
+    <strong>{{.Due}}</strong>
+    <h2>due now</h2>
+  </div>
+  <form method="post" action="/reviews/start">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="button button-strong" type="submit">Start reviews <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+  </form>
+  {{if gt .Due 20}}<p class="review-batch-note">Reviews are grouped into sessions of up to 20 words. The rest remain due for the next session.</p>{{end}}
+</section>
+{{else}}
+<section class="empty-state">
+  <h2>No reviews due</h2>
+</section>
+{{end}}
+{{template "footer" .}}

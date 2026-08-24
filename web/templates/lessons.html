@@ -1,0 +1,106 @@
+{{template "header" .}}
+<section class="page-heading page-heading-compact">
+  <div>
+    <h1>Lessons</h1>
+    {{if .HasActiveSession}}
+    <p class="lede">A lesson is already in progress.</p>
+    {{else}}
+    <p class="lede">Choose specific words or take the next five in the queue.</p>
+    {{end}}
+  </div>
+</section>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+
+{{if .HasActiveSession}}
+<section class="lesson-current" aria-labelledby="current-lesson-title">
+  <div>
+    <span class="eyebrow">Current lesson</span>
+    <h2 id="current-lesson-title">
+      {{.ActiveSession.Total}} {{if eq .ActiveSession.Total 1}}word{{else}}words{{end}}
+    </h2>
+    {{if eq .ActiveSession.Phase "study"}}
+    <p>{{.ActiveSession.ViewedCount}} of {{len .ActiveSession.Items}} viewed in the current batch.</p>
+    {{else}}
+    <p>The current batch is ready for review.</p>
+    {{end}}
+    <div class="lesson-current-words" aria-label="Words in the current lesson">
+      {{range .ActiveSession.Items}}<span class="jp-word" lang="ja">{{.Expression}}</span>{{end}}
+    </div>
+  </div>
+  <div class="lesson-current-actions">
+    <a class="button" href="/lessons/session/{{.ActiveSession.ID}}">Continue lesson <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+    {{if eq .ActiveSession.Phase "study"}}
+    <form method="post" action="/lessons/session/{{.ActiveSession.ID}}/return">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="button button-secondary" type="submit">Return words to queue</button>
+    </form>
+    {{end}}
+  </div>
+</section>
+{{if .TotalCount}}
+<p class="section-note lesson-queue-note">{{.TotalCount}} other {{if eq .TotalCount 1}}word is{{else}}words are{{end}} ready after this lesson.</p>
+{{end}}
+{{else if .Items}}
+<section class="lesson-launch" aria-labelledby="lesson-queue-title">
+  <div>
+    <h2 id="lesson-queue-title">{{.TotalCount}} words ready</h2>
+    <p>The oldest words in the queue come first.</p>
+  </div>
+  <form method="post" action="/lessons/start-next">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="button" type="submit">Learn <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+  </form>
+</section>
+
+<div class="section-heading lesson-picker-heading">
+  <h2>Choose words</h2>
+</div>
+<form method="post" action="/lessons/start?page={{.Page}}">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="page" value="{{.Page}}">
+  <div class="lesson-picker-toolbar" data-lesson-picker>
+    <label class="lesson-search">
+      <span class="visually-hidden">Filter lesson words</span>
+      <input type="search" placeholder="Filter this page" data-lesson-filter>
+    </label>
+    <span class="lesson-selected-count" role="status"><strong data-lesson-selected>0</strong> selected<span data-lesson-hidden hidden> · <strong data-lesson-hidden-count>0</strong> not shown</span></span>
+    <button class="text-button" type="button" data-lesson-select-visible>Select shown</button>
+    <button class="text-button" type="button" data-lesson-clear>Clear</button>
+    <button class="button button-small lesson-picker-start" type="submit">Learn <span data-lesson-submit-count>selected words</span> <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+  </div>
+  <div class="lesson-grid" data-lesson-grid>
+    {{range .Items}}
+    <article class="lesson-card-wrapper" data-lesson-card data-lesson-search-text="{{.Expression}} {{.Pronunciation}} {{.Meaning}}">
+      <label class="lesson-card">
+        <input type="checkbox" aria-label="Select {{.Expression}} for this lesson" name="vocabulary_id" value="{{.ID}}" {{if .Selected}}checked{{end}}>
+        <span class="lesson-card-check" aria-hidden="true"><span class="ui-icon icon-check"></span></span>
+        <span class="lesson-card-copy">
+          <span class="jp-word lesson-card-expression" lang="ja">{{.Expression}}</span>
+          {{if .Pronunciation}}<span class="lesson-card-reading" lang="ja">{{.Pronunciation}}</span>{{end}}
+          {{if .Meaning}}<span class="lesson-card-meaning">{{.Meaning}}</span>{{end}}
+        </span>
+      </label>
+      <a class="lesson-card-open" href="/vocabulary/{{.ID}}">View word</a>
+    </article>
+    {{end}}
+  </div>
+</form>
+{{if gt .PageCount 1}}
+<nav class="pagination" aria-label="Lesson picker pages" data-lesson-pagination>
+  <p class="pagination-status">Page {{.Page}} of {{.PageCount}}</p>
+  <div class="pagination-actions">
+    {{if .PreviousURL}}<a class="button button-secondary" href="{{.PreviousURL}}" rel="prev"><span class="ui-icon icon-arrow-left" aria-hidden="true"></span>Previous</a>{{end}}
+    {{if .NextURL}}<a class="button button-secondary pagination-next" href="{{.NextURL}}" rel="next">Next<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>{{end}}
+  </div>
+</nav>
+{{end}}
+{{else}}
+<section class="empty-state">
+  <h2>No words available</h2>
+  <p>Add or import vocabulary, then it will appear here for lessons.</p>
+</section>
+{{end}}
+{{template "footer" .}}

@@ -1,0 +1,47 @@
+{{template "header" .}}
+<section class="page-heading page-heading-compact">
+  <div>
+    <h1>Progress</h1>
+  </div>
+</section>
+
+<dl class="stats-summary">
+  <div><dt>Reviews this week</dt><dd>{{.Summary.WeeklyReviews}}</dd></div>
+  <div><dt>First-try accuracy</dt><dd>{{if .Summary.WeeklyTotal}}{{percent .Summary.WeeklyCorrect .Summary.WeeklyTotal}}%{{else}}—{{end}}</dd></div>
+  <div><dt>Mistakes in 24 hours</dt><dd>{{len .Mistakes}}</dd></div>
+  <div><dt>Current streak</dt><dd>{{.Summary.Streak}} days</dd></div>
+</dl>
+
+<section class="panel">
+  <div class="section-heading">
+    <div>
+      <h2>Recent mistakes</h2>
+    </div>
+    {{if .Mistakes}}
+    <form method="post" action="/study/recent-mistakes">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="text-button" type="submit">Practice mistakes</button>
+    </form>
+    {{end}}
+  </div>
+  {{if .Mistakes}}
+  <div class="mistake-list">
+    {{range .Mistakes}}
+    <div class="mistake-row">
+      <a class="mistake-word" href="/vocabulary/{{.ID}}">
+        <strong class="jp-word" lang="ja">{{.Expression}}</strong>
+        <span class="reading" lang="ja">{{.Pronunciation}}</span>
+        <span>{{.Meaning}}</span>
+      </a>
+      <form method="post" action="/statistics/mistakes/{{.ID}}/visibility">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <button class="button button-secondary button-small" type="submit" aria-label="Hide {{.Expression}} from recent mistakes">Hide here</button>
+      </form>
+    </div>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="muted">No mistakes in the last 24 hours.</p>
+  {{end}}
+</section>
+{{template "footer" .}}

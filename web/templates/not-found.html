@@ -1,0 +1,7 @@
+{{template "header" .}}
+<section class="panel empty-state" aria-labelledby="not-found-heading">
+  <h1 id="not-found-heading">{{.Heading}}</h1>
+  <p>{{.Message}}</p>
+  <a class="button" href="{{.ReturnURL}}">{{.ReturnLabel}}</a>
+</section>
+{{template "footer" .}}

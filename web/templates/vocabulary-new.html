@@ -1,0 +1,212 @@
+{{template "header" .}}
+<a class="back-link" href="/vocabulary/{{.ID}}">&larr; Back to card</a>
+<section class="detail-heading vocabulary-edit-heading">
+  <div>
+    <div class="detail-word-row">
+      <h1 class="jp-word" lang="ja">{{.Expression}}</h1>
+      <a class="text-action external-link" href="{{.JishoURL}}" target="_blank" rel="noopener noreferrer">Open in Jisho</a>
+    </div>
+  </div>
+  <span class="status status-{{.Item.StatusClass}}">{{.Item.StatusLabel}}</span>
+</section>
+
+{{if .Notice}}<div class="alert alert-success" role="status">{{.Notice}}</div>{{end}}
+{{if .Error}}<div class="alert alert-error" role="alert">{{.Error}}</div>{{end}}
+
+<form class="vocabulary-card-editor" method="post" action="/vocabulary/{{.ID}}" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="content_revision" value="{{.ContentRevision}}">
+  <input type="hidden" name="return_to" value="edit">
+
+  <section class="panel vocabulary-edit-panel" aria-labelledby="card-details-title">
+    <div class="vocabulary-card-section">
+      <div class="section-heading-row">
+        <div>
+          <h2 id="card-details-title">Word, reading, and meanings</h2>
+        </div>
+      </div>
+      <div class="form-grid mining-word-fields">
+        <label>
+          Japanese word or phrase
+          <input class="jp-input" lang="ja" name="expression" value="{{.Expression}}" maxlength="256" required autofocus>
+        </label>
+        {{template "card-reading-field" .}}
+      </div>
+      {{template "card-meanings-field" .}}
+      {{template "card-notes-field" .}}
+    </div>
+
+    <div class="vocabulary-card-section" aria-labelledby="card-media-title">
+      <div class="section-heading-row">
+        <div>
+          <h2 id="card-media-title">Picture and audio</h2>
+        </div>
+      </div>
+      <div class="mining-media-grid vocabulary-media-grid">
+        <div class="mining-media-slot">
+          <div class="mining-media-slot-heading">
+            <h3>Picture</h3>
+            <span class="media-requirement">{{if .PictureID}}Included{{else}}Optional{{end}}</span>
+          </div>
+          {{if .PictureID}}
+          <a class="mining-frame-preview" href="/media/{{.PictureID}}" target="_blank">
+            <img src="/media/{{.PictureID}}" alt="Current card picture" loading="lazy">
+          </a>
+          <label class="checkbox-label"><input type="checkbox" name="remove_picture" {{if .RemovePicture}}checked{{end}}>Remove current picture</label>
+          {{else}}<p class="muted">No picture saved.</p>{{end}}
+          <label class="file-picker" data-file-picker>
+            <span class="visually-hidden">{{if .PictureID}}Replace picture{{else}}Add picture{{end}}</span>
+            <input type="file" name="picture" accept="image/*">
+            <span class="file-picker-button">{{if .PictureID}}Choose replacement{{else}}Choose picture{{end}}</span>
+            <span class="file-picker-name" data-file-name>No file selected</span>
+          </label>
+        </div>
+        <div class="mining-media-slot" id="word-audio">
+          <div class="mining-media-slot-heading">
+            <h3>Pronunciation audio</h3>
+            <span class="media-requirement media-requirement-recommended">{{if .AudioID}}Included{{else}}Recommended{{end}}</span>
+          </div>
+          {{if .AudioID}}
+          <audio class="vocabulary-edit-audio" controls preload="metadata" src="/media/{{.AudioID}}" aria-label="Current pronunciation audio"></audio>
+          <label class="checkbox-label"><input type="checkbox" name="remove_audio" {{if .RemoveAudio}}checked{{end}}>Remove current audio</label>
+          {{else}}<p class="muted">Recommended for lessons and reviews.</p>{{end}}
+          <button class="button button-secondary button-small" type="submit" formaction="/vocabulary/{{.ID}}/pronunciations/search" formmethod="post" formenctype="application/x-www-form-urlencoded" formnovalidate>{{if .AudioID}}Replace from recording library{{else}}Find word audio{{end}}</button>
+          <p><a class="text-action external-link" href="{{.ForvoURL}}" target="_blank" rel="noopener noreferrer">Search Forvo</a></p>
+          <label class="file-picker" data-file-picker>
+            <span class="visually-hidden">{{if .AudioID}}Replace audio{{else}}Add audio{{end}}</span>
+            <input type="file" name="audio" accept="audio/*">
+            <span class="file-picker-button">{{if .AudioID}}Choose replacement{{else}}Choose audio file{{end}}</span>
+            <span class="file-picker-name" data-file-name>No file selected</span>
+          </label>
+        </div>
+      </div>
+      {{if .PronunciationError}}<div class="alert alert-warning" role="status">{{.PronunciationError}}</div>{{end}}
+      {{if .PronunciationResults}}
+      <div class="mining-pronunciation-results" aria-label="Japanese pronunciation recordings">
+        <div>
+          <h3>Open Japanese recordings</h3>
+          <p class="muted">Preview a recording, then add it directly to this card.</p>
+        </div>
+        {{range $recording := .PronunciationResults}}
+        <div class="mining-pronunciation-result">
+          <strong lang="ja">{{$recording.Label}}</strong>
+          <audio controls preload="none" src="/vocabulary/{{$.ID}}/pronunciations/{{$recording.ID}}" aria-label="Japanese pronunciation: {{$recording.Label}}"></audio>
+          <button class="button button-small" type="submit" formaction="/vocabulary/{{$.ID}}/pronunciations/{{$recording.ID}}" formmethod="post" formenctype="application/x-www-form-urlencoded" formnovalidate>Use this recording</button>
+          <span class="help">
+            {{if $recording.SourceURL}}<a href="{{$recording.SourceURL}}" target="_blank" rel="noopener noreferrer">{{$recording.SourceName}}</a>{{else}}{{$recording.SourceName}}{{end}}
+            {{if $recording.LicenseName}}
+            · {{if $recording.LicenseURL}}<a href="{{$recording.LicenseURL}}" target="_blank" rel="license noopener noreferrer">{{$recording.LicenseName}}</a>{{else}}{{$recording.LicenseName}}{{end}}
+            {{end}}
+          </span>
+        </div>
+        {{end}}
+        <p class="help">Recordings come from openly licensed Japanese audio collections.</p>
+      </div>
+      {{else if and .PronunciationSearched (not .PronunciationError)}}
+      <div class="alert alert-info" role="status">No matching recording was found in the open Tofugu/WaniKani or Lingua Libre collections. Jisho or Forvo may still have other audio.</div>
+      {{end}}
+    </div>
+
+    <details class="form-details vocabulary-card-section vocabulary-source-section">
+      <summary id="card-source-title">Source <span>Optional</span></summary>
+      <div class="details-body">
+      <label>
+        Source label
+        <input name="source_label" value="{{.SourceLabel}}" maxlength="300" placeholder="Book, video, website, or personal note">
+      </label>
+      </div>
+    </details>
+  </section>
+
+  <div class="form-actions vocabulary-edit-actions">
+    <a class="button button-secondary" href="/vocabulary/{{.ID}}">Cancel</a>
+    <button class="button" type="submit">Save card</button>
+  </div>
+</form>
+
+<section class="panel vocabulary-examples vocabulary-edit-panel" id="examples">
+  <div class="section-heading-row">
+    <div>
+      <h2>Examples</h2>
+      <p class="section-note">Shown during lessons and reviews.</p>
+    </div>
+  </div>
+
+  {{range $index, $example := .Item.Examples}}
+  <article class="vocabulary-example-editor">
+    <form method="post" action="/vocabulary/{{$.ID}}/examples/{{.ID}}">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="return_to" value="edit">
+      <label>
+        Japanese sentence
+        <textarea class="jp-input" lang="ja" name="sentence" rows="3" maxlength="2000" required>{{if eq .ID $.ExampleForm.ID}}{{$.ExampleForm.Sentence}}{{else}}{{.Sentence}}{{end}}</textarea>
+      </label>
+      <div class="form-grid">
+        <label>
+          <span class="field-label">English translation <span class="help">Optional</span></span>
+          <textarea name="translation" rows="3" maxlength="2000">{{if eq .ID $.ExampleForm.ID}}{{$.ExampleForm.Translation}}{{else}}{{.Translation}}{{end}}</textarea>
+        </label>
+        <label>
+          <span class="field-label">Word in sentence <span class="help">Optional</span></span>
+          <input class="jp-input" lang="ja" name="target_surface" value="{{if eq .ID $.ExampleForm.ID}}{{$.ExampleForm.TargetSurface}}{{else}}{{.TargetSurface}}{{end}}" maxlength="256">
+          <span class="help">The exact text to highlight in the Japanese sentence.</span>
+        </label>
+      </div>
+      {{if or .VideoFrameID .SentenceAudioIDs}}
+      <div class="study-example-media example-media vocabulary-example-media">
+        {{if .VideoFrameID}}<img src="/media/{{.VideoFrameID}}" alt="Video frame for example {{add $index 1}}" loading="lazy">{{end}}
+        {{range .SentenceAudioIDs}}<audio controls preload="metadata" src="/media/{{.}}" aria-label="Native audio for example {{add $index 1}}"></audio>{{end}}
+      </div>
+      {{end}}
+      {{if or .SourceTitle .SourceLink .SourcePositionLabel}}
+      <p class="example-meta">
+        {{if .SourceLink}}<a href="{{.SourceLink}}" target="_blank" rel="noopener noreferrer">{{if .SourceTitle}}{{.SourceTitle}}{{else}}Open source{{end}}</a>{{else if .SourceTitle}}<span>{{.SourceTitle}}</span>{{end}}
+        {{if .SourcePositionLabel}}<span>{{.SourcePositionLabel}}</span>{{end}}
+      </p>
+      {{end}}
+      <div class="vocabulary-example-actions">
+        <div class="form-actions">
+          <button class="button button-secondary button-small" type="submit">Save example</button>
+          {{if $.GeneratorAvailable}}<button class="button button-secondary button-small" type="submit" formaction="/vocabulary/{{$.ID}}/examples/{{.ID}}/generate">Fill fields</button>{{end}}
+        </div>
+        <span class="example-origin">{{if eq .Origin "generated"}}Generated{{else}}{{.Origin}}{{end}}</span>
+      </div>
+    </form>
+    <form class="vocabulary-example-remove" method="post" action="/vocabulary/{{$.ID}}/examples/{{.ID}}/delete" data-confirm="Remove this example?">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="return_to" value="edit">
+      <label class="destructive-confirmation" data-confirm-fallback><input type="checkbox" name="confirmed" value="1" required data-confirm-field>Confirm example removal</label>
+      <button class="button button-danger button-small" type="submit">Remove example</button>
+    </form>
+  </article>
+  {{end}}
+
+  <form class="vocabulary-example-editor vocabulary-example-add" method="post" action="/vocabulary/{{.ID}}/examples">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="return_to" value="edit">
+    <h3>{{if .Item.Examples}}Add another example{{else}}Add an example{{end}}</h3>
+    <label>
+      Japanese sentence
+      <textarea class="jp-input" lang="ja" name="sentence" rows="3" maxlength="2000" required>{{if eq .ExampleForm.ID 0}}{{.ExampleForm.Sentence}}{{end}}</textarea>
+    </label>
+    <div class="form-grid">
+      <label>
+        <span class="field-label">English translation <span class="help">Optional</span></span>
+        <textarea name="translation" rows="3" maxlength="2000">{{if eq .ExampleForm.ID 0}}{{.ExampleForm.Translation}}{{end}}</textarea>
+      </label>
+      <label>
+        <span class="field-label">Word in sentence <span class="help">Optional</span></span>
+        <input class="jp-input" lang="ja" name="target_surface" value="{{if eq .ExampleForm.ID 0}}{{.ExampleForm.TargetSurface}}{{end}}" maxlength="256" placeholder="{{.Expression}}">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button button-secondary button-small" type="submit">Add example</button>
+      {{if .GeneratorAvailable}}<button class="button button-secondary button-small" type="submit" formaction="/vocabulary/{{.ID}}/examples/generate-draft">{{if .ExampleForm.Sentence}}Fill fields{{else}}Generate{{end}}</button>{{end}}
+    </div>
+  </form>
+
+  {{if and (not .GeneratorAvailable) (not .Item.Examples)}}
+  <p class="section-note">Example generation is not configured. <a href="/settings/examples">Set it up</a>, or write an example above.</p>
+  {{end}}
+</section>
+{{template "footer" .}}

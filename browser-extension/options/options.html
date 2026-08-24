@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Goi connection</title>
+    <link rel="stylesheet" href="../popup/popup.css">
+    <link rel="stylesheet" href="options.css">
+    <link rel="stylesheet" href="../shared/ui.css">
+  </head>
+  <body class="goi-extension-ui goi-options">
+    <main>
+      <header>
+        <span class="mark" aria-hidden="true">語</span>
+        <div>
+          <h1>Goi connection</h1>
+          <p>This page stays open while you copy the address and token.</p>
+        </div>
+      </header>
+
+      <section class="connection-state" aria-labelledby="connection-heading">
+        <h2 id="connection-heading">Status</h2>
+        <p id="connection-summary" class="hint" role="status" aria-live="polite">Checking Goi…</p>
+      </section>
+
+      <form id="connection-form">
+        <label>
+          Goi address
+          <input id="base-url" type="url" required placeholder="http://127.0.0.1:8080" autocomplete="url">
+        </label>
+        <p class="hint">HTTP works on local and private networks. Public HTTP connections are rejected by Goi.</p>
+        <label>
+          Extension token
+          <input id="token" type="password" required placeholder="Token from Goi settings" autocomplete="off">
+        </label>
+        <div class="actions">
+          <button id="save-connection" class="primary" type="submit">Save and test</button>
+          <button id="test-connection" type="button" disabled>Test connection</button>
+          <button id="disconnect" class="quiet" type="button" hidden>Disconnect</button>
+        </div>
+      </form>
+
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script src="../shared/capture-model.js"></script>
+    <script src="../shared/popup-model.js"></script>
+    <script src="options.js"></script>
+  </body>
+</html>

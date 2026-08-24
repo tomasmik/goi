@@ -1,0 +1,562 @@
+.goi-ext-overlay {
+  --goi-ext-font-size: 34px;
+  --goi-ext-caption-top: 78%;
+  --goi-ext-background: rgb(0 0 0 / 65%);
+  position: absolute;
+  z-index: 59;
+  top: var(--goi-ext-caption-top);
+  left: 50%;
+  width: min(94%, 1200px);
+  color: #fff;
+  font-family: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: center;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 70%);
+  transform: translate(-50%, -50%);
+}
+
+.goi-ext-overlay[hidden] {
+  display: none;
+}
+
+.goi-ext-caption-stage {
+  display: inline-grid;
+  grid-template-columns: minmax(0, auto) auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2em;
+  max-width: 100%;
+}
+
+.goi-ext-caption-stage[hidden] {
+  display: none;
+}
+
+.goi-ext-caption-text {
+  display: inline-block;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 0.16em 0.5em 0.2em;
+  border-radius: 3px;
+  background: var(--goi-ext-background);
+  font-size: var(--goi-ext-font-size);
+  font-weight: 400;
+  line-break: strict;
+  line-height: 1.3;
+  overflow-wrap: normal;
+  white-space: pre-line;
+  word-break: normal;
+  cursor: text;
+  user-select: text;
+}
+
+.goi-ext-overlay--furigana .goi-ext-caption-text {
+  line-height: 1.6;
+}
+
+.goi-ext-caption-translate {
+  min-width: 0;
+  padding: .1em .35em;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 3px;
+  background: rgb(0 0 0 / 28%);
+  color: rgb(255 255 255 / 78%);
+  font: 600 .32em/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  vertical-align: middle;
+  opacity: .4;
+  cursor: pointer;
+}
+
+.goi-ext-caption-stage:hover .goi-ext-caption-translate,
+.goi-ext-caption-translate:focus-visible {
+  opacity: 1;
+}
+
+.goi-ext-caption-translation {
+  display: block;
+  grid-column: 1 / -1;
+  margin-top: .3em;
+  color: #fff;
+  font: 500 .46em/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-shadow: 0 1px 2px #000;
+  white-space: pre-line;
+  user-select: text;
+}
+
+.goi-ext-caption-translation[hidden] {
+  display: none;
+}
+
+.goi-ext-furigana {
+  ruby-align: center;
+  ruby-position: over;
+}
+
+.goi-ext-furigana rt {
+  color: #fff;
+  font-size: 0.44em;
+  font-weight: 500;
+  line-height: 1;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 85%);
+  user-select: none;
+  pointer-events: none;
+}
+
+.goi-ext-caption-text:empty,
+.goi-ext-caption-text[hidden] {
+  display: none;
+}
+
+.goi-ext-caption-word {
+  border-radius: 0.12em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.goi-ext-caption-word--known:hover,
+.goi-ext-caption-word--unclassified:hover,
+.goi-ext-caption-word--known:focus-visible,
+.goi-ext-caption-word--unclassified:focus-visible {
+  background: rgb(255 255 255 / 18%);
+}
+
+.goi-ext-caption-word--unknown {
+  border-radius: 0.12em;
+  background: rgb(240 117 102 / 10%);
+  text-decoration: underline dotted rgb(255 178 166 / 82%) 0.06em;
+  text-underline-offset: 0.14em;
+  cursor: pointer;
+}
+
+.goi-ext-caption-word--unknown:hover,
+.goi-ext-caption-word--unknown:focus-visible {
+  background: rgb(240 117 102 / 24%);
+  text-decoration-color: #ffb2a6;
+}
+
+.goi-ext-caption-word--leech {
+  background: rgb(255 196 74 / 16%);
+  text-decoration: underline dotted #ffd16a 0.06em;
+  text-underline-offset: 0.14em;
+}
+
+.goi-ext-caption-word--suspended_leech {
+  background: rgb(184 133 255 / 18%);
+  text-decoration: underline double #cfadff 0.08em;
+  text-underline-offset: 0.14em;
+}
+
+.goi-ext-caption-word--leech:hover,
+.goi-ext-caption-word--leech:focus-visible,
+.goi-ext-caption-word--suspended_leech:hover,
+.goi-ext-caption-word--suspended_leech:focus-visible {
+  background: rgb(255 255 255 / 24%);
+}
+
+.goi-ext-caption-coverage {
+  padding: 4px 7px;
+  border-left: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 2px;
+  background: transparent;
+  color: #fff;
+  font: 600 12px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-shadow: none;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.goi-ext-caption-coverage[hidden] {
+  display: none;
+}
+
+.goi-ext-caption-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  border-top: 1px solid rgb(255 255 255 / 14%);
+}
+
+.goi-ext-caption-actions > button {
+  width: 100%;
+  min-height: 38px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 0;
+  color: #fff;
+  font: 650 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-overflow: ellipsis;
+  text-shadow: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.goi-ext-caption-selection {
+  background: #b84639;
+  color: #fff;
+}
+
+.goi-ext-caption-known {
+  border-right: 1px solid rgb(255 255 255 / 14%);
+  background: #28323c;
+  color: #fff;
+}
+
+.goi-ext-caption-selection:hover {
+  background: #a83d32;
+}
+
+.goi-ext-caption-known:hover {
+  background: #35414d;
+}
+
+.goi-ext-caption-selection:focus-visible,
+.goi-ext-caption-known:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+.goi-ext-caption-selection[hidden],
+.goi-ext-caption-known[hidden] {
+  display: none;
+}
+
+.goi-ext-caption-known[hidden] + .goi-ext-caption-selection {
+  grid-column: 1 / -1;
+}
+
+.goi-ext-caption-actions:has(.goi-ext-caption-selection[hidden]) {
+  grid-template-columns: 1fr;
+}
+
+.goi-ext-caption-actions:has(.goi-ext-caption-selection[hidden]) .goi-ext-caption-known {
+  border-right: 0;
+}
+
+.goi-ext-caption-lookup {
+  --goi-ext-lookup-left: 50%;
+  --goi-ext-lookup-top: 0px;
+  position: absolute;
+  z-index: 2;
+  top: var(--goi-ext-lookup-top);
+  left: var(--goi-ext-lookup-left);
+  width: min(440px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 24%);
+  border-radius: 4px;
+  background: rgb(25 35 48 / 98%);
+  box-shadow: 0 10px 26px rgb(0 0 0 / 38%);
+  color: #fff;
+  font: 400 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: left;
+  text-shadow: none;
+  transform: translate(-50%, -100%);
+}
+
+.goi-ext-caption-lookup--below {
+  transform: translateX(-50%);
+}
+
+.goi-ext-caption-lookup[hidden] {
+  display: none;
+}
+
+.goi-ext-dictionary-content {
+  --goi-dictionary-line: rgb(255 255 255 / 18%);
+  --goi-dictionary-muted: #c7d0d8;
+  --goi-dictionary-reading: #6bcaca;
+  --goi-dictionary-tag: rgb(255 255 255 / 11%);
+  --goi-dictionary-term: #fff;
+  max-height: min(50vh, 420px);
+  padding: 13px 14px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-color: rgb(255 255 255 / 32%) transparent;
+}
+
+.goi-ext-dictionary-content .goi-dictionary-select {
+  width: auto;
+  min-width: 96px;
+  margin-left: auto;
+  padding-inline: 16px;
+  border-color: #b84639;
+  background: #b84639;
+  color: #fff;
+}
+
+.goi-ext-dictionary-content .goi-dictionary-select:hover,
+.goi-ext-dictionary-content .goi-dictionary-select:focus-visible {
+  border-color: #a83d32;
+  background: #a83d32;
+}
+
+.goi-ext-caption-feedback {
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: max-content;
+  max-width: 95%;
+  transform: translateX(-50%);
+}
+
+.goi-ext-caption-status {
+  min-width: 0;
+  padding: 5px 9px;
+  border-radius: 3px;
+  background: #0f6367;
+  color: #fff;
+  font: 600 12px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-shadow: none;
+}
+
+.goi-ext-caption-status[hidden] {
+  display: none;
+}
+
+.goi-ext-caption-status--error {
+  background: #b34e40;
+}
+
+.goi-ext-overlay-rail {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 4px;
+  background: rgb(25 35 48 / 94%);
+  opacity: 0.42;
+  transform: translateX(-50%);
+  transition: opacity 140ms ease;
+}
+
+.goi-ext-overlay-rail--expanded,
+.goi-ext-overlay-rail:focus-within,
+.goi-ext-overlay--captions-hidden .goi-ext-overlay-rail {
+  opacity: 1;
+}
+
+.goi-ext-overlay-rail:not(.goi-ext-overlay-rail--expanded) .goi-ext-overlay-rail-item {
+  display: none;
+}
+
+.goi-ext-overlay-menu-button {
+  min-width: 30px;
+  padding: 0 6px;
+}
+
+.goi-ext-overlay-button {
+  min-width: 36px;
+  height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 2px;
+  background: transparent;
+  color: #f8fafc;
+  font: 600 14px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.goi-ext-overlay-button:hover {
+  background: rgb(255 255 255 / 14%);
+}
+
+.goi-ext-overlay-button:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+  background: rgb(255 255 255 / 18%);
+}
+
+.goi-ext-overlay-visibility--active {
+  background: #285957;
+  box-shadow: inset 0 0 0 1px #70d5cf;
+}
+
+.goi-ext-overlay-handle {
+  display: inline-grid;
+  box-sizing: border-box;
+  place-items: center;
+  cursor: ns-resize;
+}
+
+.goi-ext-overlay-controls {
+  position: absolute;
+  top: calc(100% + 49px);
+  left: 50%;
+  box-sizing: border-box;
+  width: min(420px, calc(100vw - 32px));
+  max-height: min(440px, 72vh);
+  padding: 12px;
+  overflow-y: auto;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 4px;
+  background: rgb(25 35 48 / 98%);
+  box-shadow: 0 10px 26px rgb(0 0 0 / 34%);
+  color: #f8fafc;
+  font: 400 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  text-align: left;
+  text-shadow: none;
+  transform: translateX(-50%);
+}
+
+.goi-ext-overlay-controls-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+  font-size: 14px;
+}
+
+.goi-ext-overlay-controls-close {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.goi-ext-overlay--dock-above .goi-ext-overlay-rail {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.goi-ext-overlay--dock-above .goi-ext-caption-feedback {
+  top: calc(100% + 7px);
+  bottom: auto;
+}
+
+.goi-ext-overlay--dock-above .goi-ext-overlay-controls {
+  top: auto;
+  bottom: calc(100% + 49px);
+}
+
+.goi-ext-overlay-controls[hidden] {
+  display: none;
+}
+
+.goi-ext-overlay-field {
+  display: grid;
+  grid-template-columns: 88px minmax(120px, 1fr) 50px;
+  gap: 8px;
+  align-items: center;
+  margin: 9px 0;
+}
+
+.goi-ext-overlay-range {
+  width: 100%;
+}
+
+.goi-ext-overlay-value {
+  color: #dce5ea;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.goi-ext-overlay-choice-field {
+  margin: 12px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.goi-ext-overlay-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 34px;
+  margin: 9px 0 2px;
+  color: #f8fafc;
+  cursor: pointer;
+}
+
+.goi-ext-overlay-checkbox {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  accent-color: #70d5cf;
+}
+
+.goi-ext-overlay-choice-field .goi-ext-overlay-label {
+  margin-bottom: 6px;
+}
+
+.goi-ext-overlay-choice-group {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.goi-ext-overlay-choice-group--displayMode {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.goi-ext-overlay-choice-group--pauseBehavior {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.goi-ext-overlay-choice {
+  position: relative;
+}
+
+.goi-ext-overlay-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+}
+
+.goi-ext-overlay-choice span {
+  display: grid;
+  min-height: 36px;
+  box-sizing: border-box;
+  place-items: center;
+  padding: 6px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  border-radius: 3px;
+  background: #202c3a;
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.goi-ext-overlay-radio:checked + span {
+  border-color: #70d5cf;
+  background: #285957;
+}
+
+.goi-ext-overlay-radio:focus-visible + span {
+  outline: 2px solid #f66f5e;
+  outline-offset: 1px;
+}
+
+.goi-ext-overlay-reset {
+  width: 100%;
+  height: auto;
+  margin-top: 9px;
+  padding: 8px 10px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  background: #2b3239;
+}
+
+.goi-ext-overlay-reset:hover {
+  background: #39434c;
+}
+
+.goi-ext-hide-native-captions .caption-window,
+.goi-ext-hide-native-captions .ytp-caption-window-container {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goi-ext-overlay-rail {
+    transition: none;
+  }
+}

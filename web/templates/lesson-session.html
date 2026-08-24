@@ -1,0 +1,129 @@
+{{define "lesson-session-body"}}
+<div id="study-stage" class="lesson-stage">
+  <section class="study-status" aria-label="Lesson progress">
+    <div class="study-status-copy">
+      <span class="study-kicker">Lesson</span>
+      {{if gt .Session.BatchCount 1}}
+      <strong>Batch {{add .Session.CurrentBatch 1}} of {{.Session.BatchCount}}</strong>
+      {{else}}
+      <strong>{{len .Session.Items}}-word lesson</strong>
+      {{end}}
+      <span>Word {{add .Session.StudyPosition 1}} of {{len .Session.Items}}</span>
+    </div>
+    <div class="progress-track progress-track-study">
+      <span
+        style="width: {{if .Session.Items}}{{percent (add .Session.StudyPosition 1) (len .Session.Items)}}{{else}}100{{end}}%"
+      ></span>
+    </div>
+  </section>
+
+  <section class="lesson-subject">
+    <div class="lesson-subject-topline">
+      <span>Study card</span>
+      <span class="lesson-shortcut-hint"><kbd>←</kbd> <kbd>→</kbd> navigate</span>
+    </div>
+    <div class="lesson-expression">
+      {{if .Session.StudyItem.Pronunciation}}
+      <p class="lesson-reading" lang="ja">{{.Session.StudyItem.Pronunciation}}</p>
+      {{end}}
+      <h1 class="jp-word" lang="ja">{{.Session.StudyItem.Expression}}</h1>
+    </div>
+    {{if or .Session.StudyItem.AudioID .Session.StudyItem.PictureID}}
+    <div class="lesson-media">
+      {{if .Session.StudyItem.PictureID}}
+      <img src="/media/{{.Session.StudyItem.PictureID}}" alt="Illustration for {{.Session.StudyItem.Expression}}">
+      {{end}}
+      {{if .Session.StudyItem.AudioID}}
+      <audio controls preload="metadata" src="/media/{{.Session.StudyItem.AudioID}}" aria-label="Pronunciation audio for {{.Session.StudyItem.Expression}}"></audio>
+      {{end}}
+    </div>
+    {{end}}
+    <div class="lesson-details">
+      <section>
+        <p class="detail-label">Meaning</p>
+        <ul class="meaning-list">
+          {{range .Session.StudyItem.Meanings}}
+          <li>{{.}}</li>
+          {{end}}
+        </ul>
+        <p class="lesson-secondary-actions"><a class="text-action" href="/vocabulary/{{.Session.StudyItem.ID}}/edit">Edit word</a></p>
+      </section>
+      {{if .Session.StudyItem.Notes}}
+      <section>
+        <p class="detail-label">Notes</p>
+        <p class="preformatted lesson-notes">{{.Session.StudyItem.Notes}}</p>
+      </section>
+      {{end}}
+      {{if .Session.StudyItem.Example.Sentence}}
+      <section class="lesson-example">
+        <p class="detail-label">Example</p>
+        <p class="study-example-sentence" lang="ja">
+          {{template "study-example-sentence-content" .Session.StudyItem.Example}}
+        </p>
+        {{template "study-example-details" .Session.StudyItem.Example}}
+      </section>
+      {{end}}
+    </div>
+  </section>
+
+  <div class="lesson-controls">
+    <nav class="study-queue" aria-label="Words in this batch">
+      {{range .Session.Items}}
+      {{if eq .Position $.Session.StudyPosition}}
+      <button class="study-queue-item is-current{{if .Viewed}} is-viewed{{end}}" type="button" disabled aria-current="step">
+        <span class="jp-word" lang="ja">{{.Expression}}</span>
+      </button>
+      {{else}}
+      <form method="post" action="/lessons/session/{{$.Session.ID}}/word/{{.Position}}" data-lesson-nav>
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <button class="study-queue-item{{if .Viewed}} is-viewed{{end}}" type="submit">
+          <span class="jp-word" lang="ja">{{.Expression}}</span>
+        </button>
+      </form>
+      {{end}}
+      {{end}}
+    </nav>
+
+    <div class="lesson-navigation">
+      {{if .Session.CanStudyBack}}
+      <form
+        method="post"
+        action="/lessons/session/{{.Session.ID}}/word/{{add .Session.StudyPosition -1}}"
+        data-lesson-nav
+        data-lesson-direction="back"
+      >
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="button button-secondary lesson-nav-button" type="submit">
+          <span class="ui-icon icon-arrow-left" aria-hidden="true"></span>Back
+        </button>
+      </form>
+      {{else}}
+      <span></span>
+      {{end}}
+
+      {{if .Session.CanStudyNext}}
+      <form
+        method="post"
+        action="/lessons/session/{{.Session.ID}}/word/{{add .Session.StudyPosition 1}}"
+        data-lesson-nav
+        data-lesson-direction="next"
+      >
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="button lesson-nav-button" type="submit">
+          Next<span class="ui-icon icon-arrow-right" aria-hidden="true"></span>
+        </button>
+      </form>
+      {{else}}
+      <form method="post" action="/lessons/session/{{.Session.ID}}/review">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="button lesson-nav-button" type="submit">Finish and review<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{template "study-header" .}}
+{{template "lesson-session-body" .}}
+{{template "bare-footer" .}}

@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+
+      - name: Check Go formatting
+        run: |
+          go fmt ./...
+          git diff --exit-code
+
+      - name: Test Go
+        run: go test -count=1 ./...
+
+      - name: Test Go with the race detector
+        run: go test -race -count=1 ./...
+
+      - name: Vet Go
+        run: go vet ./...
+
+      - name: Build Go commands
+        run: go build ./cmd/server ./cmd/backup ./cmd/devdata
+
+      - name: Test browser JavaScript
+        run: node --test browser-extension/tests/*.test.js web/tests/*.test.js
+
+      - name: Test the installed Chrome extension
+        run: node --test browser-extension/tests/chrome-install-smoke.js
+
+      - name: Build the Docker image
+        run: docker build --tag goi:ci .
+
+      - name: Check the final diff
+        run: |
+          git diff --check
+          git diff --exit-code

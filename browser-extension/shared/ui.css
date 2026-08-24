@@ -1,0 +1,375 @@
+:root {
+  color-scheme: light dark;
+  --goi-canvas: #f4f1e9;
+  --goi-canvas-strong: #e9e4d9;
+  --goi-surface: #fbf9f3;
+  --goi-surface-raised: #fffdfa;
+  --goi-ink: #182132;
+  --goi-ink-soft: #3c4657;
+  --goi-muted: #5f6674;
+  --goi-line: #d5d0c5;
+  --goi-line-strong: #b5afa4;
+  --goi-brand: #d95f4d;
+  --goi-brand-fill: #c95040;
+  --goi-brand-edge: #96382f;
+  --goi-reading: #177f83;
+  --goi-focus: #775000;
+  --goi-danger: #a73d48;
+  --goi-font-ui: "Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --goi-font-japanese: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+  font-family: var(--goi-font-ui);
+  background: var(--goi-canvas);
+  color: var(--goi-ink);
+}
+
+.goi-extension-ui {
+  background: var(--goi-canvas);
+  color: var(--goi-ink);
+  font-family: var(--goi-font-ui);
+}
+
+.goi-extension-ui button,
+.goi-extension-ui input,
+.goi-extension-ui textarea,
+.goi-extension-ui select {
+  font-family: inherit;
+}
+
+.goi-extension-ui h1,
+.goi-extension-ui h2,
+.goi-extension-ui h3,
+.goi-extension-ui strong,
+.goi-extension-ui label,
+.goi-extension-ui legend {
+  letter-spacing: -0.012em;
+}
+
+.goi-extension-ui .mark {
+  border-radius: 4px;
+  background: var(--goi-brand);
+  color: #fff;
+  font-family: var(--goi-font-japanese);
+  font-weight: 600;
+}
+
+.goi-extension-ui button,
+.goi-extension-ui .file-button,
+.goi-extension-ui input[type="text"],
+.goi-extension-ui input[type="search"],
+.goi-extension-ui input[type="url"],
+.goi-extension-ui input[type="password"],
+.goi-extension-ui textarea,
+.goi-extension-ui select,
+.goi-extension-ui .display-choices span,
+.goi-extension-ui .pause-choices span,
+.goi-extension-ui .segmented span {
+  border-color: var(--goi-line-strong);
+  border-radius: 3px;
+  background: var(--goi-surface-raised);
+  color: var(--goi-ink);
+  box-shadow: none;
+}
+
+.goi-extension-ui button.primary,
+.goi-extension-ui .file-button.primary {
+  border-color: var(--goi-brand-edge);
+  background: var(--goi-brand-fill);
+  color: #fff;
+}
+
+.goi-extension-ui button.quiet {
+  color: var(--goi-reading);
+}
+
+.goi-extension-ui button:focus-visible,
+.goi-extension-ui input:focus-visible,
+.goi-extension-ui textarea:focus-visible,
+.goi-extension-ui select:focus-visible {
+  outline-color: var(--goi-focus);
+}
+
+.goi-popup main {
+  padding: 14px;
+}
+
+.goi-popup header {
+  margin-bottom: 10px;
+}
+
+.goi-popup form,
+.goi-popup section {
+  margin-top: 0;
+  padding: 13px 0;
+  border: 0;
+  border-top: 1px solid var(--goi-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.goi-popup .capture-shortcut {
+  padding: 8px 10px;
+  border: 0;
+  border-left: 3px solid var(--goi-reading);
+  border-radius: 0;
+  background: var(--goi-canvas-strong);
+  color: var(--goi-muted);
+}
+
+.goi-popup .outbox-details,
+.goi-popup .managed-sites {
+  border-color: var(--goi-line);
+  border-radius: 3px;
+}
+
+.goi-options main {
+  width: min(660px, 100%);
+}
+
+.goi-options form,
+.goi-options section {
+  padding-inline: 0;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+}
+
+.goi-companion .app-header {
+  min-height: 54px;
+  padding: 8px 16px;
+  border-color: var(--goi-line);
+  background: var(--goi-surface);
+}
+
+.goi-companion main {
+  grid-template-columns: minmax(420px, 1.45fr) minmax(320px, .75fr);
+  gap: 0;
+  height: calc(100vh - 54px);
+  padding: 0;
+  background: var(--goi-surface);
+}
+
+.goi-companion main > section,
+.goi-companion .settings-disclosure,
+.goi-companion .workspace-empty {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.goi-companion .transcript {
+  padding: 16px 18px;
+  border-right: 1px solid var(--goi-line);
+}
+
+.goi-companion .workspace {
+  gap: 0;
+  padding: 0;
+  background: var(--goi-canvas);
+}
+
+.goi-companion .workspace > section,
+.goi-companion .workspace > form,
+.goi-companion .workspace > details {
+  padding: 16px;
+  border: 0;
+  border-bottom: 1px solid var(--goi-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.goi-companion .translation-tools,
+.goi-player .translation-tools {
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--goi-line);
+  border-radius: 0;
+  background: transparent;
+}
+
+.goi-companion .translation-result,
+.goi-companion .line-translation,
+.goi-player .translation-result,
+.goi-player .line-translation {
+  border-radius: 0;
+  background: color-mix(in srgb, var(--goi-reading) 9%, var(--goi-surface));
+  color: var(--goi-ink-soft);
+}
+
+.goi-companion .subtitle-lines {
+  padding-right: 0;
+}
+
+.goi-companion .subtitle-line {
+  border-radius: 0;
+}
+
+.goi-companion .subtitle-line:hover {
+  background: var(--goi-canvas);
+}
+
+.goi-companion .subtitle-line.selected {
+  background: color-mix(in srgb, var(--goi-brand) 8%, var(--goi-surface));
+  box-shadow: inset 3px 0 var(--goi-brand);
+}
+
+.goi-companion .subtitle-line.current {
+  background: color-mix(in srgb, var(--goi-reading) 8%, var(--goi-surface));
+  box-shadow: inset 3px 0 var(--goi-reading);
+}
+
+.goi-companion .subtitle-text,
+.goi-player .line-text,
+.goi-player .subtitle-cue {
+  font-family: var(--goi-font-japanese);
+  font-weight: 400;
+}
+
+.goi-companion .dictionary-lookup,
+.goi-companion .word-preview,
+.goi-player .dictionary-lookup,
+.goi-player .word-lookup {
+  border-radius: 4px;
+  box-shadow: none;
+}
+
+.goi-companion .word-preview {
+  background: var(--goi-surface-raised);
+  box-shadow: 0 12px 28px rgb(24 33 50 / 16%);
+}
+
+.goi-companion .media-panel,
+.goi-companion .workspace-empty,
+.goi-companion .page-status {
+  border-radius: 3px;
+}
+
+.goi-companion .workspace-empty strong {
+  color: var(--goi-ink);
+}
+
+.goi-player {
+  --surface: var(--goi-surface);
+  --surface-raised: var(--goi-surface-raised);
+  --line: var(--goi-line);
+  --muted: var(--goi-muted);
+  --coral: var(--goi-brand);
+  --coral-dark: var(--goi-brand-edge);
+  --teal: var(--goi-reading);
+  --focus: var(--goi-focus);
+  background: #070b10;
+}
+
+.goi-player .app-header {
+  background: var(--goi-canvas-strong);
+  border-color: var(--goi-line);
+}
+
+.goi-player .viewer-shell,
+.goi-player .subtitle-cue,
+.goi-player .word-lookup,
+.goi-player .video-status,
+.goi-player .workspace-panel,
+.goi-player .coverage-panel,
+.goi-player .inline-confirmation,
+.goi-player .transcript-line.selected,
+.goi-player .translation-tools,
+.goi-player .segmented span,
+.goi-player .switch-control {
+  border-radius: 3px;
+}
+
+.goi-player .workspace-panel {
+  border-color: var(--goi-line);
+  background: color-mix(in srgb, var(--goi-surface) 98%, transparent);
+  box-shadow: -8px 0 24px rgb(0 0 0 / 28%);
+  backdrop-filter: none;
+}
+
+.goi-player .panel-header,
+.goi-player .transcript-line {
+  border-color: var(--goi-line);
+}
+
+.goi-player .panel-view {
+  background: var(--goi-surface);
+}
+
+.goi-player .coverage-panel,
+.goi-player .translation-tools {
+  background: transparent;
+}
+
+@media (max-width: 720px) {
+  .goi-companion main {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .goi-companion .transcript {
+    border-right: 0;
+    border-bottom: 1px solid var(--goi-line);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --goi-canvas: #131a24;
+    --goi-canvas-strong: #0e151e;
+    --goi-surface: #192330;
+    --goi-surface-raised: #202c3a;
+    --goi-ink: #f4f0e7;
+    --goi-ink-soft: #d4dae3;
+    --goi-muted: #abb4c1;
+    --goi-line: #303d4d;
+    --goi-line-strong: #536172;
+    --goi-brand: #ff735f;
+    --goi-brand-fill: #e76552;
+    --goi-brand-edge: #ac493c;
+    --goi-reading: #6bcaca;
+    --goi-focus: #efb84f;
+    --goi-danger: #ff8b98;
+  }
+
+  .goi-extension-ui,
+  .goi-popup form,
+  .goi-popup section,
+  .goi-companion .app-header,
+  .goi-companion main,
+  .goi-companion main > section,
+  .goi-companion .settings-disclosure,
+  .goi-companion .workspace-empty {
+    background: var(--goi-canvas);
+    color: var(--goi-ink);
+  }
+
+  .goi-popup .capture-shortcut {
+    background: var(--goi-canvas-strong);
+    color: var(--goi-muted);
+  }
+
+  .goi-popup .capture-shortcut strong,
+  .goi-companion .translation-result,
+  .goi-companion .line-translation,
+  .goi-player .translation-result,
+  .goi-player .line-translation {
+    color: var(--goi-ink);
+  }
+
+  .goi-companion .workspace,
+  .goi-companion .word-preview {
+    background: var(--goi-surface);
+  }
+
+  .goi-companion .media-panel {
+    background: var(--goi-canvas-strong);
+  }
+
+  .goi-companion .subtitle-line:hover {
+    background: var(--goi-surface-raised);
+  }
+
+  .goi-player .app-header {
+    background: var(--goi-canvas-strong);
+  }
+}

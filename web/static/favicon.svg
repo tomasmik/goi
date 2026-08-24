@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#b84639"/>
+  <text
+    x="64"
+    y="86"
+    fill="#ffffff"
+    font-family="Hiragino Sans, Yu Gothic, Noto Sans JP, sans-serif"
+    font-size="68"
+    font-weight="700"
+    text-anchor="middle"
+  >語</text>
+</svg>

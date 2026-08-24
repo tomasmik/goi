@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Goi Capture</title>
+    <link rel="stylesheet" href="popup.css">
+    <link rel="stylesheet" href="../shared/ui.css">
+  </head>
+  <body class="goi-extension-ui goi-popup">
+    <main>
+      <header>
+        <span class="mark" aria-hidden="true">語</span>
+        <div>
+          <h1>Goi Capture</h1>
+          <p>Read Japanese and capture words.</p>
+        </div>
+      </header>
+
+      <p class="capture-shortcut">Select a word, then right-click <strong>Add to Goi</strong> or press <span id="capture-shortcut"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></span>.</p>
+
+      <section class="local-player-section">
+        <div>
+          <h2>Local video</h2>
+          <p>Play a local video with subtitles.</p>
+        </div>
+        <button id="open-local-player" class="primary" type="button">Open local video</button>
+      </section>
+
+      <section id="analyze-section" class="analyze-section">
+        <div>
+          <h2>Read this page</h2>
+          <p>Highlight unfamiliar Japanese, look up meanings, and send words to mining.</p>
+        </div>
+        <button id="analyze-page" class="primary" type="button">Read with Goi</button>
+        <p id="analyze-unavailable-reason" class="hint" hidden></p>
+        <label id="site-auto-control" class="site-auto-control" hidden>
+          <input id="site-auto" type="checkbox" role="switch">
+          <span>
+            <span id="site-auto-label">Enable automatically on this site</span>
+            <span id="site-auto-detail" class="site-auto-detail">Show word lookups when this site loads.</span>
+          </span>
+        </label>
+      </section>
+
+      <section class="connection-summary" aria-labelledby="connection-heading">
+        <div>
+          <h2 id="connection-heading">Connection</h2>
+          <p id="connection-summary" class="hint">Checking Goi…</p>
+        </div>
+        <button id="open-connection-settings" type="button">Set up</button>
+      </section>
+
+      <section id="youtube-settings" hidden>
+        <h2>YouTube captions</h2>
+        <p class="hint">Click a word to inspect and mine it.</p>
+        <label class="site-auto-control hover-lookup-control">
+          <input id="youtube-hover-lookup" type="checkbox" role="switch">
+          <span>
+            <strong>Show definitions on hover</strong>
+            <span class="site-auto-detail">Waits briefly before opening a preview.</span>
+          </span>
+        </label>
+        <button id="open-subtitle-browser" class="primary subtitle-browser-button" type="button" hidden>Open transcript and mining</button>
+        <p class="hint">Display controls are also available on the video.</p>
+      </section>
+
+      <p id="outbox-status" class="outbox-status" role="status" aria-live="polite" hidden></p>
+      <details id="outbox-details" class="outbox-details" hidden>
+        <summary>Waiting captures</summary>
+        <p id="outbox-detail" class="hint"></p>
+        <div class="actions">
+          <button id="outbox-retry" class="quiet" type="button">Retry now</button>
+          <button id="outbox-discard" class="quiet danger-text" type="button">Discard waiting captures</button>
+        </div>
+      </details>
+      <details id="managed-sites" class="managed-sites" hidden>
+        <summary>Automatically enabled sites</summary>
+        <ul id="managed-sites-list"></ul>
+      </details>
+      <details id="ignored-words" class="managed-sites" hidden>
+        <summary>Words ignored everywhere</summary>
+        <ul id="ignored-words-list"></ul>
+      </details>
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script src="../shared/capture-model.js"></script>
+    <script src="../shared/popup-model.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,142 @@
+.dictionary-lookup {
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.goi-dictionary-message,
+.goi-dictionary-summary {
+  margin: 0;
+  color: var(--goi-dictionary-muted);
+}
+
+.goi-dictionary-summary {
+  padding-bottom: 9px;
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.goi-dictionary-entry + .goi-dictionary-entry {
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid var(--goi-dictionary-line);
+}
+
+.goi-dictionary-entry {
+  position: relative;
+  padding: 3px 3px 3px 8px;
+  border-left: 2px solid transparent;
+}
+
+.goi-dictionary-entry.is-selected {
+  border-left-color: var(--goi-dictionary-reading);
+  background: color-mix(in srgb, var(--goi-dictionary-reading) 7%, transparent);
+}
+
+.goi-dictionary-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px 12px;
+}
+
+.goi-dictionary-headword {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.goi-dictionary-term {
+  color: var(--goi-dictionary-term);
+  font-family: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.15;
+}
+
+.goi-dictionary-reading {
+  color: var(--goi-dictionary-reading);
+  font-family: "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.goi-dictionary-commonness {
+  padding: 2px 6px;
+  border: 1px solid var(--goi-dictionary-line);
+  border-radius: 3px;
+  color: var(--goi-dictionary-reading);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.goi-dictionary-sense {
+  margin-top: 10px;
+}
+
+.goi-dictionary-sense + .goi-dictionary-sense {
+  padding-top: 11px;
+  border-top: 1px solid var(--goi-dictionary-line);
+}
+
+.goi-dictionary-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 7px;
+}
+
+.goi-dictionary-part {
+  padding: 2px 5px;
+  border: 1px solid var(--goi-dictionary-line);
+  border-radius: 2px;
+  background: var(--goi-dictionary-tag);
+  color: var(--goi-dictionary-muted);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.goi-dictionary-meanings {
+  margin: 0;
+  padding-left: 1.55rem;
+  font-size: 15px;
+  line-height: 1.48;
+}
+
+.goi-dictionary-meanings li {
+  padding: 2px 0 2px 3px;
+}
+
+.goi-dictionary-meanings li::marker {
+  color: var(--goi-dictionary-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.goi-dictionary-select {
+  width: 100%;
+  margin-top: 10px;
+  padding: 7px 10px;
+  color: var(--goi-dictionary-term);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid var(--goi-dictionary-line);
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.goi-dictionary-select:hover,
+.goi-dictionary-select:focus-visible,
+.goi-dictionary-entry.is-selected .goi-dictionary-select {
+  color: #fff;
+  border-color: var(--goi-dictionary-reading);
+  background: var(--goi-dictionary-reading);
+}

@@ -1,0 +1,25 @@
+{{define "study-example-sentence-content"}}
+{{if .HasTarget}}{{.BeforeTarget}}<strong>{{.MatchedTarget}}</strong>{{.AfterTarget}}{{else}}{{.Sentence}}{{end}}
+{{end}}
+
+{{define "study-example-details"}}
+{{if .Translation}}
+<p class="study-example-translation">{{.Translation}}</p>
+{{end}}
+{{if or .VideoFrameID .SentenceAudioIDs}}
+<div class="study-example-media">
+  {{if .VideoFrameID}}<img src="/media/{{.VideoFrameID}}" alt="Video frame for this example" loading="lazy">{{end}}
+  {{range .SentenceAudioIDs}}<audio controls preload="metadata" src="/media/{{.}}" aria-label="Native audio for this example"></audio>{{end}}
+</div>
+{{end}}
+{{if or .SourceTitle .SourcePositionLabel .SourceLink}}
+<p class="study-example-source">
+  {{if .SourceLink}}
+  <a href="{{.SourceLink}}" target="_blank" rel="noopener noreferrer">{{if .SourceTitle}}{{.SourceTitle}}{{else}}Open source{{end}}</a>
+  {{else if .SourceTitle}}
+  <span>{{.SourceTitle}}</span>
+  {{end}}
+  {{if .SourcePositionLabel}}<span>{{.SourcePositionLabel}}</span>{{end}}
+</p>
+{{end}}
+{{end}}

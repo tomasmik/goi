@@ -1,0 +1,165 @@
+{{template "header" .}}
+<div class="page-heading">
+  <div>
+    <h1>Translation and examples</h1>
+  </div>
+</div>
+
+{{template "settings-navigation" "language-tools"}}
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+{{if .Saved}}
+<div class="alert alert-success" role="status">Saved.</div>
+{{end}}
+{{if .Tested}}
+<div class="alert alert-success" role="status">Connection works.</div>
+{{end}}
+
+<form class="form-card settings-capabilities" method="post" action="/settings/examples" aria-labelledby="translation-provider-title" data-translation-settings>
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+  <section class="form-section" aria-labelledby="translation-provider-title">
+    <div class="form-section-heading">
+      <h2 id="translation-provider-title">Translation</h2>
+      <p class="section-note">Used while capturing words when Chrome's on-device translator is unavailable.</p>
+    </div>
+
+    <fieldset class="choice-field">
+      <legend>Server translation</legend>
+      <div class="choice-options settings-review-options">
+        <label class="choice-option">
+          <input type="radio" name="translation_provider" value="none" {{if eq .Values.TranslationProvider "none"}}checked{{end}}>
+          <span><strong>None</strong><small>Use only Chrome's on-device translator.</small></span>
+        </label>
+        <label class="choice-option">
+          <input type="radio" name="translation_provider" value="microsoft" {{if eq .Values.TranslationProvider "microsoft"}}checked{{end}}>
+          <span><strong>Microsoft Translator</strong><small>Use an Azure Translator resource.</small></span>
+        </label>
+        <label class="choice-option">
+          <input type="radio" name="translation_provider" value="openai" {{if eq .Values.TranslationProvider "openai"}}checked{{end}}>
+          <span><strong>OpenAI-compatible provider</strong><small>Use the model configured below.</small></span>
+        </label>
+      </div>
+    </fieldset>
+  </section>
+
+  <section class="form-section" aria-labelledby="microsoft-translator-title" data-translation-provider-panel="microsoft">
+    <div class="form-section-heading">
+      <h3 id="microsoft-translator-title">Microsoft Translator</h3>
+    </div>
+    <ol class="section-note">
+      <li>Create an Azure account and subscription.</li>
+      <li>Create a <strong>Translator</strong> resource in the Azure portal.</li>
+      <li>Open <strong>Keys and Endpoint</strong> for that resource.</li>
+      <li>Copy its endpoint, region, and either key into the fields below.</li>
+    </ol>
+    <p class="help"><a class="external-link" href="https://learn.microsoft.com/en-us/azure/ai-services/translator/how-to/create-translator-resource" target="_blank" rel="noreferrer">Microsoft setup instructions</a></p>
+    <div class="form-grid">
+      <label>
+        Endpoint
+        <input type="url" name="microsoft_endpoint" value="{{.Values.MicrosoftEndpoint}}" placeholder="https://api.cognitive.microsofttranslator.com">
+        <span class="help">Use the endpoint shown by Azure. Remote endpoints must use HTTPS.</span>
+      </label>
+      <label>
+        Region
+        <input name="microsoft_region" value="{{.Values.MicrosoftRegion}}" placeholder="westeurope">
+        <span class="help">Use the region value exactly as Azure shows it.</span>
+      </label>
+    </div>
+    <label>
+      API key
+      <input type="password" name="microsoft_api_key" autocomplete="new-password" placeholder="{{if .Values.HasMicrosoftAPIKey}}Saved — leave blank to keep it{{else}}Key 1 or Key 2{{end}}">
+    </label>
+    {{if .Values.HasMicrosoftAPIKey}}
+    <div class="credential-state">
+      <span><strong>Credentials saved</strong><small>Leave the API key blank to keep them.</small></span>
+      <button class="text-button danger-link" type="submit" name="confirmed" value="1" formaction="/settings/examples/microsoft/remove" formnovalidate data-confirm="Remove the saved Microsoft Translator endpoint, region, and API key? Server translation will be set to None.">Remove Microsoft settings</button>
+    </div>
+    {{end}}
+  </section>
+
+  <section class="form-section" aria-labelledby="example-provider-title">
+    <div class="form-section-heading">
+      <h2 id="example-provider-title">Example generation</h2>
+      <p class="section-note">Generates example sentences. It can also provide server translation when selected above.</p>
+    </div>
+    {{if .Values.EnvironmentManaged}}
+    <p class="section-note">This connection is managed by the server and cannot be changed here.</p>
+    <p class="help">Remove the APP_LLM environment variables and restart Goi to manage it here.</p>
+    {{else}}
+    <label>
+      Provider preset
+      <select data-example-provider-preset>
+        <option value="custom">Another compatible provider</option>
+        <option value="openrouter" data-base-url="https://openrouter.ai/api/v1" data-model="" data-model-placeholder="provider/model">OpenRouter</option>
+        <option value="ollama" data-base-url="http://127.0.0.1:11434/v1" data-model="qwen3:4b">Ollama on the Goi server</option>
+        <option value="lm-studio" data-base-url="http://127.0.0.1:1234/v1" data-model="local-model">LM Studio on the Goi server</option>
+      </select>
+      <span class="help">These addresses are reached from the Goi server. Containers may need a different address.</span>
+      <span class="help"><a class="external-link" href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer">Create an OpenRouter key</a> · <a class="external-link" href="https://openrouter.ai/models" target="_blank" rel="noreferrer">Browse model IDs</a></span>
+    </label>
+    {{end}}
+    <div class="form-grid">
+      <label>
+        Base URL
+        <input type="url" name="base_url" value="{{.Values.BaseURL}}" placeholder="http://127.0.0.1:11434/v1" data-example-base-url {{if .Values.EnvironmentManaged}}disabled{{end}}>
+        <span class="help">The OpenAI-compatible API address. OpenRouter uses https://openrouter.ai/api/v1.</span>
+      </label>
+      <label>
+        Model
+        <input name="model" value="{{.Values.Model}}" placeholder="qwen3:4b" data-example-model {{if .Values.EnvironmentManaged}}disabled{{end}}>
+        <span class="help">OpenRouter requires the full model ID shown in its model catalog, such as openai/gpt-4o-mini.</span>
+      </label>
+    </div>
+    {{if not .Values.EnvironmentManaged}}
+    <label>
+      API key
+      <input type="password" name="api_key" autocomplete="new-password" placeholder="{{if .Values.HasAPIKey}}Saved — leave blank to keep it{{else}}Optional{{end}}">
+      <span class="help">OpenRouter requires an API key. Local providers usually do not.</span>
+    </label>
+    {{if .Values.HasAPIKey}}
+    <div class="credential-state">
+      <span><strong>API key saved</strong><small>Leave the field blank to keep it.</small></span>
+      <button class="text-button danger-link" type="submit" name="confirmed" value="1" formaction="/settings/examples/api-key/remove" formnovalidate data-confirm="Remove the saved API key? The provider address and model will be kept.">Remove API key</button>
+    </div>
+    {{end}}
+    {{end}}
+  </section>
+
+  <section class="form-section" aria-labelledby="translation-instructions-title">
+    <div class="form-section-heading">
+      <h3 id="translation-instructions-title">OpenAI translation instructions</h3>
+    </div>
+    <label>
+      Translation instructions
+      <textarea name="translation_instruction" rows="3" required>{{.Values.Instructions.Translation}}</textarea>
+      <span class="help">Used only when an OpenAI-compatible model translates Japanese into English.</span>
+    </label>
+  </section>
+
+  <details class="form-details">
+    <summary>Example generation instructions</summary>
+    <div class="details-body">
+      <label>
+        Japanese sentence
+        <textarea name="sentence_instruction" rows="3" required>{{.Values.Instructions.Sentence}}</textarea>
+      </label>
+      <label>
+        Target word form
+        <textarea name="target_instruction" rows="3" required>{{.Values.Instructions.TargetSurface}}</textarea>
+        <span class="help">The exact spelling used inside the generated Japanese sentence.</span>
+      </label>
+    </div>
+  </details>
+
+  {{if and .Values.BaseURL (not .Values.EnvironmentManaged)}}
+  <p class="form-after-link"><button class="text-button" type="submit" formaction="/settings/examples/disable" formnovalidate data-confirm="Disable example generation? Your instructions will be kept.">Disable OpenAI-compatible provider</button></p>
+  {{end}}
+  <div class="form-actions settings-save-bar">
+    <button class="button" type="submit">Save changes</button>
+    <button class="button button-secondary" type="submit" formaction="/settings/examples/test">Save and test connection</button>
+  </div>
+</form>
+{{template "footer" .}}

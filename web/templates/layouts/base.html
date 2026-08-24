@@ -1,0 +1,81 @@
+{{define "document-head"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}} | Goi</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <script src="/static/js/theme.js"></script>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/study.css">
+  <link rel="stylesheet" href="/static/css/pages.css">
+  <link rel="stylesheet" href="/static/css/responsive.css">
+  <script type="module" src="/static/js/app.js"></script>
+</head>
+{{end}}
+
+{{define "header"}}
+{{template "document-head" .}}
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="site-header">
+    <div class="shell header-inner">
+      <a class="brand" href="/" aria-label="Goi home">
+        <span class="brand-mark" lang="ja">語</span>
+        <span>goi</span>
+      </a>
+      <nav aria-label="Primary navigation">
+        <a class="nav-link" href="/dashboard" data-nav-section="study" aria-label="Home"><span class="ui-icon icon-house" aria-hidden="true"></span><span class="nav-label">Home</span></a>
+        <a class="nav-link" href="/vocabulary" data-nav-section="vocabulary" aria-label="Vocabulary"><span class="ui-icon icon-books" aria-hidden="true"></span><span class="nav-label">Vocabulary</span></a>
+        <a class="nav-link" href="/mining" data-nav-section="mining" aria-label="Mining inbox"><span class="ui-icon icon-tray" aria-hidden="true"></span><span class="nav-label">Inbox</span></a>
+        <a class="nav-link" href="/settings" data-nav-section="settings" aria-label="Settings"><span class="ui-icon icon-settings" aria-hidden="true"></span><span class="nav-label">Settings</span></a>
+        <a class="button button-small" href="/mining/capture" aria-label="Capture word">
+          <span class="ui-icon icon-plus" aria-hidden="true"></span>
+          <span class="nav-add-wide">Capture word</span>
+          <span class="nav-add-compact" aria-hidden="true">Capture</span>
+        </a>
+      </nav>
+    </div>
+  </header>
+  <main class="shell page" id="main-content" tabindex="-1">
+{{end}}
+
+{{define "study-header"}}
+{{template "document-head" .}}
+<body class="study-page">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <header class="study-topbar">
+    <a class="study-brand" href="/dashboard" aria-label="Leave study and return to the dashboard">
+      <span class="brand-mark" lang="ja">語</span>
+      <span>goi</span>
+    </a>
+    <a class="study-exit" href="/dashboard" title="Your progress is saved">Save and leave</a>
+  </header>
+  <main class="study-main" id="main-content" tabindex="-1">
+{{end}}
+
+{{define "auth-header"}}
+{{template "document-head" .}}
+<body class="auth-page">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  <main class="shell page" id="main-content" tabindex="-1">
+{{end}}
+
+{{define "footer"}}
+  </main>
+  <footer class="site-footer">
+    <div class="shell">
+      Dictionary data from <a href="https://www.edrdg.org/" rel="noopener noreferrer">JMdict/EDRDG</a>
+      — <a href="https://www.edrdg.org/edrdg/licence.html" rel="license noopener noreferrer">CC BY-SA 4.0</a>
+    </div>
+  </footer>
+</body>
+</html>
+{{end}}
+
+{{define "bare-footer"}}
+  </main>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,104 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>Mining inbox</h1>
+  </div>
+</section>
+
+<nav class="filter-tabs" aria-label="Capture status">
+  <a href="{{.PendingURL}}" {{if eq (printf "%s" .Status) "pending"}}aria-current="page"{{end}}>Needs review <span>{{.PendingCount}}</span></a>
+  <a href="{{.AcceptedURL}}" {{if eq (printf "%s" .Status) "accepted"}}aria-current="page"{{end}}>Added <span>{{.AcceptedCount}}</span></a>
+  <a href="{{.DiscardedURL}}" {{if eq (printf "%s" .Status) "discarded"}}aria-current="page"{{end}}>Discarded <span>{{.DiscardedCount}}</span></a>
+</nav>
+
+{{if .Notice}}<div class="alert alert-success" role="status">{{.Notice}}</div>{{end}}
+
+<form class="search mining-filters" method="get" action="/mining" data-mining-filters>
+  {{if ne (printf "%s" .Status) "pending"}}<input type="hidden" name="status" value="{{.Status}}">{{end}}
+  <label><span class="visually-hidden">Search captures</span><input type="search" name="q" value="{{.Search}}" placeholder="Search word, sentence, or source"></label>
+  <label><span class="visually-hidden">Filter by source</span><select name="source">
+    <option value="">All sources</option>
+    <option value="manual" {{if eq .Source "manual"}}selected{{end}}>Manual</option>
+    <option value="web" {{if eq .Source "web"}}selected{{end}}>Web</option>
+    <option value="video" {{if eq .Source "video"}}selected{{end}}>Video</option>
+    <option value="ebook" {{if eq .Source "ebook"}}selected{{end}}>Ebook</option>
+    <option value="other" {{if eq .Source "other"}}selected{{end}}>Other</option>
+  </select></label>
+  <button class="button button-secondary" type="submit">Apply</button>
+</form>
+
+{{if .Items}}
+<form method="post" action="/mining/bulk" data-mining-bulk>
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  {{if ne (printf "%s" .Status) "accepted"}}
+  <div class="bulk-toolbar" data-mining-bulk-toolbar>
+    <span data-mining-selection-summary>0 selected</span>
+    <button class="text-button" type="button" data-mining-select-all>Select all</button>
+    <button class="text-button" type="button" data-mining-clear>Clear</button>
+    {{if eq (printf "%s" .Status) "pending"}}
+    <button class="button button-small" name="action" value="accept_ready" type="submit" data-mining-bulk-action data-ready-only disabled>Add selected ready captures</button>
+    <button class="button button-secondary button-small" name="action" value="discard" type="submit" data-mining-bulk-action disabled>Discard selected</button>
+    {{end}}
+    {{if eq (printf "%s" .Status) "discarded"}}<button class="button button-secondary button-small" name="action" value="restore" type="submit" data-mining-bulk-action disabled>Restore selected</button>{{end}}
+  </div>
+  {{end}}
+<div class="mining-list">
+  {{range .Items}}
+  <article class="mining-card">
+    {{if ne (printf "%s" $.Status) "accepted"}}<input type="checkbox" name="capture_id" value="{{.ID}}" aria-label="Select {{.Expression}}" data-clear-match="{{.ClearMatch}}">{{end}}
+    <a class="mining-card-link" href="/mining/captures/{{.ID}}">
+    <div class="mining-card-copy">
+      <div class="mining-card-heading">
+        <h2 class="jp-word" lang="ja">{{.Expression}}{{if .SuggestedReading}} <span class="mining-card-reading">{{.SuggestedReading}}</span>{{end}}</h2>
+        <span class="status status-{{.Status}}">{{.Status.Label}}</span>
+      </div>
+      {{if .MeaningPreview}}<p class="mining-meaning-preview">{{.MeaningPreview}}</p>{{end}}
+      {{if .ContextText}}<p class="mining-context" lang="ja">{{.ContextText}}</p>{{end}}
+      <p class="mining-meta">
+        {{if .SourceTitle}}<span>{{.SourceTitle}}</span>{{else if eq (printf "%s" .SourceKind) "manual"}}<span>Added manually</span>{{else if eq (printf "%s" .SourceKind) "web"}}<span>Web page</span>{{else if eq (printf "%s" .SourceKind) "video"}}<span>Video</span>{{else if eq (printf "%s" .SourceKind) "ebook"}}<span>Ebook</span>{{else}}<span>Other source</span>{{end}}
+        {{if .PositionLabel}}<span>{{.PositionLabel}}</span>{{end}}
+        <time datetime="{{.CreatedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.Age}}</time>
+      </p>
+    </div>
+    {{if .ExistingVocabularyID}}<span class="match-badge">Already in vocabulary</span>
+    {{else if eq (printf "%s" $.Status) "pending"}}
+      {{if .ClearMatch}}<span class="match-badge match-badge-ready">Clear match</span>
+      {{else if eq (printf "%s" .MatchState) "ambiguous"}}<span class="match-badge">{{.MatchCount}} choices</span>
+      {{else if eq (printf "%s" .MatchState) "failed"}}<span class="match-badge">Dictionary unavailable</span>
+      {{else if eq (printf "%s" .MatchState) "no_match"}}<span class="match-badge">Enter manually</span>
+      {{else}}<span class="match-badge">Review card</span>{{end}}
+    {{end}}
+    </a>
+  </article>
+  {{end}}
+</div>
+</form>
+{{if gt .PageCount 1}}
+<nav class="pagination" aria-label="Mining inbox pages">
+  <p class="pagination-status">Page {{.Page}} of {{.PageCount}}</p>
+  <div class="pagination-actions">
+    {{if .PreviousURL}}<a class="button button-secondary" href="{{.PreviousURL}}" rel="prev"><span class="ui-icon icon-arrow-left" aria-hidden="true"></span>Previous</a>{{end}}
+    {{if .NextURL}}<a class="button button-secondary pagination-next" href="{{.NextURL}}" rel="next">Next<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>{{end}}
+  </div>
+</nav>
+{{end}}
+{{else}}
+<section class="empty-state">
+  {{if or .Search .Source}}
+  <h2>No matching captures</h2>
+  <p>Change the search or source filter.</p>
+  {{else if eq (printf "%s" .Status) "pending"}}
+  <h2>Nothing to review</h2>
+  <p>New browser-extension and manual captures appear here.</p>
+  <a class="button button-secondary button-small" href="/mining/capture">Capture a word</a>
+  {{else if eq (printf "%s" .Status) "accepted"}}
+  <h2>No added captures</h2>
+  <p>Completed captures appear in Vocabulary.</p>
+  <a class="text-action" href="/vocabulary">Open vocabulary <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+  {{else}}
+  <h2>No discarded captures</h2>
+  <p>Discarded captures can be restored from this view.</p>
+  {{end}}
+</section>
+{{end}}
+{{template "footer" .}}

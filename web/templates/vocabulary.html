@@ -1,0 +1,113 @@
+{{template "header" .}}
+<section class="page-heading page-heading-compact vocabulary-page-heading">
+  <div>
+    <h1>Vocabulary</h1>
+    <p class="lede">
+      {{.LearningCount}} studying
+      <span aria-hidden="true">·</span> {{.KnownElsewhereCount}} known elsewhere
+      {{if or .Search .Filter}}<span aria-hidden="true">·</span> {{.TotalCount}} {{if eq .TotalCount 1}}result{{else}}results{{end}}{{end}}
+    </p>
+  </div>
+  <div class="page-heading-actions vocabulary-heading-actions">
+    <a class="button button-secondary button-small" href="/imports">Import vocabulary</a>
+    <details class="action-menu">
+      <summary class="button button-secondary button-small">Export</summary>
+      <div class="action-menu-items">
+        <a href="/vocabulary/export?format=comma" download>Plain text</a>
+        <a href="/vocabulary/export?format=json" download>JSON</a>
+      </div>
+    </details>
+  </div>
+</section>
+
+{{if .Notice}}
+<div class="alert alert-success" role="status">{{.Notice}}</div>
+{{end}}
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+{{if .KnownWords}}
+<section class="form-card" aria-labelledby="known-import-error-title">
+  <h2 id="known-import-error-title">Submitted words</h2>
+  <textarea class="jp-input" lang="ja" rows="5" readonly>{{.KnownWords}}</textarea>
+  <div class="form-actions">
+    <a class="button button-secondary" href="/imports">Open Import vocabulary</a>
+  </div>
+</section>
+{{end}}
+
+<div class="vocabulary-list-controls">
+<form class="search" method="get" action="/vocabulary">
+  <label class="visually-hidden" for="search">Search vocabulary</label>
+  <div class="search-row">
+    <input id="search" name="q" value="{{.Search}}" placeholder="Search Japanese or meaning" type="search">
+    {{if .Filter}}<input type="hidden" name="status" value="{{.Filter}}">{{end}}
+    {{if .Sort}}<input type="hidden" name="sort" value="{{.Sort}}">{{end}}
+    <button class="button button-secondary vocabulary-search-submit" type="submit">Search</button>
+  </div>
+</form>
+<form class="compact-control" method="get" action="/vocabulary">
+  {{if .Search}}<input type="hidden" name="q" value="{{.Search}}">{{end}}
+  {{if .Filter}}<input type="hidden" name="status" value="{{.Filter}}">{{end}}
+  <label class="visually-hidden" for="vocabulary-sort">Sort vocabulary</label>
+  <select id="vocabulary-sort" name="sort" data-vocabulary-sort>
+    <option value="" {{if not .Sort}}selected{{end}}>Recently updated</option>
+    <option value="newest" {{if eq .Sort "newest"}}selected{{end}}>Newest added</option>
+    <option value="expression" {{if eq .Sort "expression"}}selected{{end}}>Japanese A–Z</option>
+  </select>
+</form>
+</div>
+
+<nav class="filter-tabs" aria-label="Vocabulary status">
+  {{range .Filters}}
+  <a href="{{.URL}}" {{if .Active}}aria-current="page"{{end}}>{{.Label}} <span>{{.Count}}</span></a>
+  {{end}}
+</nav>
+
+{{if .Items}}
+<div class="word-list">
+  <div class="word-list-heading" aria-hidden="true">
+    <span>Japanese</span>
+    <span>Reading</span>
+    <span>Meaning</span>
+    <span>Status</span>
+  </div>
+  {{range .Items}}
+  <a class="word-card" href="/vocabulary/{{.ID}}">
+    <div class="word-card-copy">
+      <h2 class="jp-word" lang="ja">{{.Expression}}</h2>
+      {{if .Pronunciation}}<p class="reading" lang="ja">{{.Pronunciation}}</p>{{end}}
+      {{if .Meaning}}<p class="word-card-meaning">{{.Meaning}}</p>{{end}}
+    </div>
+    <span>
+      {{if .LeechSuspended}}<span class="status status-leech-suspended">Suspended leech</span>
+      {{else if .LeechActive}}<span class="status status-leech">Leech</span>
+      {{else if .FormerLeech}}<span class="status status-leech-former">Former leech</span>{{end}}
+      <span class="status status-{{.StatusClass}}">{{.StatusLabel}}</span>
+    </span>
+  </a>
+  {{end}}
+</div>
+{{if gt .PageCount 1}}
+<nav class="pagination" aria-label="Vocabulary pages">
+  <p class="pagination-status">Page {{.Page}} of {{.PageCount}}</p>
+  <div class="pagination-actions">
+    {{if .PreviousURL}}<a class="button button-secondary" href="{{.PreviousURL}}" rel="prev"><span class="ui-icon icon-arrow-left" aria-hidden="true"></span>Previous</a>{{end}}
+    {{if .NextURL}}<a class="button button-secondary pagination-next" href="{{.NextURL}}" rel="next">Next<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>{{end}}
+  </div>
+</nav>
+{{end}}
+{{else}}
+<section class="empty-state">
+  {{if or .Search .Filter}}
+  {{if .Search}}<h2>No matches for “{{.Search}}”</h2>{{else}}<h2>No words in this view</h2>{{end}}
+  <p>Change the search or filter.</p>
+  <a class="text-action" href="/vocabulary">Show all vocabulary <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+  {{else}}
+  <h2>No words yet</h2>
+  <p>Capture a word, import a list, or use the browser extension.</p>
+  <a class="button button-secondary button-small" href="/mining/capture">Capture a word</a>
+  {{end}}
+</section>
+{{end}}
+{{template "footer" .}}

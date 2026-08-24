@@ -1,0 +1,245 @@
+{{template "header" .}}
+<header class="page-heading settings-page-heading">
+  <div>
+    <h1>Settings</h1>
+  </div>
+</header>
+
+{{template "settings-navigation" "preferences"}}
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+{{if .Saved}}
+<div class="alert alert-success" role="status">Saved.</div>
+{{end}}
+{{if eq .DictionaryRefreshResult "updated"}}
+<div class="alert alert-success" role="status">Dictionary is up to date.</div>
+{{else if eq .DictionaryRefreshResult "failed"}}
+<div class="alert alert-error" role="alert">Dictionary update failed. See the status below.</div>
+{{end}}
+
+<div class="settings-layout">
+  <form class="panel settings-study" method="post" action="/settings" aria-labelledby="study-preferences-title">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="settings-panel-heading">
+      <h2 id="study-preferences-title">Study</h2>
+    </div>
+
+    <section class="settings-section" aria-labelledby="appearance-settings-title">
+      <h3 id="appearance-settings-title">Appearance</h3>
+      <div class="settings-appearance-grid">
+        <div class="form-field settings-time-zone">
+          <span class="field-label">Time zone</span>
+          <div class="settings-current-value">
+            <strong id="time-zone-current" data-time-zone-current="time-zone">{{.Values.TimeZone}}</strong>
+            <button class="text-action" type="button" data-time-zone-detect="time-zone">Use browser time zone</button>
+          </div>
+          <span class="help" id="time-zone-help">Used for review days and backup times.</span>
+          <details class="settings-inline-details">
+            <summary>Enter manually</summary>
+            <div class="details-body">
+              <label for="time-zone">Time zone name</label>
+              <input id="time-zone" name="time_zone" value="{{.Values.TimeZone}}" list="time-zone-options" aria-describedby="time-zone-manual-help" data-time-zone required>
+              <datalist id="time-zone-options">
+                <option value="UTC"></option>
+                <option value="Europe/London"></option>
+                <option value="America/New_York"></option>
+                <option value="Asia/Tokyo"></option>
+              </datalist>
+              <span class="help" id="time-zone-manual-help">Start typing a city and choose a matching time zone.</span>
+            </div>
+          </details>
+        </div>
+        <fieldset class="choice-field">
+          <legend>Theme</legend>
+          <div class="choice-options settings-theme-options">
+            <label class="choice-option">
+              <input type="radio" name="theme" value="system" {{if eq .Values.Theme "system"}}checked{{end}}>
+              <span>System</span>
+            </label>
+            <label class="choice-option">
+              <input type="radio" name="theme" value="light" {{if eq .Values.Theme "light"}}checked{{end}}>
+              <span>Light</span>
+            </label>
+            <label class="choice-option">
+              <input type="radio" name="theme" value="dark" {{if eq .Values.Theme "dark"}}checked{{end}}>
+              <span>Dark</span>
+            </label>
+          </div>
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="settings-section" aria-labelledby="review-settings-title">
+      <h3 id="review-settings-title">Reviews</h3>
+      <div class="settings-review-grid">
+        <fieldset class="choice-field">
+          <legend>Answering</legend>
+          <div class="choice-options settings-review-options">
+            <label class="choice-option">
+              <input type="radio" name="review_mode" value="typed" {{if eq .Values.ReviewMode "typed"}}checked{{end}}>
+              <span><strong>Type answers</strong><small>Goi checks what you enter.</small></span>
+            </label>
+            <label class="choice-option">
+              <input type="radio" name="review_mode" value="self_grade" {{if eq .Values.ReviewMode "self_grade"}}checked{{end}}>
+              <span><strong>Self grade</strong><small>Reveal the answer, then choose Again or Good.</small></span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="choice-field">
+          <legend>Review order</legend>
+          <div class="choice-options settings-review-options">
+            <label class="choice-option">
+              <input type="radio" name="review_order" value="stage_ascending" {{if eq .Values.ReviewOrder "stage_ascending"}}checked{{end}}>
+              <span><strong>Lower stages first</strong><small>Start with newer words.</small></span>
+            </label>
+            <label class="choice-option">
+              <input type="radio" name="review_order" value="stage_descending" {{if eq .Values.ReviewOrder "stage_descending"}}checked{{end}}>
+              <span><strong>Higher stages first</strong><small>Start with mature words.</small></span>
+            </label>
+            <label class="choice-option">
+              <input type="radio" name="review_order" value="random" {{if eq .Values.ReviewOrder "random"}}checked{{end}}>
+              <span><strong>Random</strong><small>Mix all due stages.</small></span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="choice-field">
+          <legend>Reading and meaning</legend>
+          <div class="choice-options settings-review-options">
+            <label class="choice-option">
+              <input type="radio" name="review_card_order" value="together" {{if eq .Values.ReviewCardOrder "together"}}checked{{end}}>
+              <span><strong>Together</strong><small>Reading, then meaning.</small></span>
+            </label>
+            <label class="choice-option">
+              <input type="radio" name="review_card_order" value="spaced" {{if eq .Values.ReviewCardOrder "spaced"}}checked{{end}}>
+              <span><strong>Spaced</strong><small>Meaning appears two to five cards after reading.</small></span>
+            </label>
+          </div>
+        </fieldset>
+      </div>
+      <div class="settings-toggles">
+        <label class="settings-toggle">
+          <input type="checkbox" name="review_auto_advance" {{if .Values.ReviewAutoAdvance}}checked{{end}}>
+          <span>
+            <strong>Advance after a correct typed answer</strong>
+            <small>Skip the answer confirmation. Self grading still waits for Good or Again.</small>
+          </span>
+        </label>
+        <label class="settings-toggle">
+          <input type="checkbox" name="audio_enabled" {{if .Values.AudioEnabled}}checked{{end}}>
+          <span>
+            <strong>Play audio automatically</strong>
+            <small>When an answer is revealed. Audio can still be played manually when this is off.</small>
+          </span>
+        </label>
+        <label class="settings-toggle">
+          <input type="checkbox" name="six_month_review" {{if .Values.SixMonthReview}}checked{{end}}>
+          <span>
+            <strong>Add a 6-month review</strong>
+            <small>After the 4-month review and before burning. Existing due dates do not change.</small>
+          </span>
+        </label>
+      </div>
+      <p class="help">Mode and card-order changes apply to new sessions.</p>
+      <p class="settings-schedule">4h → 8h → 1d → 2d → 7d → 14d → 1mo → 4mo → {{if .Values.SixMonthReview}}6mo → {{end}}burned</p>
+    </section>
+
+    <details class="settings-disclosure">
+      <summary>
+        <span>Practice</span>
+        <small>Quick practice size and answer attempts</small>
+      </summary>
+      <div class="details-body settings-number-grid">
+        <label>
+          Keep new words in quick practice for
+          <select name="lesson_window_hours">
+            <option value="4" {{if eq .Values.LessonWindowHours 4}}selected{{end}}>4 hours</option>
+            <option value="8" {{if eq .Values.LessonWindowHours 8}}selected{{end}}>8 hours</option>
+            <option value="12" {{if eq .Values.LessonWindowHours 12}}selected{{end}}>12 hours</option>
+            <option value="24" {{if eq .Values.LessonWindowHours 24}}selected{{end}}>24 hours</option>
+          </select>
+        </label>
+        <label>
+          Words per practice session
+          <input type="number" name="extra_study_limit" min="1" max="100" value="{{.Values.ExtraStudyLimit}}" required>
+        </label>
+        <label>
+          Attempts before showing the answer
+          <input type="number" name="retry_count" min="1" max="5" value="{{.Values.RetryCount}}" required>
+        </label>
+      </div>
+    </details>
+
+    <details class="settings-disclosure">
+      <summary>
+        <span>Leeches</span>
+        <small>When difficult words are marked, suspended, and cleared</small>
+      </summary>
+      <div class="details-body settings-number-grid">
+        <label>
+          Mark after
+          <input type="number" name="leech_failure_count" min="1" max="100" value="{{.Values.LeechFailureCount}}" required>
+          <span class="help">failed reviews</span>
+        </label>
+        <label>
+          Suspend after another
+          <input type="number" name="leech_suspend_count" min="1" max="100" value="{{.Values.LeechSuspendCount}}" required>
+          <span class="help">failed reviews as a leech</span>
+        </label>
+        <label>
+          Clear after
+          <input type="number" name="leech_recovery_streak" min="1" max="100" value="{{.Values.LeechRecoveryStreak}}" required>
+          <span class="help">correct answers in a row</span>
+        </label>
+      </div>
+    </details>
+
+    <div class="form-actions settings-save">
+      <button class="button" type="submit">Save</button>
+    </div>
+  </form>
+
+  <aside class="settings-sidebar" aria-label="Maintenance and session settings">
+    <details class="panel settings-maintenance" id="dictionary-settings">
+      <summary>Dictionary</summary>
+      <div class="details-body" aria-labelledby="dictionary-settings-title">
+        <div>
+          <h2 class="visually-hidden" id="dictionary-settings-title">JMdict</h2>
+          <p class="muted">Local dictionary used for lookup and mining.</p>
+        </div>
+        <dl class="metadata">
+          <dt>Status</dt>
+          <dd>{{if .Dictionary.RefreshRunning}}Refreshing{{else if .Dictionary.Available}}Available{{else}}Unavailable{{end}}</dd>
+          <dt>Version</dt>
+          <dd>{{if .Dictionary.Version}}{{.Dictionary.Version}}{{else}}—{{end}}</dd>
+          <dt>Source date</dt>
+          <dd>{{if .Dictionary.SourceCreated}}{{.Dictionary.SourceCreated}}{{else}}—{{end}}</dd>
+          <dt>Last checked</dt>
+          <dd>{{if .Dictionary.LastCheck}}{{.Dictionary.LastCheck}}{{else}}Never{{end}}</dd>
+          <dt>Last updated</dt>
+          <dd>{{if .Dictionary.LastSuccess}}{{.Dictionary.LastSuccess}}{{else}}Never{{end}}</dd>
+          <dt>Latest error</dt>
+          <dd>{{if .Dictionary.Error}}{{.Dictionary.Error}}{{else}}None{{end}}</dd>
+        </dl>
+        <form method="post" action="/settings/jmdict/refresh">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button class="button button-secondary button-small" type="submit" {{if .Dictionary.RefreshRunning}}disabled{{end}}>Check for updates</button>
+        </form>
+      </div>
+    </details>
+
+    {{if .AuthEnabled}}
+    <section class="panel settings-session" aria-labelledby="account-settings-title">
+      <h2 id="account-settings-title">Session</h2>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="button button-secondary button-small" type="submit">Sign out</button>
+      </form>
+    </section>
+    {{end}}
+  </aside>
+</div>
+{{template "footer" .}}

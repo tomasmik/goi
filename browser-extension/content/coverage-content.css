@@ -1,0 +1,235 @@
+::highlight(goi-unknown-words) {
+  background: rgb(230 99 82 / 10%);
+  text-decoration: underline dotted rgb(184 70 57 / 70%) 1px;
+  text-underline-offset: .18em;
+}
+
+::highlight(goi-active-unknown-word) {
+  background: rgb(230 99 82 / 28%);
+  text-decoration: underline solid #b84639 2px;
+  text-underline-offset: .18em;
+}
+
+#goi-ext-coverage {
+  position: fixed !important;
+  z-index: 2147483646 !important;
+  right: 14px !important;
+  bottom: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 9px !important;
+  max-width: min(400px, calc(100vw - 28px)) !important;
+  box-sizing: border-box !important;
+  padding: 8px 9px 8px 11px !important;
+  border: 1px solid rgb(32 40 58 / 16%) !important;
+  border-radius: 4px !important;
+  color: #182132 !important;
+  background: rgb(251 249 243 / 97%) !important;
+  box-shadow: 0 6px 18px rgb(32 40 58 / 14%) !important;
+  font: 13px/1.3 "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  letter-spacing: normal !important;
+}
+
+#goi-ext-coverage[hidden] {
+  display: none !important;
+}
+
+#goi-ext-coverage[data-goi-corner="bottom-left"] {
+  right: auto !important;
+  left: 14px !important;
+}
+
+#goi-ext-coverage[data-goi-corner="top-left"] {
+  right: auto !important;
+  bottom: auto !important;
+  top: 14px !important;
+  left: 14px !important;
+}
+
+#goi-ext-coverage[data-goi-corner="top-right"] {
+  bottom: auto !important;
+  top: 14px !important;
+}
+
+#goi-ext-coverage > div:first-child {
+  display: grid !important;
+  min-width: 0 !important;
+  gap: 1px !important;
+}
+
+#goi-ext-coverage strong {
+  color: #20283a !important;
+  font: 650 13px/1.25 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+
+#goi-ext-coverage span {
+  overflow: hidden !important;
+  color: #696f7e !important;
+  font: 11px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+#goi-ext-coverage > div:last-child {
+  display: flex !important;
+  flex: 0 0 auto !important;
+  gap: 4px !important;
+}
+
+#goi-ext-coverage.goi-ext-coverage--collapsed > div:first-child span,
+#goi-ext-coverage.goi-ext-coverage--collapsed > div:last-child button:nth-child(n + 3) {
+  display: none !important;
+}
+
+#goi-ext-coverage button,
+#goi-ext-coverage-word-menu button {
+  min-width: 0 !important;
+  min-height: 30px !important;
+  box-sizing: border-box !important;
+  margin: 0 !important;
+  padding: 5px 8px !important;
+  border: 1px solid rgb(32 40 58 / 16%) !important;
+  border-radius: 3px !important;
+  color: #3e475a !important;
+  background: #fff !important;
+  box-shadow: none !important;
+  font: 600 11px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  cursor: pointer !important;
+}
+
+#goi-ext-coverage-word-menu {
+  position: fixed !important;
+  z-index: 2147483647 !important;
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  gap: 10px !important;
+  width: min(390px, calc(100vw - 16px)) !important;
+  max-height: min(72vh, 620px) !important;
+  box-sizing: border-box !important;
+  padding: 12px !important;
+  overflow: hidden !important;
+  border: 1px solid rgb(32 40 58 / 16%) !important;
+  border-radius: 4px !important;
+  color: #182132 !important;
+  background: #fbf9f3 !important;
+  box-shadow: 0 8px 22px rgb(32 40 58 / 20%) !important;
+  font: 400 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  letter-spacing: normal !important;
+}
+
+#goi-ext-coverage-word-menu {
+  --goi-dictionary-term: #20283a;
+  --goi-dictionary-reading: #0f7377;
+  --goi-dictionary-muted: #697181;
+  --goi-dictionary-line: rgb(32 40 58 / 16%);
+  --goi-dictionary-tag: #f3f0e9;
+}
+
+#goi-ext-coverage-word-menu .goi-ext-coverage-word-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+}
+
+#goi-ext-coverage-word-menu .goi-ext-coverage-word-header > strong {
+  color: #20283a !important;
+  font: 500 21px/1.25 "BIZ UDPGothic", "Hiragino Sans", "Yu Gothic", sans-serif !important;
+}
+
+#goi-ext-coverage-word-menu .dictionary-lookup {
+  max-height: min(52vh, 450px) !important;
+  padding-right: 4px !important;
+  overflow-y: auto !important;
+  color: #20283a !important;
+}
+
+#goi-ext-coverage-word-menu > div:last-child {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+
+#goi-ext-coverage-word-menu #goi-ext-coverage-mine,
+#goi-ext-coverage-word-menu .goi-dictionary-select {
+  width: 100% !important;
+  color: #fff !important;
+  border-color: #b84639 !important;
+  background: #b84639 !important;
+  margin-top: 10px !important;
+  font-size: 12px !important;
+}
+
+#goi-ext-coverage-word-close {
+  flex: 0 0 auto !important;
+  min-height: 26px !important;
+  padding: 3px 7px !important;
+}
+
+#goi-ext-coverage-word-menu #goi-ext-coverage-ignore,
+#goi-ext-coverage-word-menu #goi-ext-coverage-ignore-global {
+  flex: 1 1 auto !important;
+  background: #fffdf8 !important;
+  color: #3e475a !important;
+}
+
+#goi-ext-coverage button:focus-visible,
+#goi-ext-coverage-word-menu button:focus-visible {
+  outline: 3px solid #0f6367 !important;
+  outline-offset: 2px !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  #goi-ext-coverage {
+    border-color: rgb(255 255 255 / 14%) !important;
+    color: #f7f3ea !important;
+    background: rgb(25 35 48 / 97%) !important;
+  }
+
+  #goi-ext-coverage strong {
+    color: #f7f3ea !important;
+  }
+
+  #goi-ext-coverage span {
+    color: #aab2c1 !important;
+  }
+
+  #goi-ext-coverage button {
+    border-color: rgb(255 255 255 / 15%) !important;
+    color: #d8dce5 !important;
+    background: #293241 !important;
+  }
+
+  #goi-ext-coverage-word-menu {
+    border-color: rgb(255 255 255 / 15%) !important;
+    color: #f7f3ea !important;
+    background: #192330 !important;
+  }
+
+  #goi-ext-coverage-word-menu {
+    --goi-dictionary-term: #f7f3ea;
+    --goi-dictionary-reading: #6bcaca;
+    --goi-dictionary-muted: #aab2c1;
+    --goi-dictionary-line: rgb(255 255 255 / 15%);
+    --goi-dictionary-tag: #222a36;
+  }
+
+  #goi-ext-coverage-word-menu .goi-ext-coverage-word-header > strong,
+  #goi-ext-coverage-word-menu .dictionary-lookup {
+    color: #f7f3ea !important;
+  }
+
+  #goi-ext-coverage-word-menu #goi-ext-coverage-ignore,
+  #goi-ext-coverage-word-menu #goi-ext-coverage-ignore-global {
+    border-color: rgb(255 255 255 / 15%) !important;
+    color: #d8dce5 !important;
+    background: #222a36 !important;
+  }
+
+  #goi-ext-coverage button:focus-visible,
+  #goi-ext-coverage-word-menu button:focus-visible {
+    outline-color: #6bcaca !important;
+  }
+}

@@ -1,0 +1,33 @@
+body {
+  width: auto;
+  min-height: 100vh;
+}
+
+main {
+  box-sizing: border-box;
+  width: min(620px, 100%);
+  margin: 0 auto;
+  padding: 24px 18px;
+}
+
+header p {
+  line-height: 1.4;
+}
+
+.connection-state {
+  margin-top: 20px;
+}
+
+#connection-form {
+  margin-top: 14px;
+}
+
+input[type="url"],
+input[type="password"] {
+  padding: 10px 11px;
+  font-size: 14px;
+}
+
+#status {
+  margin-top: 14px;
+}

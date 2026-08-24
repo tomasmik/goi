@@ -1,0 +1,53 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>Difficult words</h1>
+    <p class="lede">Words that repeatedly fail scheduled reviews.</p>
+  </div>
+  <div class="page-heading-actions">
+    <a class="text-action" href="/settings">Leech settings <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+    {{if gt (len .Items) 1}}
+    <form method="post" action="/study/leeches">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="button" type="submit">Practice all difficult words</button>
+    </form>
+    {{end}}
+  </div>
+</section>
+
+{{if .Items}}
+<div class="word-list">
+  {{range .Items}}
+  <article class="word-card leech-card">
+    <a class="leech-card-copy" href="/vocabulary/{{.ID}}">
+      <h2 class="jp-word" lang="ja">{{.Expression}}</h2>
+      <p class="reading" lang="ja">{{.Pronunciation}}</p>
+      <p>
+        {{if .Suspended}}<span class="status status-leech-suspended">Suspended</span>{{else}}<span class="status status-leech">Leech</span>{{end}}
+        {{if .FailuresSinceMark}} · {{.FailuresSinceMark}} {{if eq .FailuresSinceMark 1}}failure{{else}}failures{{end}} since marking{{end}}
+        {{if .CorrectStreak}} · {{.CorrectStreak}} correct in a row{{end}}
+      </p>
+    </a>
+    <div class="detail-actions">
+      <form method="post" action="/study/selected">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="vocabulary_id" value="{{.ID}}">
+        <button class="button button-secondary button-small" type="submit" aria-label="Practice {{.Expression}}">Practice this word</button>
+      </form>
+      {{if .Suspended}}<form method="post" action="/vocabulary/{{.ID}}/action">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="action" value="suspend">
+        <input type="hidden" name="return_to" value="/leeches">
+        <button class="button button-secondary button-small" type="submit" aria-label="Resume reviews for {{.Expression}}">Resume reviews</button>
+      </form>{{end}}
+    </div>
+  </article>
+  {{end}}
+</div>
+{{else}}
+<section class="empty-state">
+  <h2>No difficult words</h2>
+  <p>Words appear here after reaching your configured failure limit.</p>
+</section>
+{{end}}
+{{template "footer" .}}

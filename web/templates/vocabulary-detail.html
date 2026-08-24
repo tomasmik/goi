@@ -1,0 +1,292 @@
+{{template "header" .}}
+<a class="back-link" href="/vocabulary">&larr; Vocabulary</a>
+{{if .Notice}}
+<div class="alert alert-success" role="status">{{.Notice}}</div>
+{{end}}
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+<section class="detail-heading">
+  <div>
+    <h1 class="jp-word" lang="ja">{{.Item.Expression}}</h1>
+    {{if .Item.Pronunciation}}<p class="reading large" lang="ja">{{.Item.Pronunciation}}</p>{{end}}
+  </div>
+  <span>
+    {{if .Item.LeechSuspended}}<span class="status status-leech-suspended">Suspended leech</span>
+    {{else if .Item.LeechActive}}<span class="status status-leech">Leech</span>
+    {{else if .Item.FormerLeech}}<span class="status status-leech-former">Former leech</span>{{end}}
+    <span class="status status-{{.Item.StatusClass}}">{{.Item.StatusLabel}}</span>
+  </span>
+</section>
+
+<div class="detail-actions">
+  <a class="button" href="/vocabulary/{{.Item.ID}}/edit">Edit card</a>
+  {{if .Item.CanMarkKnown}}
+  <form method="post" action="/vocabulary/{{.Item.ID}}/action" data-confirm="Mark this word as already known? Its review progress and leech state will be cleared, and it will no longer appear in lessons or reviews.">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="action" value="mark-known">
+    <label class="destructive-confirmation" data-confirm-fallback><input type="checkbox" name="confirmed" value="1" required data-confirm-field>Confirm removal from lessons and reviews</label>
+    <button class="button button-secondary" type="submit">I already know this</button>
+  </form>
+  {{end}}
+  {{if and .Item.KnownElsewhere (eq .Item.Status "unlearned")}}
+  <form method="post" action="/vocabulary/{{.Item.ID}}/action">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="action" value="learn">
+    <button class="button button-secondary" type="submit">Move to lessons</button>
+  </form>
+  {{end}}
+</div>
+{{if .Item.CanMarkKnown}}<p class="section-note known-action-note">“I already know this” removes the word from lessons and reviews and clears its review progress.</p>{{end}}
+
+{{if .Item.Media}}
+<section class="media-strip">
+  {{range .Item.Media}}
+  {{if eq .Kind "audio"}}
+  <div>
+    <audio controls preload="metadata" src="/media/{{.ID}}" aria-label="Pronunciation audio for {{$.Item.Expression}}"></audio>
+    {{if .SourceName}}
+    <p class="help">
+      Audio:
+      {{if .SourceURL}}<a href="{{.SourceURL}}" target="_blank" rel="noopener noreferrer">{{.SourceName}}</a>{{else}}{{.SourceName}}{{end}}
+      {{if .LicenseName}}
+      · {{if .LicenseURL}}<a href="{{.LicenseURL}}" target="_blank" rel="license noopener noreferrer">{{.LicenseName}}</a>{{else}}{{.LicenseName}}{{end}}
+      {{end}}
+    </p>
+    {{end}}
+  </div>
+  {{end}}
+  {{if eq .Kind "image"}}
+  <a class="media-image-link" href="/media/{{.ID}}" aria-label="Open full-size image for {{$.Item.Expression}}">
+    <img src="/media/{{.ID}}" alt="Illustration for {{$.Item.Expression}}" loading="lazy">
+  </a>
+  {{end}}
+  {{end}}
+</section>
+{{end}}
+
+<div class="detail-grid">
+  {{if .Item.Meanings}}
+  <section class="panel">
+    <h2>Meanings</h2>
+    <ul class="meaning-list">
+      {{range .Item.Meanings}}
+      <li>{{.}}</li>
+      {{end}}
+    </ul>
+  </section>
+  {{else if and .Item.KnownElsewhere (eq .Item.Status "unlearned")}}
+  <section class="panel">
+    <h2>Known elsewhere</h2>
+    <p class="section-note">Included in coverage. Not included in lessons or reviews.</p>
+  </section>
+  {{else}}
+  <section class="panel">
+    <h2>No meaning added</h2>
+    <p class="section-note">Edit this word to add a reading and meaning.</p>
+  </section>
+  {{end}}
+  {{if .Item.KnownElsewhere}}
+  <section class="panel">
+    <h2>Reviews</h2>
+    <p class="section-note">Not scheduled. This word only counts toward coverage.</p>
+  </section>
+  {{else}}
+  <section class="panel">
+    <h2>Study progress</h2>
+    {{if eq .Item.Status "unlearned"}}
+    <p class="section-note">Not learned yet.</p>
+    {{else}}
+    <dl class="metadata">
+      <dt>Memory stage</dt>
+      <dd>{{if .Item.StageLabel}}{{.Item.StageLabel}}{{else}}Not started{{end}}</dd>
+      <dt>Next review</dt>
+      <dd>{{if .Item.NextReview.IsZero}}—{{else}}{{if .Item.NextReview.Before .Now}}Overdue · {{else}}Due {{end}}<time datetime="{{.Item.NextReview.Format "2006-01-02T15:04:05Z07:00"}}" data-local-time>{{.Item.NextReview.Format "2006-01-02 15:04"}}</time>{{end}}</dd>
+      <dt>Reviews completed</dt>
+      <dd>{{.Item.ReviewCount}}</dd>
+      <dt>First-try accuracy</dt>
+      <dd>{{if .Item.PromptCount}}{{percent .Item.FirstTryCorrect .Item.PromptCount}}%{{else}}—{{end}}</dd>
+    </dl>
+    {{end}}
+  </section>
+  {{end}}
+</div>
+
+{{if .Item.ReviewHistory}}
+<details class="panel form-details review-history">
+  <summary>Recent review history</summary>
+  <div class="details-body">
+    <ol>
+      {{range .Item.ReviewHistory}}
+      <li><time datetime="{{.ReviewedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.ReviewedAt.Format "2006-01-02 15:04"}}</time> · {{.Outcome}} · {{.StageFrom}} → {{.StageTo}}</li>
+      {{end}}
+    </ol>
+  </div>
+</details>
+{{end}}
+
+<section class="panel vocabulary-examples" id="examples">
+  <div class="section-heading">
+    <div>
+      <h2>Examples</h2>
+      {{if not .Item.Examples}}<p class="section-note">No examples.</p>{{end}}
+    </div>
+    <div class="page-heading-actions">
+      {{if .GenerationAvailable}}
+      <form method="post" action="/vocabulary/{{.Item.ID}}/examples/generate">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="button button-secondary button-small" type="submit">Generate example</button>
+      </form>
+      {{end}}
+      {{if not .Item.Examples}}<a class="button button-secondary button-small" href="/vocabulary/{{.Item.ID}}/edit#examples">Write an example</a>{{end}}
+    </div>
+  </div>
+
+  {{if .Item.Examples}}
+  <div class="example-list">
+    {{range $index, $example := .Item.Examples}}
+    <article class="example-card{{if or .VideoFrameID .SentenceAudioIDs}} has-media{{end}}">
+      <div class="example-copy">
+        <p class="example-sentence" lang="ja">
+          {{if .HasTarget}}{{.BeforeTarget}}<mark>{{.MatchedTarget}}</mark>{{.AfterTarget}}{{else}}{{.Sentence}}{{end}}
+        </p>
+        {{if .Translation}}<p class="example-translation">{{.Translation}}</p>{{end}}
+        <p class="example-meta">
+          <span class="example-origin">{{if eq .Origin "generated"}}Generated{{else}}{{.Origin}}{{end}}</span>
+          {{if .SourceLink}}
+          <a href="{{.SourceLink}}" target="_blank" rel="noopener noreferrer">{{if .SourceTitle}}{{.SourceTitle}}{{else}}Open source{{end}}</a>
+          {{else if .SourceTitle}}
+          <span>{{.SourceTitle}}</span>
+          {{end}}
+          {{if .SourcePositionLabel}}<span>{{.SourcePositionLabel}}</span>{{end}}
+          {{if .Model}}<span>{{.Model}}</span>{{end}}
+        </p>
+      </div>
+      {{if or .VideoFrameID .SentenceAudioIDs}}
+      <div class="study-example-media example-media">
+        {{if .VideoFrameID}}<img src="/media/{{.VideoFrameID}}" alt="Video frame for this example" loading="lazy">{{end}}
+        {{range .SentenceAudioIDs}}<audio controls preload="metadata" src="/media/{{.}}" aria-label="Native audio for this example"></audio>{{end}}
+      </div>
+      {{end}}
+      <details class="example-edit form-details" {{if eq .ID $.ExampleForm.ID}}open{{end}}>
+        <summary aria-label="Edit example {{add $index 1}}">Edit</summary>
+        <div class="details-body">
+          <form class="example-edit-form" method="post" action="/vocabulary/{{$.Item.ID}}/examples/{{.ID}}">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <label>
+              Japanese sentence
+              <textarea class="jp-input" lang="ja" name="sentence" rows="2" maxlength="2000" required>{{if eq .ID $.ExampleForm.ID}}{{$.ExampleForm.Sentence}}{{else}}{{.Sentence}}{{end}}</textarea>
+            </label>
+            <div class="form-grid">
+              <label>
+                <span class="field-label">Translation <span class="help">Optional</span></span>
+                <textarea name="translation" rows="2" maxlength="2000">{{if eq .ID $.ExampleForm.ID}}{{$.ExampleForm.Translation}}{{else}}{{.Translation}}{{end}}</textarea>
+              </label>
+              <label>
+                <span class="field-label">Highlighted text <span class="help">Optional</span></span>
+                <input class="jp-input" lang="ja" name="target_surface" value="{{if eq .ID $.ExampleForm.ID}}{{$.ExampleForm.TargetSurface}}{{else}}{{.TargetSurface}}{{end}}" maxlength="256">
+              </label>
+            </div>
+            <div class="form-actions">
+              <button class="button button-small" type="submit" aria-label="Save example {{add $index 1}}">Save example</button>
+            </div>
+          </form>
+          <form method="post" action="/vocabulary/{{$.Item.ID}}/examples/{{.ID}}/delete" data-confirm="Remove this example?">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <label class="destructive-confirmation" data-confirm-fallback>
+              <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+              Confirm example removal
+            </label>
+            <button class="button button-danger button-small" type="submit" aria-label="Remove example {{add $index 1}}">Remove example</button>
+          </form>
+        </div>
+      </details>
+    </article>
+    {{end}}
+  </div>
+  {{end}}
+
+  {{if .Item.Examples}}<details class="form-details example-add" {{if and (eq .ExampleForm.ID 0) .Error}}open{{end}}>
+    <summary>Add an example</summary>
+    <form class="example-add-form details-body" method="post" action="/vocabulary/{{.Item.ID}}/examples">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>
+      Japanese sentence
+      <textarea class="jp-input" lang="ja" name="sentence" rows="2" maxlength="2000" required>{{if eq .ExampleForm.ID 0}}{{.ExampleForm.Sentence}}{{end}}</textarea>
+    </label>
+    <div class="form-grid">
+      <label>
+        <span class="field-label">Translation <span class="help">Optional</span></span>
+        <textarea name="translation" rows="2" maxlength="2000">{{if eq $.ExampleForm.ID 0}}{{$.ExampleForm.Translation}}{{end}}</textarea>
+      </label>
+      <label>
+        <span class="field-label">Highlighted text <span class="help">Optional</span></span>
+        <input class="jp-input" lang="ja" name="target_surface" maxlength="256" placeholder="{{.Item.Expression}}" value="{{if eq $.ExampleForm.ID 0}}{{$.ExampleForm.TargetSurface}}{{end}}">
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button button-secondary button-small" type="submit">Add example</button>
+    </div>
+    </form>
+  </details>
+  {{end}}
+  {{if and (not .GenerationAvailable) (not .Item.Examples)}}
+  <p class="section-note">Automatic generation requires an example provider. <a href="/settings/examples">Configure one</a>.</p>
+  {{end}}
+</section>
+
+{{if .Item.Notes}}
+<section class="panel">
+  <h2>Notes</h2>
+  <p class="preformatted">{{.Item.Notes}}</p>
+</section>
+{{end}}
+
+<section class="management-section" aria-labelledby="word-actions-title">
+  <h2 id="word-actions-title">Manage word</h2>
+  <p class="section-note">Pause reviews or remove the word from the active vocabulary list.</p>
+  <div class="detail-actions management-actions">
+    {{if .Item.CanToggleSuspension}}
+    <form method="post" action="/vocabulary/{{.Item.ID}}/action">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="suspend">
+      <button class="button button-secondary button-small" type="submit">
+        {{if eq .Item.Status "suspended"}}Resume reviews{{else}}Suspend reviews{{end}}
+      </button>
+    </form>
+    {{end}}
+    <form method="post" action="/vocabulary/{{.Item.ID}}/action">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="archive">
+      <button class="button button-secondary button-small" type="submit">
+        {{if eq .Item.Status "archived"}}Restore word{{else}}Archive word{{end}}
+      </button>
+    </form>
+  </div>
+  <details class="form-details management-danger">
+    <summary>Reset or permanently remove</summary>
+    <div class="details-body detail-actions management-actions">
+    {{if .Item.CanResetProgress}}
+    <form method="post" action="/vocabulary/{{.Item.ID}}/action" data-confirm="Reset this word to unlearned and erase its review progress?">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="reset">
+      <label class="destructive-confirmation" data-confirm-fallback>
+        <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+        Confirm progress reset
+      </label>
+      <button class="button button-secondary button-small" type="submit">Reset progress</button>
+    </form>
+    {{end}}
+    <form method="post" action="/vocabulary/{{.Item.ID}}/action" data-confirm="Permanently remove this word? This cannot be undone.">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="delete">
+      <label class="destructive-confirmation" data-confirm-fallback>
+        <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+        Confirm permanent removal
+      </label>
+      <button class="button button-danger button-small" type="submit">Remove permanently</button>
+    </form>
+    </div>
+  </details>
+</section>
+{{template "footer" .}}

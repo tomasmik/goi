@@ -1,0 +1,390 @@
+{{define "mining-card-media"}}
+<fieldset class="mining-card-media">
+  <legend>Picture and audio</legend>
+  <input type="hidden" name="expression" value="{{.PronunciationExpression}}">
+  <input type="hidden" name="reading" value="{{.PronunciationReading}}">
+  <div class="mining-media-grid">
+    <div class="mining-media-slot">
+      <div class="mining-media-slot-heading">
+        <h4>Picture</h4>
+        <span class="media-requirement">{{if .Capture.VideoFrameID}}Included{{else}}Optional{{end}}</span>
+      </div>
+      {{if .Capture.VideoFrameID}}
+      <a class="mining-frame-preview" href="/media/{{.Capture.VideoFrameID}}" target="_blank">
+        <img src="/media/{{.Capture.VideoFrameID}}" alt="Picture on this card" loading="lazy">
+      </a>
+      <label class="checkbox-label"><input type="checkbox" name="remove_media_id" value="{{.Capture.VideoFrameID}}">Remove current picture</label>
+      {{end}}
+      <label class="file-picker" data-file-picker>
+        <span class="visually-hidden">{{if .Capture.VideoFrameID}}Replace picture{{else}}Add picture{{end}}</span>
+        <input type="file" name="video_frame" accept="image/png,image/jpeg,image/gif">
+        <span class="file-picker-button">{{if .Capture.VideoFrameID}}Choose replacement{{else}}Choose picture{{end}}</span>
+        <span class="file-picker-name" data-file-name>No file selected</span>
+      </label>
+    </div>
+    <div class="mining-media-slot">
+      <div class="mining-media-slot-heading">
+        <h4>Sentence audio</h4>
+        <span class="media-requirement">{{if .Capture.SentenceAudioIDs}}{{len .Capture.SentenceAudioIDs}} included{{else}}Optional{{end}}</span>
+      </div>
+      {{if .Capture.SentenceAudioIDs}}
+      <div class="mining-audio-list">
+        {{range $index, $mediaID := .Capture.SentenceAudioIDs}}
+        <div class="mining-audio-track">
+          <audio controls preload="metadata" src="/media/{{$mediaID}}" aria-label="Sentence audio track {{add $index 1}}"></audio>
+          <label class="checkbox-label"><input type="checkbox" name="remove_media_id" value="{{$mediaID}}">Remove track {{add $index 1}}</label>
+        </div>
+        {{end}}
+      </div>
+      {{end}}
+      <label class="file-picker" data-file-picker>
+        <span class="visually-hidden">Add sentence audio</span>
+        <input type="file" name="sentence_audio" accept="audio/*,.webm" multiple data-empty-label="No files selected">
+        <span class="file-picker-button">Choose sentence audio</span>
+        <span class="file-picker-name" data-file-name>No files selected</span>
+      </label>
+    </div>
+    <div class="mining-media-slot">
+      <div class="mining-media-slot-heading">
+        <h4>Word audio</h4>
+        <span class="media-requirement media-requirement-recommended">{{if .Capture.PronunciationAudioID}}Included{{else}}Recommended{{end}}</span>
+      </div>
+      {{if .Capture.PronunciationAudioID}}
+      <audio controls preload="metadata" src="/media/{{.Capture.PronunciationAudioID}}" aria-label="Word pronunciation audio"></audio>
+      <label class="checkbox-label"><input type="checkbox" name="remove_media_id" value="{{.Capture.PronunciationAudioID}}">Remove current word audio</label>
+      {{else}}
+      <p class="muted">Used during lessons and reviews.</p>
+      {{end}}
+      <div class="mining-audio-actions">
+        <div class="mining-audio-source-actions">
+          {{if not .Capture.PronunciationAudioID}}<a class="button button-secondary button-small" href="/mining/captures/{{.Capture.ID}}?find_audio=1">Find word audio</a>{{end}}
+          <a class="text-action external-link" href="{{.ForvoURL}}" target="_blank" rel="noopener noreferrer">Search Forvo</a>
+        </div>
+        <div class="mining-audio-upload">
+          <span class="field-label">Upload audio</span>
+          <label class="file-picker" data-file-picker>
+            <span class="visually-hidden">{{if .Capture.PronunciationAudioID}}Replace word audio{{else}}Add word audio{{end}}</span>
+            <input type="file" name="pronunciation_audio" accept="audio/*,.webm">
+            <span class="file-picker-button">{{if .Capture.PronunciationAudioID}}Choose replacement{{else}}Choose audio file{{end}}</span>
+            <span class="file-picker-name" data-file-name>No file selected</span>
+          </label>
+        </div>
+      </div>
+    </div>
+  </div>
+  {{if .PronunciationError}}<div class="alert alert-warning" role="status">{{.PronunciationError}}</div>{{end}}
+  {{if .PronunciationResults}}
+  <div class="mining-pronunciation-results" aria-label="Japanese pronunciation recordings">
+    <div><h4>Open Japanese recordings</h4><p class="muted">Preview a recording, then use it on the card.</p></div>
+    {{range $recording := .PronunciationResults}}
+    <div class="mining-pronunciation-result">
+      <strong lang="ja">{{$recording.Label}}</strong>
+      <audio controls preload="none" src="/mining/captures/{{$.Capture.ID}}/pronunciations/{{$recording.ID}}?expression={{urlquery $.PronunciationExpression}}&amp;reading={{urlquery $.PronunciationReading}}" aria-label="Japanese pronunciation: {{$recording.Label}}"></audio>
+      <button class="button button-small" type="submit" formaction="/mining/captures/{{$.Capture.ID}}/pronunciations/{{$recording.ID}}" formmethod="post" formenctype="application/x-www-form-urlencoded" formnovalidate>Use this recording</button>
+      <span class="help">{{if $recording.SourceURL}}<a href="{{$recording.SourceURL}}" target="_blank" rel="noopener noreferrer">{{$recording.SourceName}}</a>{{else}}{{$recording.SourceName}}{{end}}{{if $recording.LicenseName}} · {{if $recording.LicenseURL}}<a href="{{$recording.LicenseURL}}" target="_blank" rel="license noopener noreferrer">{{$recording.LicenseName}}</a>{{else}}{{$recording.LicenseName}}{{end}}{{end}}</span>
+    </div>
+    {{end}}
+  </div>
+  {{else if and .PronunciationSearched (not .PronunciationError)}}
+  <div class="alert alert-info" role="status">No matching open recording was found. Jisho or Forvo may still have one.</div>
+  {{end}}
+</fieldset>
+{{end}}
+
+{{template "header" .}}
+<a class="back-link" href="/mining">&larr; Mining inbox</a>
+<section class="detail-heading mining-detail-heading">
+  <div>
+    <div class="detail-word-row">
+      <h1 class="jp-word" lang="ja">{{.Capture.Expression}}</h1>
+      <a class="text-action external-link" href="{{.JishoURL}}" target="_blank" rel="noopener noreferrer">Open in Jisho</a>
+    </div>
+  </div>
+  <span class="status status-{{.Capture.Status}}">{{.Capture.Status.Label}}</span>
+</section>
+
+{{if .Notice}}<div class="alert alert-success" role="status">{{.Notice}}</div>{{end}}
+{{if .Error}}<div class="alert alert-error" role="alert">{{.Error}}</div>{{end}}
+
+{{if eq (printf "%s" .Capture.Status) "pending"}}
+<section class="panel mining-review-context" aria-labelledby="captured-sentence-title">
+  <div class="section-heading-row">
+    <div>
+      <h2 id="captured-sentence-title">Sentence context</h2>
+    </div>
+    {{if .SourceURL}}<a class="text-action external-link" href="{{.SourceURL}}" target="_blank" rel="noopener noreferrer">Open source</a>{{end}}
+  </div>
+  {{if .ContextText}}
+  <p class="mining-context mining-context-primary" lang="ja">{{.ContextText}}</p>
+  {{else}}
+  <p class="muted">No sentence was captured. Add one before saving if you want context on the card.</p>
+  {{end}}
+  {{if or .SourceTitle .SourcePositionLabel}}
+  <p class="mining-meta">
+    {{if .SourceTitle}}<span>{{.SourceTitle}}</span>{{end}}
+    {{if .SourcePositionLabel}}<span>{{.SourcePositionLabel}}</span>{{end}}
+  </p>
+  {{end}}
+</section>
+
+{{with .ExistingVocabulary}}
+<section class="panel mining-existing-card" aria-labelledby="existing-card-title">
+  <div class="section-heading-row">
+    <div>
+      <h2 id="existing-card-title">This card already exists</h2>
+    </div>
+    <a class="text-button" href="/vocabulary/{{.ID}}">Open card</a>
+  </div>
+  <div class="mining-card-facts">
+    <div><span>Word</span><strong lang="ja">{{.Expression}}</strong></div>
+    <div><span>Reading</span><strong lang="ja">{{if .Pronunciation}}{{.Pronunciation}}{{else}}Not set{{end}}</strong></div>
+    <div class="mining-card-meanings"><span>Meanings</span><ul>{{range .Meanings}}<li>{{.}}</li>{{else}}<li>None</li>{{end}}</ul></div>
+  </div>
+  {{if and .Pronunciation .Meanings}}
+  <p class="muted">This keeps the card and its history, adds the captured sentence, and restarts it from the first lesson. Current review progress and leech status are cleared.</p>
+  <form method="post" action="/mining/captures/{{$.Capture.ID}}/attach" data-confirm="Restart this card from the first lesson?">
+    <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+    <input type="hidden" name="revision" value="{{$.Capture.Revision}}">
+    <input type="hidden" name="vocabulary_id" value="{{.ID}}">
+    <input type="hidden" name="example_sentence" value="{{$.ExampleSentence}}">
+    <input type="hidden" name="example_target" value="{{$.ExampleTarget}}">
+    <div class="form-actions"><button class="button" type="submit">Restart from first lesson</button></div>
+  </form>
+  {{else}}
+  <p class="alert alert-warning">This card needs a reading and meaning before it can restart.</p>
+  <a class="button button-secondary" href="/vocabulary/{{.ID}}/edit">Complete card</a>
+  {{end}}
+</section>
+{{end}}
+
+{{with .Enrichment}}
+{{if not $.ExistingVocabulary}}
+<section class="panel mining-enrichment mining-enrichment-{{.State}}">
+  <div class="mining-enrichment-heading">
+    <div>
+      {{if $.ExistingVocabulary}}
+      <h2>{{if and $.ExistingVocabulary.Pronunciation $.ExistingVocabulary.Meanings}}Create a separate card{{else}}Choose the matching entry{{end}}</h2>
+      {{else}}
+      <h2>{{.Heading}}</h2>
+      {{end}}
+    </div>
+  </div>
+  <p class="muted">{{.Message}}</p>
+  <div class="mining-choice-workspace{{if gt (len .Candidates) 1}} has-choices{{end}}">
+  {{if gt (len .Candidates) 1}}
+  <div class="mining-choice-sidebar">
+  <div class="mining-candidate-picker" aria-label="Dictionary matches">
+  {{range .Candidates}}
+    <button
+      class="mining-candidate-choice{{if .Selected}} is-selected{{end}}"
+      type="button"
+      data-mining-candidate-choice="candidate-{{.ID}}"
+      aria-controls="candidate-{{.ID}}"
+      aria-pressed="{{if .Selected}}true{{else}}false{{end}}"
+    >
+      <span class="mining-candidate-choice-word"><strong lang="ja">{{.Written}}</strong> <span lang="ja">{{.Pronunciation}}</span></span>
+      {{if .PartsOfSpeech}}<span class="mining-candidate-choice-parts">{{.PartsOfSpeech}}</span>{{end}}
+      {{if .MeaningSummary}}<span class="mining-candidate-choice-meanings">{{.MeaningSummary}}</span>{{end}}
+      <span class="mining-candidate-choice-meta">
+        <span class="match-badge" title="Estimated from JMdict priority data">{{.CommonnessScore}}/100</span>
+      </span>
+    </button>
+  {{end}}
+  </div>
+  </div>
+  {{end}}
+  <div class="mining-candidate-editors">
+  {{range .Candidates}}
+  <article id="candidate-{{.ID}}" class="mining-candidate" data-mining-candidate-editor data-mining-dirty-form {{if not .Selected}}hidden{{end}}>
+    <div class="mining-candidate-heading">
+      <div>
+        <h3><span lang="ja">{{.Written}}</span> <span class="mining-reading" lang="ja">{{.Pronunciation}}</span></h3>
+        {{if .PartsOfSpeech}}<p class="mining-parts">{{.PartsOfSpeech}}</p>{{end}}
+      </div>
+      <span class="match-badge" title="Estimated from JMdict priority data">Commonness {{.CommonnessScore}}/100</span>
+    </div>
+    <form class="mining-card-editor" method="post" action="/mining/captures/{{$.Capture.ID}}/accept" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <input type="hidden" name="revision" value="{{.Revision}}">
+      <input type="hidden" name="candidate_id" value="{{.ID}}">
+      <div class="form-grid mining-word-fields">
+        {{template "card-reading-field" .}}
+        {{template "card-meanings-field" .}}
+      </div>
+      {{template "card-notes-field" .}}
+      <div class="mining-example-fields">
+        <h4>Example on the card</h4>
+        <label>Japanese sentence<textarea class="jp-input" lang="ja" name="example_sentence" rows="3" maxlength="2000">{{.ExampleSentence}}</textarea></label>
+        <div class="form-grid">
+          <label>English translation<textarea name="example_translation" rows="3" maxlength="2000">{{.ExampleTranslation}}</textarea>
+            <button class="button button-secondary button-small mining-translate-action" type="submit" formaction="/mining/captures/{{$.Capture.ID}}/translate" formenctype="application/x-www-form-urlencoded" data-translate-sentence data-remote-translation="{{$.TranslationAvailable}}">Translate sentence</button>
+          </label>
+          <label>Word in sentence<input class="jp-input" lang="ja" name="example_target" value="{{.ExampleTarget}}" maxlength="256"><span class="help">The exact text to highlight in the Japanese sentence.</span></label>
+        </div>
+        {{if $.GenerationAvailable}}
+        <button class="button button-secondary button-small" type="submit" formaction="/mining/captures/{{$.Capture.ID}}/generate" formenctype="application/x-www-form-urlencoded">{{if .ExampleSentence}}Fill translation and highlighted text{{else}}Generate an example{{end}}</button>
+      {{else}}
+      <p class="help">Example generation is not configured. <a href="/settings/examples">Open settings</a>.</p>
+      {{end}}
+      </div>
+      {{template "mining-card-media" $}}
+      {{if .ExistingVocabularyID}}
+      <p class="alert alert-warning">This card is already in your vocabulary. Restarting keeps its content and history, adds this capture, and clears its current review progress and leech status.</p>
+      <div class="form-actions">
+        <button class="button" type="submit" formaction="/mining/captures/{{$.Capture.ID}}/attach-candidate" data-confirm="Restart this card from the first lesson?">Restart from first lesson</button>
+      </div>
+      {{else}}
+      <div class="form-actions"><button class="button" type="submit">Save card</button></div>
+      {{end}}
+    </form>
+  </article>
+  {{end}}
+  </div>
+  </div>
+  {{if .Candidates}}
+  <p class="dictionary-score-note section-note">Estimated from JMdict priority data. This is a rough guide, not measured word frequency.</p>
+  {{end}}
+</section>
+{{end}}
+{{end}}
+
+{{if and (not .HasCandidates) (not .ExistingVocabulary)}}
+<section class="panel mining-manual-entry" data-mining-dirty-form aria-labelledby="manual-entry-title">
+  <h2 id="manual-entry-title">Enter the reading and meanings</h2>
+  <form class="mining-card-editor" method="post" action="/mining/captures/{{.Capture.ID}}/accept" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="revision" value="{{.ManualAcceptRevision}}">
+    <div class="form-grid mining-word-fields">
+      {{template "card-reading-field" .}}
+      {{template "card-meanings-field" .}}
+    </div>
+    {{template "card-notes-field" .}}
+    <div class="mining-example-fields">
+      <h3>Example on the card</h3>
+      <label>Japanese sentence<textarea class="jp-input" lang="ja" name="example_sentence" rows="3" maxlength="2000">{{.ExampleSentence}}</textarea></label>
+      <div class="form-grid">
+        <label>English translation<textarea name="example_translation" rows="3" maxlength="2000">{{.ExampleTranslation}}</textarea>
+          <button class="button button-secondary button-small mining-translate-action" type="submit" formaction="/mining/captures/{{.Capture.ID}}/translate" formenctype="application/x-www-form-urlencoded" data-translate-sentence data-remote-translation="{{.TranslationAvailable}}">Translate sentence</button>
+        </label>
+        <label>Word in sentence<input class="jp-input" lang="ja" name="example_target" value="{{.ExampleTarget}}" maxlength="256"><span class="help">The exact text to highlight in the Japanese sentence.</span></label>
+      </div>
+      {{if .GenerationAvailable}}
+      <button class="button button-secondary button-small" type="submit" formaction="/mining/captures/{{.Capture.ID}}/generate" formenctype="application/x-www-form-urlencoded">{{if .ExampleSentence}}Fill translation and highlighted text{{else}}Generate an example{{end}}</button>
+      {{else}}
+      <p class="help">Example generation is not configured. <a href="/settings/examples">Open settings</a>.</p>
+      {{end}}
+    </div>
+    {{template "mining-card-media" .}}
+    <div class="form-actions">
+      <button class="button" type="submit">Save card</button>
+    </div>
+  </form>
+</section>
+{{end}}
+
+<details class="panel form-details mining-source-editor" {{if .Error}}open{{end}}>
+  <summary id="capture-source-title">Edit captured text and source</summary>
+  <div class="details-body">
+  <form class="inline-form" method="post" action="/mining/captures/{{.Capture.ID}}" data-mining-dirty-form>
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="revision" value="{{.EditRevision}}">
+    <input type="hidden" name="capture_nonce" value="{{.Capture.CaptureNonce}}">
+    <div class="form-grid">
+      <label>Word or phrase<input class="jp-input" lang="ja" name="expression" value="{{.Expression}}" maxlength="256" required></label>
+      <label>Sentence or context<textarea lang="ja" name="context_text" rows="3" maxlength="2000">{{.ContextText}}</textarea></label>
+    </div>
+    <div class="form-grid">
+      <label>
+        Source type
+        <select name="source_kind">
+          <option value="manual" {{if eq .SourceKind "manual"}}selected{{end}}>Manual</option>
+          <option value="web" {{if eq .SourceKind "web"}}selected{{end}}>Web page</option>
+          <option value="video" {{if eq .SourceKind "video"}}selected{{end}}>Video</option>
+          <option value="ebook" {{if eq .SourceKind "ebook"}}selected{{end}}>Ebook</option>
+          <option value="other" {{if eq .SourceKind "other"}}selected{{end}}>Other</option>
+        </select>
+      </label>
+      <label>Video time<input type="text" name="source_position_seconds" value="{{.SourcePositionSeconds}}" placeholder="12:34" inputmode="decimal"></label>
+    </div>
+    <label>Source title<input name="source_title" value="{{.SourceTitle}}" maxlength="300"></label>
+    <label>Source URL<input type="url" name="source_url" value="{{.SourceURL}}" maxlength="2048"></label>
+    <div class="form-actions">
+      <button class="button button-secondary button-small" type="submit">Save source changes</button>
+    </div>
+  </form>
+  </div>
+</details>
+
+<details class="management-section mining-danger-zone form-details">
+  <summary id="capture-actions-title">Discard or delete capture</summary>
+  <div class="details-body">
+    <div class="detail-actions management-actions">
+      <form method="post" action="/mining/captures/{{.Capture.ID}}/discard">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="revision" value="{{.Capture.Revision}}">
+        <button class="button button-secondary button-small" type="submit">Discard</button>
+      </form>
+      <form method="post" action="/mining/captures/{{.Capture.ID}}/delete" data-confirm="Permanently delete this capture, its source context, and captured media?">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="revision" value="{{.Capture.Revision}}">
+        <label class="destructive-confirmation" data-confirm-fallback><input type="checkbox" name="confirmed" value="1" required data-confirm-field>Confirm permanent deletion</label>
+        <button class="button button-danger button-small" type="submit">Delete permanently</button>
+      </form>
+    </div>
+  </div>
+</details>
+{{else}}
+<section class="panel">
+  {{if .Capture.VocabularyID}}
+  <div class="section-heading-row">
+    <h2>Linked vocabulary</h2>
+    <a class="text-action" href="/vocabulary/{{.Capture.VocabularyID}}">Open card <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+  </div>
+  {{else if eq (printf "%s" .Capture.Status) "accepted"}}
+  <h2>Linked vocabulary was removed</h2>
+  <p class="muted">The linked vocabulary item was deleted.</p>
+  {{else}}
+  <h2>Capture discarded</h2>
+  {{end}}
+  {{if .Capture.ContextText}}
+  <p class="mining-context" lang="ja">{{.Capture.ContextText}}</p>
+  {{end}}
+  {{if or .Capture.VideoFrameID .Capture.SentenceAudioIDs}}
+  <div class="study-example-media mining-capture-media">
+    {{if .Capture.VideoFrameID}}<img src="/media/{{.Capture.VideoFrameID}}" alt="Captured video frame" loading="lazy">{{end}}
+    {{range .Capture.SentenceAudioIDs}}<audio controls preload="metadata" src="/media/{{.}}" aria-label="Captured sentence audio"></audio>{{end}}
+  </div>
+  {{end}}
+  {{if or .Capture.SourceTitle .SourcePositionLabel .Capture.SourceURL}}
+  <p class="mining-meta">
+    {{if .Capture.SourceTitle}}<span>{{.Capture.SourceTitle}}</span>{{end}}
+    {{if .SourcePositionLabel}}<span>{{.SourcePositionLabel}}</span>{{end}}
+    {{if .Capture.SourceURL}}<a href="{{.Capture.SourceURL}}" target="_blank" rel="noopener noreferrer">Open source</a>{{end}}
+  </p>
+  {{end}}
+  {{if .NextPendingID}}
+  <p><a class="button" href="/mining/captures/{{.NextPendingID}}">Next capture <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a></p>
+  {{end}}
+</section>
+<details class="management-section mining-danger-zone form-details">
+  <summary id="capture-actions-title">Manage capture</summary>
+  <div class="details-body">
+    <div class="detail-actions management-actions">
+      {{if eq (printf "%s" .Capture.Status) "discarded"}}
+      <form method="post" action="/mining/captures/{{.Capture.ID}}/restore">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="revision" value="{{.Capture.Revision}}">
+        <button class="button button-secondary button-small" type="submit">Restore to inbox</button>
+      </form>
+      {{end}}
+      <form method="post" action="/mining/captures/{{.Capture.ID}}/delete" data-confirm="Permanently delete this capture, any mined example, and captured media?">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="revision" value="{{.Capture.Revision}}">
+        <label class="destructive-confirmation" data-confirm-fallback><input type="checkbox" name="confirmed" value="1" required data-confirm-field>Confirm permanent deletion</label>
+        <button class="button button-danger button-small" type="submit">Delete permanently</button>
+      </form>
+    </div>
+  </div>
+</details>
+{{end}}
+{{template "footer" .}}

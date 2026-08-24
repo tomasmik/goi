@@ -1,0 +1,213 @@
+{{template "header" .}}
+<h1 class="visually-hidden">Home</h1>
+
+{{if .Summary.BackupWarning}}
+<aside class="alert alert-warning dashboard-backup-warning" role="status">
+  {{.Summary.BackupWarning}} <a href="/settings/backups">Open backups</a>
+</aside>
+{{end}}
+
+{{if and (eq .Summary.VocabularyCount 0) (eq .Summary.PendingCaptures 0) (eq .Summary.DueReviews 0) (eq .Summary.AvailableLessons 0) (eq .Summary.ActiveWords 0) (eq .Summary.ActiveLessonSessionID 0) (eq .Summary.ActiveReviewSessionID 0) (not .Summary.UpcomingReviews)}}
+<section class="welcome-panel" aria-labelledby="welcome-title">
+  <div class="welcome-copy">
+    <h2 id="welcome-title">No vocabulary yet</h2>
+    <p>Add words, import a list, or install the browser extension.</p>
+  </div>
+  <div class="welcome-actions">
+    <a class="welcome-action" href="/mining/capture">
+        <strong>Capture a word</strong>
+      <span>Look up its reading and meanings.</span>
+    </a>
+    <a class="welcome-action" href="/imports">
+      <strong>Import vocabulary</strong>
+      <span>Paste a list or import an Anki deck.</span>
+    </a>
+    <a class="welcome-action" href="/settings/extension">
+      <strong>Install the extension</strong>
+      <span>Mine from webpages and video.</span>
+    </a>
+  </div>
+</section>
+{{else}}
+<section class="dashboard-actions">
+  <article class="action-card action-card-review">
+    <div class="action-card-copy">
+      <span class="ui-icon icon-calendar action-card-icon" aria-hidden="true"></span>
+      {{if .Summary.ActiveReviewSessionID}}<h2>Reviews in progress</h2><strong class="action-count">{{.Summary.ActiveReviewCompleted}} / {{.Summary.ActiveReviewTotal}}</strong>{{else}}<h2>Reviews due</h2><strong class="action-count">{{.Summary.DueReviews}}</strong>{{end}}
+    </div>
+    {{if .Summary.ActiveReviewSessionID}}
+    <div class="action-card-actions">
+      <a class="button button-strong" href="/reviews/session/{{.Summary.ActiveReviewSessionID}}">Resume reviews <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+      <a class="text-action" href="/practice">Extra practice</a>
+    </div>
+    {{else if .Summary.DueReviews}}
+    <div class="action-card-actions">
+      <form method="post" action="/reviews/start">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="button button-strong" type="submit">Start reviews <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+      </form>
+      <a class="text-action" href="/practice">Extra practice</a>
+    </div>
+    {{else}}
+    {{if .Summary.ActiveWords}}
+    <a class="button button-secondary" href="/practice">Extra practice</a>
+    {{else}}
+    <a class="button button-secondary" href="/lessons">Choose a lesson</a>
+    {{end}}
+    {{end}}
+  </article>
+
+  <article class="action-card action-card-lesson">
+    <div class="action-card-copy">
+      <span class="ui-icon icon-book action-card-icon" aria-hidden="true"></span>
+      {{if .Summary.ActiveLessonSessionID}}
+      <h2>Lesson in progress</h2>
+      <strong class="action-count">1</strong>
+      {{else}}
+      <h2>Lessons ready</h2>
+      <strong class="action-count">{{.Summary.AvailableLessons}}</strong>
+      {{end}}
+    </div>
+    {{if .Summary.ActiveLessonSessionID}}
+    <div class="action-card-actions">
+      <a class="button button-strong" href="/lessons/session/{{.Summary.ActiveLessonSessionID}}">Continue lesson <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+      <a class="text-action" href="/lessons">Lesson queue</a>
+    </div>
+    {{else if .Summary.AvailableLessons}}
+    <div class="action-card-actions">
+      <form method="post" action="/lessons/start-next">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="button button-strong" type="submit">Learn <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+      </form>
+      <a class="text-button" href="/lessons">Choose words</a>
+    </div>
+    {{else}}
+    <a class="button button-secondary" href="/lessons">View lessons</a>
+    {{end}}
+  </article>
+
+  <article class="action-card action-card-mining">
+    <div class="action-card-copy">
+      <span class="ui-icon icon-tray action-card-icon" aria-hidden="true"></span>
+      <h2>Mining captures</h2>
+      <strong class="action-count">{{.Summary.PendingCaptures}}</strong>
+      <span class="action-card-state">waiting</span>
+    </div>
+    <a class="button button-secondary" href="/mining">Open inbox</a>
+  </article>
+</section>
+
+{{if .Summary.UpcomingReviews}}
+<section id="upcoming-reviews" class="dashboard-section review-forecast" aria-labelledby="review-forecast-title">
+  <div class="section-heading">
+    <h2 id="review-forecast-title">Next reviews</h2>
+  </div>
+  <ol class="review-forecast-list" role="list">
+    {{range .Summary.UpcomingReviews}}
+    <li class="review-forecast-item">
+      <time datetime="{{.DateTime}}">{{.Label}}</time>
+      <span class="review-forecast-count">{{.Count}} review{{if ne .Count 1}}s{{end}} due</span>
+    </li>
+    {{end}}
+  </ol>
+</section>
+{{end}}
+{{end}}
+
+<section class="dashboard-columns dashboard-secondary">
+  <div class="dashboard-column-stack">
+  <section class="dashboard-section">
+    <div class="section-heading">
+      <div>
+        <h2>Recent mistakes</h2>
+      </div>
+      {{if .Summary.MistakeItems}}
+      <form method="post" action="/study/recent-mistakes">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="text-button" type="submit">Study all</button>
+      </form>
+      {{end}}
+    </div>
+    {{if .Summary.MistakeItems}}
+    <div class="dashboard-mistake-list">
+      {{range .Summary.MistakeItems}}
+      <a class="dashboard-mistake-link" href="/vocabulary/{{.ID}}">
+        <strong class="jp-word" lang="ja">{{.Expression}}</strong>
+      </a>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="dashboard-empty-note">No recent mistakes.</p>
+    {{end}}
+  </section>
+
+  {{if .Summary.ActiveWords}}
+  <section class="dashboard-section dashboard-memory-stages">
+    <div class="section-heading">
+      <div>
+        <h2>Memory stages</h2>
+      </div>
+      <span class="section-note">{{.Summary.ActiveWords}} active</span>
+    </div>
+    <div class="stage-list">
+      {{range .Summary.StageCounts}}
+      <div class="stage-row">
+        <span>{{.Label}}</span>
+        <span class="stage-bar">
+          <span style="width: {{if $.Summary.ActiveWords}}{{percent .Count $.Summary.ActiveWords}}{{else}}0{{end}}%"></span>
+        </span>
+        <strong>{{.Count}}</strong>
+      </div>
+      {{end}}
+    </div>
+  </section>
+  {{end}}
+  </div>
+
+  {{if or .Summary.WeeklyReviews .Summary.LearnedWeek .Summary.Leeches .Summary.ActiveWords}}
+  <section class="dashboard-section">
+    <div class="section-heading">
+      <div>
+        <h2>This week</h2>
+      </div>
+      <a class="text-button" href="/statistics">View progress</a>
+    </div>
+    <div class="weekly-grid">
+      <div>
+        <strong>{{.Summary.WeeklyReviews}}</strong>
+        <span>reviews</span>
+      </div>
+      <div>
+        <strong>{{if .Summary.WeeklyTotal}}{{percent .Summary.WeeklyCorrect .Summary.WeeklyTotal}}%{{else}}—{{end}}</strong>
+        <span>first-try accuracy</span>
+      </div>
+      <div>
+        <strong>{{.Summary.LearnedWeek}}</strong>
+        <span>words learned</span>
+      </div>
+      <div>
+        <strong>{{.Summary.Leeches}}</strong>
+        <span><a href="/leeches">leeches</a></span>
+      </div>
+      <div>
+        <strong>{{.Summary.ActiveWords}}</strong>
+        <span>active words</span>
+      </div>
+    </div>
+  </section>
+  {{end}}
+</section>
+
+{{if .Summary.ActiveWords}}
+<details class="dashboard-mobile-summary">
+  <summary>Progress</summary>
+  <div class="weekly-grid">
+    <div><strong>{{.Summary.LearnedWeek}}</strong><span>learned this week</span></div>
+    <div><strong>{{.Summary.ActiveWords}}</strong><span>active words</span></div>
+    <div><strong>{{if .Summary.WeeklyTotal}}{{percent .Summary.WeeklyCorrect .Summary.WeeklyTotal}}%{{else}}—{{end}}</strong><span>first-try accuracy</span></div>
+    <div><strong>{{.Summary.Leeches}}</strong><span><a href="/leeches">leeches</a></span></div>
+  </div>
+  <p class="form-after-link"><a href="/statistics">View activity and recent mistakes</a></p>
+</details>
+{{end}}
+{{template "footer" .}}

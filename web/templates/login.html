@@ -1,0 +1,25 @@
+{{template "auth-header" .}}
+<section class="auth-card">
+  <a class="brand" href="/" aria-label="Goi home">
+    <span class="brand-mark" lang="ja">語</span>
+    <span>goi</span>
+  </a>
+  <h1>Sign in</h1>
+  {{if .Error}}
+  <div class="alert alert-error" role="alert">{{.Error}}</div>
+  {{end}}
+  <form class="auth-form" method="post" action="/login">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    {{if .ReturnTo}}<input type="hidden" name="return_to" value="{{.ReturnTo}}">{{end}}
+    <label>
+      Username
+      <input type="text" name="username" value="{{.Username}}" autocomplete="username" required autofocus>
+    </label>
+    <label>
+      Password
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button class="button" type="submit">Sign in</button>
+  </form>
+</section>
+{{template "bare-footer" .}}

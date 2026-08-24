@@ -1,0 +1,254 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>Import vocabulary</h1>
+  </div>
+  <a class="text-button" href="/vocabulary">Back to vocabulary</a>
+</section>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+
+{{if .TextResult}}
+<section class="panel content-narrow">
+  <h2>Import complete</h2>
+  <p>{{.TextResult.Created}} added · {{.TextResult.Skipped}} duplicates skipped · {{.TextResult.Failed}} failed</p>
+  {{if .TextResult.Errors}}
+  <ul>{{range .TextResult.Errors}}<li>{{.}}</li>{{end}}</ul>
+  <details class="form-details">
+    <summary>Edit and retry the pasted rows</summary>
+    <div class="details-body">
+      <form class="inline-form" method="post" action="/imports/text">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="import_as" value="{{if .TextKnown}}known{{else}}learning{{end}}">
+        <input type="hidden" name="duplicates" value="{{if .TextAllowDuplicates}}create{{else}}skip{{end}}">
+        <textarea name="data" rows="9" required>{{.TextData}}</textarea>
+        <button class="button button-secondary" type="submit" name="action" value="preview">Preview corrected rows</button>
+      </form>
+    </div>
+  </details>
+  {{end}}
+  <div class="form-actions">
+    <a class="button" href="/vocabulary?sort=newest">View recently imported words</a>
+    <a class="button button-secondary" href="/imports">Import more</a>
+  </div>
+</section>
+{{else if .Result}}
+<section class="panel content-narrow">
+  {{if .Result.Retryable}}
+  <h2>Import needs attention</h2>
+  {{else}}
+  <h2>Import complete</h2>
+  {{end}}
+  <p>{{.Result.Created}} added · {{.Result.Skipped}} skipped · {{.Result.Failed}} failed</p>
+  {{if .Result.Errors}}
+  <ul>
+    {{range .Result.Errors}}
+    <li>{{.}}</li>
+    {{end}}
+  </ul>
+  {{end}}
+  {{if .Result.OmittedErrors}}
+  <p class="muted">{{.Result.OmittedErrors}} additional outcome{{if ne .Result.OmittedErrors 1}}s{{end}} not shown.</p>
+  {{end}}
+  {{if or .Result.Errors .Result.OmittedErrors}}
+  <a class="text-button" href="/imports/anki/{{.RunID}}/errors.csv">Download complete error report</a>
+  {{end}}
+  {{if .Result.Retryable}}
+  <a class="button button-secondary" href="/imports/anki/{{.RunID}}/mapping">Adjust mapping and try again</a>
+  {{else}}
+  <a class="button button-secondary" href="/vocabulary?sort=newest">View recently imported words</a>
+  {{end}}
+</section>
+{{else if .RunID}}
+<section class="panel content-narrow">
+  <h2>Choose what each field contains</h2>
+  <p>{{len .Preview.Notes}} notes{{if gt .Preview.ModelCount 1}} across {{.Preview.ModelCount}} note types{{end}} · {{.Preview.MediaCount}} media files</p>
+  {{if gt .Preview.ModelCount 1}}<p class="help">Equivalent fields are shown together across note types. Check the preview below before importing.</p>{{end}}
+  <form class="inline-form compact-form" method="post" action="/imports/anki/{{.RunID}}/apply">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>
+      Japanese word field
+      <select name="expression_field" required>
+        <option value="" {{if lt .SuggestedMapping.ExpressionField 0}}selected{{end}} disabled>Choose field…</option>
+        {{range $index, $field := .Preview.Fields}}
+        <option value="{{$index}}" {{if eq $.SuggestedMapping.ExpressionField $index}}selected{{end}}>{{$index}}: {{$field}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      Reading field
+      <select name="pronunciation_field">
+        <option value="-1" {{if lt .SuggestedMapping.PronunciationField 0}}selected{{end}}>Not mapped</option>
+        {{range $index, $field := .Preview.Fields}}
+        <option value="{{$index}}" {{if eq $.SuggestedMapping.PronunciationField $index}}selected{{end}}>{{$index}}: {{$field}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      Meaning field
+      <select name="meaning_field">
+        <option value="-1" {{if lt .SuggestedMapping.MeaningField 0}}selected{{end}}>Not mapped</option>
+        {{range $index, $field := .Preview.Fields}}
+        <option value="{{$index}}" {{if eq $.SuggestedMapping.MeaningField $index}}selected{{end}}>{{$index}}: {{$field}}</option>
+        {{end}}
+      </select>
+    </label>
+    <fieldset class="choice-field">
+      <legend>How should these words be used?</legend>
+      <div class="choice-options">
+        <label class="choice-option"><input type="radio" name="import_as" value="learning" checked><span>Add to lessons</span></label>
+        <label class="choice-option"><input type="radio" name="import_as" value="known"><span>Mark as known</span></label>
+      </div>
+      <span class="help">Known words count toward coverage but are not reviewed. Reading and meaning are optional.</span>
+    </fieldset>
+    <fieldset class="choice-field">
+      <legend>Duplicates</legend>
+      <div class="choice-options">
+        <label class="choice-option"><input type="radio" name="duplicates" value="skip" checked><span>Skip existing words</span></label>
+        <label class="choice-option"><input type="radio" name="duplicates" value="create"><span>Create separate entries</span></label>
+      </div>
+    </fieldset>
+    <details class="form-details">
+      <summary>Optional fields</summary>
+      <div class="details-body inline-form">
+        <label>
+          Notes field
+          <select name="notes_field">
+            <option value="-1" {{if lt .SuggestedMapping.NotesField 0}}selected{{end}}>Not mapped</option>
+            {{range $index, $field := .Preview.Fields}}<option value="{{$index}}" {{if eq $.SuggestedMapping.NotesField $index}}selected{{end}}>{{$index}}: {{$field}}</option>{{end}}
+          </select>
+        </label>
+        <label>
+          Example sentence field
+          <select name="example_field">
+            <option value="-1" {{if lt .SuggestedMapping.ExampleField 0}}selected{{end}}>Not mapped</option>
+            {{range $index, $field := .Preview.Fields}}<option value="{{$index}}" {{if eq $.SuggestedMapping.ExampleField $index}}selected{{end}}>{{$index}}: {{$field}}</option>{{end}}
+          </select>
+        </label>
+        <label>
+          Example translation field
+          <select name="translation_field">
+            <option value="-1" {{if lt .SuggestedMapping.TranslationField 0}}selected{{end}}>Not mapped</option>
+            {{range $index, $field := .Preview.Fields}}<option value="{{$index}}" {{if eq $.SuggestedMapping.TranslationField $index}}selected{{end}}>{{$index}}: {{$field}}</option>{{end}}
+          </select>
+        </label>
+        <label>
+          Audio field
+          <select name="audio_field">
+            <option value="-1" {{if lt .SuggestedMapping.AudioField 0}}selected{{end}}>Not mapped</option>
+            {{range $index, $field := .Preview.Fields}}
+            <option value="{{$index}}" {{if eq $.SuggestedMapping.AudioField $index}}selected{{end}}>{{$index}}: {{$field}}</option>
+            {{end}}
+          </select>
+        </label>
+        <label>
+          Image field
+          <select name="picture_field">
+            <option value="-1" {{if lt .SuggestedMapping.PictureField 0}}selected{{end}}>Not mapped</option>
+            {{range $index, $field := .Preview.Fields}}
+            <option value="{{$index}}" {{if eq $.SuggestedMapping.PictureField $index}}selected{{end}}>{{$index}}: {{$field}}</option>
+            {{end}}
+          </select>
+        </label>
+      </div>
+    </details>
+    <div class="form-actions">
+      <button class="button" type="submit">Import vocabulary</button>
+    </div>
+  </form>
+  <div class="import-notes">
+    {{range .PreviewNotes}}
+    <div class="import-note">
+      <strong>{{.ID}}</strong>
+      {{range $fieldIndex, $value := .Fields}}
+      <div class="import-note-field">
+        <span class="import-note-field-label">{{$fieldIndex}} · {{index $.Preview.Fields $fieldIndex}}</span>
+        <span>{{$value}}</span>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{if .PreviewNotesOmitted}}
+  <p class="muted">Showing the first {{len .PreviewNotes}} of {{len .Preview.Notes}} notes.</p>
+  {{end}}
+</section>
+{{else}}
+<section class="form-card" aria-labelledby="text-import-title">
+  <div>
+  <h2 id="text-import-title">Paste words</h2>
+    <p class="muted">Known words can be one per line. Words for lessons also need reading and meaning columns.</p>
+  </div>
+  <form class="inline-form" method="post" action="/imports/text">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>
+      Vocabulary data
+      <textarea name="data" rows="7" required placeholder="食べる&#9;たべる&#9;to eat&#10;飲む&#9;のむ&#9;to drink">{{.TextData}}</textarea>
+      <span class="help">Use tabs or commas for columns: word, reading, meaning, notes, example, translation, and source. Separate multiple meanings with <code>|</code>.</span>
+    </label>
+    <div class="form-grid">
+      <label>
+        Import as
+        <select name="import_as">
+          <option value="learning" {{if not .TextKnown}}selected{{end}}>Add to lessons</option>
+          <option value="known" {{if .TextKnown}}selected{{end}}>Mark as known</option>
+        </select>
+        <span class="help">Known words count toward coverage but are not reviewed.</span>
+      </label>
+      <label>
+        Existing words
+        <select name="duplicates">
+          <option value="skip" {{if not .TextAllowDuplicates}}selected{{end}}>Skip them</option>
+          <option value="create" {{if .TextAllowDuplicates}}selected{{end}}>Create separate entries</option>
+        </select>
+      </label>
+    </div>
+    <div class="form-actions">
+      <button class="button {{if .TextPreview}}button-secondary{{end}}" type="submit" name="action" value="preview">{{if .TextPreview}}Refresh preview{{else}}Preview rows{{end}}</button>
+      {{if and .TextPreview (gt .TextPreview.WillCreate 0)}}<button class="button" type="submit" name="action" value="import">Import {{.TextPreview.WillCreate}} {{if eq .TextPreview.WillCreate 1}}word{{else}}words{{end}}</button>{{end}}
+    </div>
+  </form>
+  {{if .TextPreview}}
+  <section class="import-preview" aria-labelledby="text-preview-title">
+    <h3 id="text-preview-title">Preview</h3>
+    <p><strong>{{.TextPreview.WillCreate}}</strong> will be added · {{.TextPreview.Duplicates}} duplicates skipped · {{.TextPreview.Invalid}} invalid rows</p>
+    <div class="import-preview-table" role="region" aria-label="Parsed rows" tabindex="0">
+      <table>
+        <thead><tr><th>Row</th><th>Word</th><th>Reading</th><th>Meaning</th><th>Result</th></tr></thead>
+        <tbody>
+          {{range .TextPreview.Rows}}
+          <tr><td>{{.Row}}</td><td lang="ja">{{.Expression}}</td><td lang="ja">{{.Pronunciation}}</td><td>{{.Meaning}}</td><td>{{.Outcome}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{if .TextPreview.Omitted}}<p class="help">Showing the first {{len .TextPreview.Rows}} of {{.TextPreview.Total}} rows.</p>{{end}}
+  </section>
+  {{end}}
+</section>
+
+<details class="form-card form-details">
+  <summary>Import an Anki deck</summary>
+  <div class="details-body">
+  <form class="inline-form" method="post" action="/imports/anki/upload" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <div class="form-field">
+    <span class="field-label">Anki deck (.apkg)</span>
+    <label class="file-picker" data-file-picker>
+      <span class="visually-hidden">Anki package</span>
+      <input type="file" name="package" accept=".apkg,application/zip" required>
+      <span class="file-picker-button">Choose Anki package</span>
+      <span class="file-picker-name" data-file-name>No file selected</span>
+    </label>
+    <span class="help">Export an “Anki Deck Package (.apkg)” with “Support older Anki versions” enabled. Check field positions before importing.</span>
+  </div>
+  <div class="form-actions">
+    <button class="button" type="submit">Preview import</button>
+  </div>
+</form>
+  </div>
+</details>
+{{end}}
+{{template "footer" .}}

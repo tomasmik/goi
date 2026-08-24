@@ -1,0 +1,111 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>Browser extension</h1>
+  </div>
+</section>
+
+{{template "settings-navigation" "extension"}}
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+{{if .CreatedTokenUnavailable}}
+<div class="alert alert-warning" role="alert">
+  The token can no longer be shown. If you did not copy it, remove the matching unused connection below and create another.
+</div>
+{{end}}
+{{if .PublicOrigin}}
+<div class="alert alert-warning" data-origin-warning data-configured-url="{{.PublicOrigin}}" hidden>
+  This page is open at a different address from Goi's configured public address, <code>{{.PublicOrigin}}</code>. The extension will use this browser's address; bookmarklets and Google callbacks use the configured address.
+</div>
+{{end}}
+
+{{if .CreatedToken}}
+<section class="form-card extension-token-card" aria-labelledby="new-extension-token">
+  <div>
+    <p class="eyebrow">Connection ready</p>
+    <h2 id="new-extension-token">Connect Goi Capture</h2>
+    <p class="muted">Open Goi Capture, choose <strong>Set up</strong>, and paste both values.</p>
+  </div>
+  <div class="extension-token-copy">
+    <input id="extension-token" value="{{.CreatedToken.Plaintext}}" readonly aria-label="New extension token">
+    <button class="button button-secondary" type="button" data-copy-target="#extension-token" data-copy-status="#extension-token-copy-status">Copy token</button>
+    <span class="visually-hidden" id="extension-token-copy-status" role="status" aria-live="polite"></span>
+  </div>
+  <div class="extension-token-copy">
+    <input id="new-extension-server-address" value="" readonly data-current-origin aria-label="Goi server address">
+    <button class="button button-secondary" type="button" data-copy-target="#new-extension-server-address" data-copy-status="#new-extension-address-copy-status">Copy Goi address</button>
+    <span class="visually-hidden" id="new-extension-address-copy-status" role="status" aria-live="polite"></span>
+  </div>
+  <div class="extension-token-footer">
+    <p class="help">The token does not expire. It remains visible here for 15 minutes.</p>
+    <form method="post" action="/settings/extension/tokens/{{.CreatedToken.ID}}/revoke" data-confirm="Discard this token? It will no longer connect to Goi.">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <input type="hidden" name="confirmed" value="1">
+      <button class="text-button" type="submit">Discard token</button>
+    </form>
+  </div>
+</section>
+{{else}}
+<section class="form-card extension-setup" aria-labelledby="extension-setup-title">
+  <div class="section-heading">
+    <h2 id="extension-setup-title">Set up the extension</h2>
+  </div>
+  <div class="extension-setup-step">
+    <strong>1. Install</strong>
+    <p>Version {{.ExtensionVersion}} · Chrome {{.MinimumChrome}} or newer.</p>
+    <ol class="setup-list">
+      <li>Download and unzip the package.</li>
+      <li>Open <code>chrome://extensions</code> or <code>edge://extensions</code> and enable Developer mode.</li>
+      <li>Choose <strong>Load unpacked</strong> and select the unzipped folder.</li>
+    </ol>
+    <a class="button button-secondary" href="/settings/extension/download">Download version {{.ExtensionVersion}}</a>
+    <p class="help extension-upgrade-note"><strong>Updating later:</strong> Replace the unzipped folder with the new download, then press Reload on the browser’s extension page. Your connection and settings stay in the browser.</p>
+  </div>
+  <div class="extension-setup-step">
+    <strong>2. Create a connection</strong>
+    <p>Create one connection for each browser where you install the extension.</p>
+    <form class="inline-form extension-token-form" method="post" action="/settings/extension/tokens">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <label>
+        Browser name
+        <input name="name" maxlength="100" value="{{.TokenName}}" required autocomplete="off">
+      </label>
+      <div class="form-actions">
+        <button class="button" type="submit">Create token</button>
+      </div>
+    </form>
+  </div>
+</section>
+{{end}}
+
+{{if .Tokens}}
+<section class="panel extension-token-list" aria-labelledby="extension-token-list-title">
+  <div class="section-heading">
+    <div>
+      <h2 id="extension-token-list-title">Extension access</h2>
+      <p class="muted">“Last used” shows whether a token has connected.</p>
+    </div>
+  </div>
+  <div class="extension-token-rows">
+    {{range .Tokens}}
+    <article class="extension-token-row">
+      <div>
+        <strong>{{.Name}}</strong>
+        <p class="muted"><code>{{.Prefix}}…</code> · {{if .LastUsedAt}}Last used <time datetime="{{.LastUsedAt.Format "2006-01-02T15:04:05Z07:00"}}" data-local-time data-time-zone="{{$.TimeZone}}">{{.LastUsedAt.Format "2006-01-02 15:04 UTC"}}</time>{{else}}Not used yet{{end}}</p>
+      </div>
+      <form method="post" action="/settings/extension/tokens/{{.ID}}/revoke" data-confirm="Remove access for this browser? Captures and coverage analysis from it will stop working.">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <label class="destructive-confirmation" data-confirm-fallback>
+          <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+          Confirm token revocation
+        </label>
+        <button class="button button-secondary button-small" type="submit" aria-label="Remove access for {{.Name}}">Remove</button>
+      </form>
+    </article>
+    {{end}}
+  </div>
+</section>
+{{end}}
+{{template "footer" .}}

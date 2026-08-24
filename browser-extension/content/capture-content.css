@@ -1,0 +1,44 @@
+.goi-ext-toast {
+  position: fixed;
+  z-index: 2147483646;
+  top: 18px;
+  right: 18px;
+  max-width: min(340px, calc(100vw - 36px));
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid rgb(255 255 255 / 18%);
+  border-radius: 4px;
+  background: #192330;
+  box-shadow: 0 7px 20px rgb(0 0 0 / 24%);
+  color: #f8fafc;
+  font: 500 13px/1.4 "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.goi-ext-toast[hidden] {
+  display: block;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.goi-ext-toast--saved {
+  border-color: rgb(45 157 157 / 65%);
+}
+
+.goi-ext-toast--queued {
+  border-color: rgb(222 165 58 / 75%);
+}
+
+.goi-ext-toast--error {
+  border-color: rgb(246 111 94 / 70%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .goi-ext-toast {
+    transition: none;
+  }
+}

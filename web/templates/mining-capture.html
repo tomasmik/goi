@@ -1,0 +1,94 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>Capture a word</h1>
+    <p class="lede">Save a word to the mining inbox, then choose its reading and meanings.</p>
+  </div>
+  <a class="text-button" href="/mining">Back to inbox</a>
+</section>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+<p class="capture-message" data-mining-message role="status" aria-live="polite"></p>
+
+<form class="form-card mining-capture-form" method="post" action="/mining/captures" data-mining-capture-form>
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="capture_nonce" value="{{.CaptureNonce}}">
+  <label>
+    Word or phrase
+    <input class="jp-input" lang="ja" name="expression" value="{{.Expression}}" maxlength="256" required autofocus autocomplete="off" data-mining-expression>
+  </label>
+  <label>
+    <span class="field-label">Sentence or context <span class="help">Optional</span></span>
+    <textarea lang="ja" name="context_text" rows="4" maxlength="2000" data-mining-context>{{.ContextText}}</textarea>
+  </label>
+  <details class="form-details" {{if or (ne .SourceKind "manual") .SourceTitle .SourceURL .SourcePositionSeconds}}open{{end}}>
+    <summary>Source details <span>Optional</span></summary>
+    <div class="details-body">
+      <div class="form-grid">
+        <label>
+          Source type
+          <select name="source_kind" data-mining-source-kind>
+            <option value="manual" {{if eq .SourceKind "manual"}}selected{{end}}>Manual</option>
+            <option value="web" {{if eq .SourceKind "web"}}selected{{end}}>Web page</option>
+            <option value="video" {{if eq .SourceKind "video"}}selected{{end}}>Video</option>
+            <option value="ebook" {{if eq .SourceKind "ebook"}}selected{{end}}>Ebook</option>
+            <option value="other" {{if eq .SourceKind "other"}}selected{{end}}>Other</option>
+          </select>
+        </label>
+        <label>
+          <span class="field-label">Video time <span class="help">Optional</span></span>
+          <input type="text" name="source_position_seconds" value="{{.SourcePositionSeconds}}" placeholder="12:34" inputmode="decimal" data-mining-position>
+        </label>
+      </div>
+      <label>
+        <span class="field-label">Source title <span class="help">Optional</span></span>
+        <input name="source_title" value="{{.SourceTitle}}" maxlength="300" data-mining-title>
+      </label>
+      <label>
+        <span class="field-label">Source URL <span class="help">Optional</span></span>
+        <input type="url" name="source_url" value="{{.SourceURL}}" maxlength="2048" inputmode="url" data-mining-url>
+      </label>
+    </div>
+  </details>
+  <details class="form-details" {{if or .Pronunciation .Meanings .Notes}}open{{end}}>
+    <summary>Enter reading and meanings <span>Optional</span></summary>
+    <div class="details-body">
+      <p class="help">Skips dictionary lookup.</p>
+      <label>Reading <input class="jp-input" lang="ja" data-kana-input name="pronunciation" value="{{.Pronunciation}}" maxlength="256" autocomplete="off"></label>
+      <label>Meanings <textarea name="meanings" rows="3" maxlength="2000" placeholder="One meaning per line">{{.Meanings}}</textarea></label>
+      <label><span class="field-label">Notes <span class="help">Optional</span></span><textarea name="notes" rows="2" maxlength="2000">{{.Notes}}</textarea></label>
+      <div class="form-actions">
+        <button class="button button-secondary" type="submit" name="action" value="add">Add without lookup</button>
+      </div>
+    </div>
+  </details>
+  <div class="form-actions">
+    <a class="button button-secondary" href="/mining">Cancel</a>
+    <button class="button" type="submit" name="action" value="lookup">Save and look up</button>
+  </div>
+</form>
+
+<details class="panel form-details capture-tools">
+  <summary>Capture from a webpage or video</summary>
+  <div class="details-body">
+    <p class="muted">Use the extension to capture from webpages and video.</p>
+    <a class="text-action" href="/settings/extension">Set up extension <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a>
+  <details class="form-details bookmarklet-alternative">
+    <summary>Use the bookmarklet instead</summary>
+    <div class="details-body">
+      <p class="muted">Drag this button to your bookmarks bar. Select a word on a page, then click the bookmark.</p>
+      {{if .Bookmarklet}}
+      <a class="button button-secondary" href="{{.Bookmarklet}}">Mine to Goi</a>
+      <p class="help">Sends captures to <code data-bookmarklet-origin>{{.BookmarkletOrigin}}</code>.</p>
+      <p class="alert alert-warning" data-bookmarklet-origin-warning hidden>This address differs from the Goi page you have open. Use the browser extension here, or update Goi's public address before installing the bookmarklet.</p>
+      {{else}}
+      <p class="alert alert-error">Set Goi's public base URL to install the bookmarklet. Manual capture still works.</p>
+      {{end}}
+      <p class="help">Some sites block bookmarklets or popups.</p>
+    </div>
+  </details>
+  </div>
+</details>
+{{template "footer" .}}

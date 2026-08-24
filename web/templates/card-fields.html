@@ -1,0 +1,22 @@
+{{define "card-reading-field"}}
+<label>
+  <span class="field-label">Reading {{if .AllowSparse}}<span class="help">Optional</span>{{end}}</span>
+  <input class="jp-input" lang="ja" data-kana-input name="pronunciation" value="{{.Pronunciation}}" maxlength="256" {{if not .AllowSparse}}required{{end}} autocomplete="off" spellcheck="false">
+  <span class="help">{{if .AllowSparse}}Add a reading if it is useful for reference. {{end}}Romaji converts automatically. <span data-kana-mode>Hiragana</span></span>
+</label>
+{{end}}
+
+{{define "card-meanings-field"}}
+<label>
+  <span class="field-label">Meanings {{if .AllowSparse}}<span class="help">Optional</span>{{end}}</span>
+  <textarea name="meanings" rows="5" maxlength="2000" {{if not .AllowSparse}}required{{end}} placeholder="One meaning per line">{{.Meanings}}</textarea>
+  <span class="help">{{if .AllowSparse}}Add meanings if they are useful for reference. {{end}}One meaning per line. Remove meanings you do not want accepted during reviews.</span>
+</label>
+{{end}}
+
+{{define "card-notes-field"}}
+<label class="card-notes-field">
+  <span class="field-label">Notes <span class="help">Optional</span></span>
+  <textarea name="notes" rows="3" maxlength="2000">{{.Notes}}</textarea>
+</label>
+{{end}}

@@ -1,0 +1,354 @@
+{{define "review-progress"}}
+<section class="study-status" aria-label="Review progress">
+  <div class="study-status-copy">
+    <span class="study-kicker">{{if .State.LessonSessionID}}Lesson review{{else if eq .State.Kind "extra"}}Optional practice{{else}}Review{{end}}</span>
+    <strong>{{.State.WordCompleted}} of {{.State.WordTotal}} words</strong>
+    <span>
+      {{.State.WordsRemaining}} remaining
+      {{if .State.ActiveRetry}}<span aria-hidden="true"> · </span>retry in progress{{end}}
+      {{if .State.RetriesQueued}}<span aria-hidden="true"> · </span>{{.State.RetriesQueued}} retr{{if eq .State.RetriesQueued 1}}y{{else}}ies{{end}} queued{{end}}
+    </span>
+  </div>
+  {{if .State.LeechSuspended}}<span class="status status-leech-suspended">Suspended leech</span>
+  {{else if .State.LeechActive}}<span class="status status-leech">Leech</span>
+  {{else if .State.FormerLeech}}<span class="status status-leech-former">Former leech</span>{{end}}
+  <div class="review-status-tools">
+    {{if .State.UndoAvailable}}
+    <form method="post" action="/reviews/session/{{.State.ID}}/undo">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="text-action" type="submit">Undo last</button>
+    </form>
+    {{end}}
+  </div>
+  <div class="progress-track progress-track-study">
+    <span style="width: {{if .State.WordTotal}}{{percent .State.WordCompleted .State.WordTotal}}{{else}}100{{end}}%"></span>
+  </div>
+</section>
+{{end}}
+
+{{define "review-correction-reading"}}
+<section class="correction-section" aria-labelledby="correction-reading-title">
+  <h3 class="correction-section-title" id="correction-reading-title">Reading</h3>
+  <p class="correction-reading" lang="ja">{{.State.Pronunciation}}</p>
+  {{if .State.AudioID}}
+  <audio controls aria-label="Pronunciation audio for {{.State.Expression}}" {{if and (eq .State.PromptType "pronunciation") .State.AudioEnabled (or (and .Confirmation .Confirmation.Correct) .Revealed .State.Feedback)}}data-feedback-audio preload="auto"{{else}}preload="metadata"{{end}} src="/media/{{.State.AudioID}}"></audio>
+  {{end}}
+</section>
+{{end}}
+
+{{define "review-correction-meaning"}}
+<section class="correction-section" aria-labelledby="correction-meaning-title">
+  <h3 class="correction-section-title" id="correction-meaning-title">Meaning</h3>
+  <ul class="meaning-list">
+    {{range .State.Meanings}}
+    <li>{{.}}</li>
+    {{end}}
+  </ul>
+</section>
+{{end}}
+
+{{define "review-correction-notes"}}
+<section class="correction-section correction-notes" aria-labelledby="correction-notes-title">
+  <h3 class="correction-section-title" id="correction-notes-title">Notes</h3>
+  <p class="preformatted">{{.State.Notes}}</p>
+</section>
+{{end}}
+
+{{define "review-correction-picture"}}
+{{if .State.PictureID}}
+<section class="correction-section correction-picture" aria-labelledby="correction-picture-title">
+  <h3 class="correction-section-title" id="correction-picture-title">Image</h3>
+  <img src="/media/{{.State.PictureID}}" alt="Illustration for {{.State.Expression}}">
+</section>
+{{end}}
+{{end}}
+
+{{define "review-correction-example"}}
+{{if .Sentence}}
+{{if or .Translation .SourceTitle .SourcePositionLabel .SourceLink .VideoFrameID .SentenceAudioIDs}}
+<section class="correction-section correction-example" aria-labelledby="correction-example-title">
+  <h3 class="correction-section-title" id="correction-example-title">Example context</h3>
+  {{template "study-example-details" .}}
+</section>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "review-add-synonym"}}
+{{if and (eq .State.PromptType "meaning") .State.RejectedAnswer}}
+<form method="post" action="/reviews/session/{{.State.ID}}/synonym" data-review-action>
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
+  <input type="hidden" name="rejected_answer" value="{{.State.RejectedAnswer}}">
+  <input type="hidden" name="synonym" value="{{.State.RejectedAnswer}}">
+  <button class="button button-secondary button-small" type="submit">Add “{{.State.RejectedAnswer}}” as meaning</button>
+</form>
+{{end}}
+{{end}}
+
+{{define "review-mark-correct"}}
+{{if .State.Attempts}}
+<form method="post" action="/reviews/session/{{.State.ID}}/mark-correct" data-review-action>
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
+  <button class="button button-secondary button-small" type="submit">Mark this answer correct</button>
+</form>
+{{end}}
+{{end}}
+
+{{define "review-expression"}}
+<div class="review-expression">
+  <div class="review-expression-content">
+    <h1 class="jp-word" lang="ja">{{.Expression}}</h1>
+    {{if .Example.Sentence}}
+    <p class="review-example-sentence" lang="ja">
+      {{template "study-example-sentence-content" .Example}}
+    </p>
+    {{end}}
+  </div>
+</div>
+{{end}}
+
+{{define "review-session-body"}}
+<div id="study-stage" class="review-stage" {{if and (eq .State.PromptType "pronunciation") .State.AudioEnabled .State.AudioID}}data-feedback-audio-src="/media/{{.State.AudioID}}"{{end}}>
+  {{template "review-progress" .}}
+  {{if .Notice}}
+  <p class="review-notice" role="status">{{.Notice}}</p>
+  {{end}}
+
+  {{if eq .State.Status "paused"}}
+  <section class="study-completion">
+    <h1>Paused</h1>
+    <form method="post" action="/reviews/session/{{.State.ID}}/resume">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="button" type="submit">Resume</button>
+    </form>
+  </section>
+  {{else if .Confirmation}}
+  <section class="review-subject review-subject-compact {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+    <div class="review-prompt-label">
+      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
+    </div>
+    {{template "review-expression" .State}}
+  </section>
+
+  <section class="correction-panel review-confirmation" data-review-confirmation aria-live="polite">
+    <div class="review-result-row {{if .Confirmation.Correct}}is-correct{{else}}is-incorrect{{end}}">
+      <div class="review-result-answer">
+        <div>
+      <p>{{if .Confirmation.Correct}}{{if .Confirmation.Retry}}Correct on retry{{else}}Correct{{end}}{{else}}Your answer · Incorrect{{end}}</p>
+          <strong class="confirmation-answer">{{.Confirmation.Answer}}</strong>
+        </div>
+      </div>
+      <div class="review-confirmation-actions">
+        {{if and (not .Confirmation.Correct) (not .State.Feedback)}}
+        <a class="button button-secondary" href="/reviews/session/{{.State.ID}}" data-review-retry aria-keyshortcuts="Escape">Retry prompt</a>
+        {{end}}
+        {{if .Confirmation.Correct}}
+        <form method="post" action="/reviews/session/{{.State.ID}}/confirm" data-review-confirm>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="prompt_id" value="{{.Confirmation.PromptID}}">
+          <input type="hidden" name="answer" value="{{.Confirmation.Answer}}">
+          <button class="button" type="submit" autofocus aria-keyshortcuts="Enter">Continue<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+        </form>
+        {{else if .State.Feedback}}
+        <form method="post" action="/reviews/session/{{.State.ID}}/continue" data-review-confirm>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button class="button" type="submit" autofocus aria-keyshortcuts="Enter">Continue<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+        </form>
+        {{else}}
+        <form method="post" action="/reviews/session/{{.State.ID}}/accept-failure" data-review-confirm>
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="prompt_id" value="{{.Confirmation.PromptID}}">
+          <button class="button" type="submit" autofocus aria-keyshortcuts="Enter">Continue — counts as incorrect<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+        </form>
+        {{end}}
+      </div>
+    </div>
+    <p class="review-keyboard-hint"><kbd>Enter</kbd> continue{{if and (not .Confirmation.Correct) (not .State.Feedback)}} · <kbd>Esc</kbd> try again{{end}}</p>
+    <details class="review-answer-details" {{if or .State.Feedback (not .Confirmation.Correct)}}open{{end}}>
+      <summary>{{if or .State.Feedback (not .Confirmation.Correct)}}Correct answer{{else}}Word details{{end}}</summary>
+      <div class="review-answer-details-body">
+        <div class="correction-sections">
+          {{if and (not .Confirmation.Correct) (eq .State.PromptType "meaning")}}
+          {{template "review-correction-meaning" .}}
+          {{template "review-correction-reading" .}}
+          {{else}}
+          {{template "review-correction-reading" .}}
+          {{template "review-correction-meaning" .}}
+          {{end}}
+          {{if .State.Notes}}
+          {{template "review-correction-notes" .}}
+          {{end}}
+          {{template "review-correction-picture" .}}
+          {{template "review-correction-example" .State.Example}}
+        </div>
+      </div>
+    </details>
+    {{if not .Confirmation.Correct}}
+    <div class="review-answer-details is-actions-only">
+      <div class="review-answer-options" aria-label="Correct this result">
+        {{template "review-add-synonym" .}}
+        <span class="review-answer-option-label">Valid answer rejected?</span>
+        {{template "review-mark-correct" .}}
+      </div>
+    </div>
+    {{end}}
+  </section>
+  {{else if .State.Feedback}}
+  <section class="review-subject review-subject-compact {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+    <div class="review-prompt-label">
+      <span>Correction</span>
+      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
+    </div>
+    {{template "review-expression" .State}}
+  </section>
+
+  <section class="correction-panel" aria-live="polite">
+    <div class="correction-heading">
+      <span class="result-mark is-incorrect" aria-hidden="true"><span class="ui-icon icon-x"></span></span>
+      <div>
+        <p class="study-kicker">Incorrect</p>
+        <h2>Correct answer</h2>
+      </div>
+    </div>
+    <div class="correction-sections">
+      {{if eq .State.PromptType "pronunciation"}}
+      {{template "review-correction-reading" .}}
+      {{template "review-correction-meaning" .}}
+      {{else}}
+      {{template "review-correction-meaning" .}}
+      {{template "review-correction-reading" .}}
+      {{end}}
+      {{if .State.Notes}}
+      {{template "review-correction-notes" .}}
+      {{end}}
+      {{template "review-correction-picture" .}}
+      {{template "review-correction-example" .State.Example}}
+    </div>
+    {{template "review-add-synonym" .}}
+    <div class="review-correction-actions">
+      <span class="review-answer-option-label">Valid answer rejected?</span>
+      {{template "review-mark-correct" .}}
+      <form method="post" action="/reviews/session/{{.State.ID}}/continue" data-review-action>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="button" type="submit" autofocus>Continue<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+      </form>
+    </div>
+  </section>
+  {{else if and (eq .State.AnswerMode "self_grade") .Revealed}}
+  <section class="review-subject review-subject-compact {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+    <div class="review-prompt-label">
+      <span>Answer</span>
+      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
+    </div>
+    {{template "review-expression" .State}}
+  </section>
+
+  <section class="correction-panel review-self-grade" data-review-self-grade aria-live="polite">
+    <div class="correction-heading">
+      <div>
+        <p class="study-kicker">Check your answer</p>
+        <h2>{{if eq .State.PromptType "pronunciation"}}{{.State.Pronunciation}}{{else if .State.Meanings}}{{index .State.Meanings 0}}{{else}}Meaning{{end}}</h2>
+      </div>
+    </div>
+    <div class="review-grade-actions">
+      <form method="post" action="/reviews/session/{{.State.ID}}/grade" data-review-action>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
+        <input type="hidden" name="grade" value="again">
+        <button class="button button-secondary" type="submit" data-review-grade="again">Again</button>
+      </form>
+      <form method="post" action="/reviews/session/{{.State.ID}}/grade" data-review-action>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
+        <input type="hidden" name="grade" value="good">
+        <button class="button" type="submit" data-review-grade="good">Good</button>
+      </form>
+    </div>
+    <p class="review-keyboard-hint"><kbd>1</kbd> Again · <kbd>2</kbd> Good</p>
+    <div class="correction-sections">
+      {{if eq .State.PromptType "pronunciation"}}
+      {{template "review-correction-reading" .}}
+      {{template "review-correction-meaning" .}}
+      {{else}}
+      {{template "review-correction-meaning" .}}
+      {{template "review-correction-reading" .}}
+      {{end}}
+      {{if .State.Notes}}{{template "review-correction-notes" .}}{{end}}
+      {{template "review-correction-picture" .}}
+      {{template "review-correction-example" .State.Example}}
+    </div>
+  </section>
+  {{else if eq .State.AnswerMode "self_grade"}}
+  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+    <div class="review-prompt-label">
+      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
+    </div>
+    {{template "review-expression" .State}}
+  </section>
+  <form class="review-reveal-form" method="post" action="/reviews/session/{{.State.ID}}/reveal" data-review-action data-review-reveal data-prime-feedback-audio>
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
+    <button class="button" type="submit" autofocus>Show answer</button>
+  </form>
+  <p class="review-keyboard-hint review-keyboard-hint-centered"><kbd>Space</kbd> show answer</p>
+  {{else}}
+  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+    <div class="review-prompt-label">
+      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
+    </div>
+    {{template "review-expression" .State}}
+  </section>
+
+  <form
+    class="review-answer-form"
+    method="post"
+    action="/reviews/session/{{.State.ID}}/answer"
+    data-review-answer
+    data-prime-feedback-audio
+  >
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
+    <label for="answer">
+      <span class="visually-hidden">{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}} answer</span>
+    </label>
+    <div class="review-input-row">
+      {{if eq .State.PromptType "pronunciation"}}
+      <input
+        class="review-answer-input jp-input"
+        id="answer"
+        lang="ja"
+        data-kana-input
+        name="answer"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+        enterkeyhint="go"
+        autofocus
+        required
+      >
+      {{else}}
+      <input
+        class="review-answer-input"
+        id="answer"
+        name="answer"
+        autocomplete="off"
+        enterkeyhint="go"
+        autofocus
+        required
+      >
+      {{end}}
+      <button class="review-submit" type="submit" aria-label="Check answer"><span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+    </div>
+    {{if eq .State.PromptType "pronunciation"}}
+    <span class="input-mode" data-kana-mode>Hiragana</span>
+    {{end}}
+  </form>
+  {{end}}
+</div>
+{{end}}
+
+{{template "study-header" .}}
+{{template "review-session-body" .}}
+{{template "bare-footer" .}}

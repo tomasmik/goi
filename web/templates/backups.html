@@ -1,0 +1,313 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>Backups</h1>
+  </div>
+</section>
+
+{{template "settings-navigation" "backups"}}
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+{{if .Notice}}
+<div class="alert alert-success" role="status">{{.Notice}}</div>
+{{end}}
+{{if eq .Restore.State "pending"}}
+<div class="alert alert-success" role="status">
+  <strong>Restore pending.</strong> Changes are paused. Restart Goi to apply it, or cancel below.
+</div>
+{{else if eq .Restore.State "failed"}}
+<div class="alert alert-error" role="alert">
+  <strong>Restore failed.</strong> The previous data is unchanged. {{.Restore.Message}}
+</div>
+{{else if eq .Restore.State "success"}}
+<div class="alert alert-success" role="status">{{.Restore.Message}}</div>
+{{end}}
+
+<section class="form-card" aria-labelledby="backup-now-title" data-backup-live data-backup-state-url="/settings/backups/state">
+  <div>
+    <h2 id="backup-now-title">Back up now</h2>
+    {{if eq .State.Status "running"}}
+    <p class="muted" data-backup-status>A {{.State.Trigger}} backup is running.</p>
+    {{else if .BackupBusy}}
+    <p class="muted" data-backup-status>A backup is queued.</p>
+    {{else if .State.LastAttempt}}
+    <p class="muted" data-backup-status>Last attempt: {{.State.LastAttempt}}.{{if .State.LastSuccess}} Last success: {{.State.LastSuccess}}.{{end}}</p>
+    {{else if .State.LastSuccess}}
+    <p class="muted" data-backup-status>Last success: {{.State.LastSuccess}}.</p>
+    {{else}}
+    <p class="muted" data-backup-status>No backups have run yet.</p>
+    {{end}}
+    {{if .State.Error}}<p class="field-error">{{.State.Error}}</p>{{end}}
+  </div>
+  <form method="post" action="/settings/backups/run">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="button" type="submit" data-backup-run {{if or (eq .State.Status "running") .BackupBusy}}disabled{{end}}>Back up now</button>
+  </form>
+</section>
+
+<form class="form-card" method="post" action="/settings/backups" aria-labelledby="backup-settings-title" data-backup-settings>
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <div>
+    <h2 id="backup-settings-title">Backup settings</h2>
+    <p class="muted">Choose where backups are stored and how long they are kept.</p>
+    <p class="help">Each completed backup is verified. Sign-ins and browser extension connections are not included.</p>
+  </div>
+  <label class="checkbox-label backup-enabled-toggle">
+    <input type="checkbox" name="enabled" data-backup-enabled {{if .Settings.Enabled}}checked{{end}}>
+    Run automatically once a day
+  </label>
+  <div class="form-grid backup-schedule-grid">
+    <label>
+      Automatic backup time
+      <input type="time" name="hour" step="3600" value="{{printf "%02d:00" .Settings.Hour}}" data-backup-dependent required>
+      <span class="help">Using {{.Settings.TimeZone}}.</span>
+    </label>
+    <label>
+      Days to keep
+      <input type="number" name="retention_days" min="1" max="3" value="{{.Settings.RetentionDays}}" required>
+      <span class="help">Applies to manual and automatic backups.</span>
+    </label>
+  </div>
+  <fieldset class="choice-field">
+    <legend>Destinations</legend>
+    <div class="choice-options backup-destination-options">
+      <label class="choice-option">
+        <input type="checkbox" name="keep_local" {{if .Settings.KeepLocal}}checked{{end}}>
+        <span>This server</span>
+      </label>
+      <label class="choice-option">
+        <input type="checkbox" name="google_drive" {{if .Settings.GoogleDrive}}checked{{end}} {{if not .DriveConnected}}disabled{{end}}>
+        <span>Google Drive</span>
+      </label>
+    </div>
+    <span class="help">Connect <a href="#google-drive-title">Google Drive</a> below to enable it. Choose at least one destination.</span>
+  </fieldset>
+  <div class="form-actions">
+    <button class="button button-secondary" type="submit">Save backup settings</button>
+  </div>
+</form>
+
+<details class="form-card form-details backup-google-setup" {{if or .DriveConnected .DriveConfigured}}open{{end}}>
+  <summary id="google-drive-title">Google Drive {{if .DriveConnected}}connected{{else}}setup{{end}}</summary>
+  <div class="details-body dictionary-settings">
+  <div>
+    <h2>Google Drive</h2>
+    {{if .DriveConnected}}
+    <p class="muted">Connected. Goi can access only files it created.</p>
+    {{else if .DriveEnvironmentManaged}}
+    <p class="muted">Configured by the server.</p>
+    {{else if .DriveConfigured}}
+    <p class="muted">OAuth client file saved.</p>
+    {{else if .DriveCallbackURL}}
+      <p class="muted">Upload a Google OAuth client file.</p>
+    {{else}}
+    <p class="muted">Set the Google Drive OAuth client ID and secret on the server to enable remote backups.</p>
+    {{end}}
+  </div>
+  {{if .DriveConnected}}
+  <form method="post" action="/settings/backups/google/disconnect" data-confirm="Disconnect Google Drive? Future backups will stay on this server.">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label class="destructive-confirmation" data-confirm-fallback>
+      <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+      Confirm disconnect
+    </label>
+    <button class="button button-secondary" type="submit">Disconnect</button>
+  </form>
+  {{else if .DriveEnvironmentManaged}}
+  <a class="button button-secondary" href="/settings/backups/google/connect">Connect Google Drive</a>
+  {{else if .DriveCallbackURL}}
+  <p class="alert alert-warning" data-origin-warning data-configured-url="{{.DriveCallbackURL}}" hidden>The configured public address differs from the address in this browser. Google must use the configured callback address shown below.</p>
+  {{if .DriveConfigured}}
+  <div class="form-section">
+    <div>
+      <h3>Connect Google Drive</h3>
+      <p class="muted">Connect the Google account used for backups.</p>
+    </div>
+    <div class="form-actions">
+      <a class="button" href="/settings/backups/google/connect">Connect Google Drive</a>
+    </div>
+  </div>
+  <details class="form-details">
+  <summary>Change Google connection file</summary>
+  <form class="details-body inline-form" method="post" action="/settings/backups/google/client" enctype="multipart/form-data" aria-labelledby="google-client-replace-title">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div>
+      <h3 id="google-client-replace-title">Upload a replacement</h3>
+      <p class="muted">Upload another OAuth Web application client JSON.</p>
+    </div>
+    <label class="file-picker" data-file-picker>
+      <span class="visually-hidden">Google connection file</span>
+      <input type="file" name="client" accept=".json,application/json" required>
+      <span class="file-picker-button">Choose JSON file</span>
+      <span class="file-picker-name" data-file-name>No file selected</span>
+    </label>
+    <div class="form-actions">
+      <button class="button button-secondary" type="submit">Replace connection file</button>
+    </div>
+  </form>
+  </details>
+  <form method="post" action="/settings/backups/google/client/delete" data-confirm="Remove the saved Google OAuth client?">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label class="destructive-confirmation" data-confirm-fallback>
+      <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+      Confirm removal
+    </label>
+    <button class="text-button" type="submit">Remove connection file</button>
+  </form>
+  {{else}}
+  <details class="form-details">
+    <summary>Google Cloud setup steps</summary>
+  <div class="details-body form-section">
+    <div>
+      <h3>Create the connection file once</h3>
+      <ol class="setup-list">
+        <li>Open the <a class="external-link" href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener noreferrer">Google Drive API</a> and enable it for your project.</li>
+        <li>In <a class="external-link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud Credentials</a>, create an OAuth client with the <strong>Web application</strong> type.</li>
+        <li>Add the address below as its authorized redirect URI, set the OAuth audience to Production, then download the JSON file.</li>
+      </ol>
+    </div>
+    <label>
+      Authorized redirect URI
+      <input value="{{.DriveCallbackURL}}" readonly>
+      <span class="help">Add this exact URI to the OAuth client.</span>
+    </label>
+  </div>
+  </details>
+  <form class="form-section" method="post" action="/settings/backups/google/client" enctype="multipart/form-data" aria-labelledby="google-client-upload-title">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div>
+      <h3 id="google-client-upload-title">Add the connection file</h3>
+      <p class="muted">Upload the OAuth client JSON from Google.</p>
+    </div>
+    <label class="file-picker" data-file-picker>
+      <span class="visually-hidden">Google connection file</span>
+      <input type="file" name="client" accept=".json,application/json" required>
+      <span class="file-picker-button">Choose JSON file</span>
+      <span class="file-picker-name" data-file-name>No file selected</span>
+    </label>
+    <div class="form-actions">
+      <button class="button button-secondary" type="submit">Save connection file</button>
+    </div>
+  </form>
+  {{end}}
+  {{end}}
+  </div>
+</details>
+
+{{if .LocalFiles}}
+<section class="panel backup-list" id="available-backups" aria-labelledby="local-backups-title">
+  <div class="section-heading">
+    <div>
+      <h2 id="local-backups-title">On this server</h2>
+      <p class="muted">Download or restore a backup.</p>
+      <p class="help">Backups from the last {{.Settings.RetentionDays}} {{if eq .Settings.RetentionDays 1}}day{{else}}days{{end}} are kept.</p>
+      <details class="form-details">
+        <summary>Server storage details</summary>
+        <p class="help">Stored in <code>{{.LocalDirectory}}</code>. Keep this directory on persistent storage if Goi runs in a container.</p>
+      </details>
+    </div>
+  </div>
+  <div class="backup-rows">
+    {{range .LocalFiles}}
+    <div class="backup-row">
+      <div>
+        <strong>{{.Created}}</strong>
+        <p class="muted">{{.Size}}</p>
+      </div>
+      <div class="backup-row-actions">
+        <a class="button button-secondary button-small" href="/settings/backups/local/{{.Name}}">Download</a>
+        <form method="post" action="/settings/backups/restore/local/{{.Name}}" data-confirm="Restore this local backup on the next Goi restart?">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <label class="destructive-confirmation" data-confirm-fallback>
+            <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+            Confirm restore
+          </label>
+          <button class="button button-secondary button-small" type="submit" {{if eq $.Restore.State "pending"}}disabled{{end}}>Restore</button>
+        </form>
+      </div>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
+{{if and (not .LocalFiles) (not .DriveFiles)}}
+<section class="panel backup-list" id="available-backups" aria-labelledby="available-backups-title">
+  <h2 id="available-backups-title">Available backups</h2>
+  <p class="muted">No backups.</p>
+  <details class="form-details">
+    <summary>Server storage details</summary>
+    <p class="help">Server copies are stored in <code>{{.LocalDirectory}}</code>. Keep this directory on persistent storage if Goi runs in a container.</p>
+  </details>
+</section>
+{{end}}
+
+{{if .DriveFiles}}
+<section class="panel backup-list" aria-labelledby="drive-backups-title">
+  <div class="section-heading">
+    <div>
+      <h2 id="drive-backups-title">In Google Drive</h2>
+      <p class="muted">Restoring queues the selected copy for the next restart.</p>
+    </div>
+  </div>
+  <div class="backup-rows">
+    {{range .DriveFiles}}
+    <div class="backup-row">
+      <div class="backup-row-summary">
+        <strong class="backup-row-name">{{.Name}}</strong>
+        <p class="muted">{{.Created}} · {{.Size}}</p>
+        <span class="status {{if .CurrentInstallation}}status-known{{end}}">{{.Origin}}</span>
+      </div>
+      <form method="post" action="/settings/backups/restore/google/{{.ID}}" data-confirm="Restore this Google Drive backup on the next Goi restart?">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <label class="destructive-confirmation" data-confirm-fallback>
+          <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+          Confirm restore
+        </label>
+        <button class="button button-secondary button-small" type="submit" {{if eq $.Restore.State "pending"}}disabled{{end}}>Restore</button>
+      </form>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}
+
+<details class="form-card form-details" {{if ne .Restore.State ""}}open{{end}}>
+<summary id="restore-upload-title">Restore from a file</summary>
+<form class="details-body inline-form" method="post" action="/settings/backups/restore/upload" enctype="multipart/form-data" aria-labelledby="restore-upload-title">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <div>
+    <p class="muted">The restore is applied after Goi restarts.</p>
+  </div>
+  <label class="file-picker" data-file-picker>
+    <span class="visually-hidden">Goi backup</span>
+    <input type="file" name="backup" accept=".zip,application/zip" required {{if eq .Restore.State "pending"}}disabled{{end}}>
+    <span class="file-picker-button">Choose backup file</span>
+    <span class="file-picker-name" data-file-name>No file selected</span>
+  </label>
+  <div class="form-actions">
+    <button class="button button-secondary" type="submit" {{if eq .Restore.State "pending"}}disabled{{end}}>Prepare restore</button>
+  </div>
+</form>
+</details>
+
+{{if eq .Restore.State "pending"}}
+<section class="form-card dictionary-settings" aria-labelledby="pending-restore-title">
+  <div>
+    <h2 id="pending-restore-title">Pending restore</h2>
+    <p class="muted">Restart the Goi process or container to apply this backup. Changes are paused until then.</p>
+    <details class="form-details">
+      <summary>Recovery details</summary>
+      <p class="help">Goi keeps the current database in a <code>.before-restore</code> file beside it.</p>
+    </details>
+  </div>
+  <form method="post" action="/settings/backups/restore/cancel">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="button button-secondary" type="submit">Cancel restore</button>
+  </form>
+</section>
+{{end}}
+
+{{template "footer" .}}

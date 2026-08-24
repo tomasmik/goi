@@ -1,0 +1,58 @@
+{{template "header" .}}
+<section class="page-heading page-heading-compact">
+  <div>
+    <h1>Extra practice</h1>
+    <p class="lede">Practice without changing review schedules.</p>
+  </div>
+  {{if .Study.Leeches}}
+  <div class="page-heading-actions">
+    <a class="button button-secondary" href="/leeches">Manage leeches</a>
+  </div>
+  {{end}}
+</section>
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+
+<section class="study-panel">
+  <div class="study-grid">
+    {{if .Study.Current}}
+    <form method="post" action="/study/current">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="study-card" type="submit">
+        <strong>Learning words</strong>
+        <small>Words in the first two memory stages.</small>
+        <span>{{.Study.Current}} {{if eq .Study.Current 1}}word{{else}}words{{end}}</span>
+        <span class="study-card-action">Practice <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></span>
+      </button>
+    </form>
+    {{end}}
+    {{if .Study.RecentMistakes}}
+    <form method="post" action="/study/recent-mistakes">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="study-card" type="submit">
+        <strong>Recent mistakes</strong>
+        <small>Words missed in scheduled reviews during the last day.</small>
+        <span>{{.Study.RecentMistakes}} {{if eq .Study.RecentMistakes 1}}word{{else}}words{{end}}</span>
+        <span class="study-card-action">Practice <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></span>
+      </button>
+    </form>
+    {{end}}
+    {{if .Study.Leeches}}
+    <form method="post" action="/study/leeches">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="study-card" type="submit">
+        <strong>Leeches</strong>
+        <small>Words currently marked as leeches.</small>
+        <span>{{.Study.Leeches}} {{if eq .Study.Leeches 1}}word{{else}}words{{end}}</span>
+        <span class="study-card-action">Practice <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></span>
+      </button>
+    </form>
+    {{end}}
+  </div>
+  {{if and (eq .Study.RecentMistakes 0) (eq .Study.Current 0) (eq .Study.Leeches 0)}}
+  <p class="empty-inline">No words are available for extra practice.</p>
+  {{end}}
+</section>
+{{template "footer" .}}

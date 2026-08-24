@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Goi Transcript</title>
+    <link rel="stylesheet" href="companion.css">
+    <link rel="stylesheet" href="../shared/dictionary-view.css">
+    <link rel="stylesheet" href="../shared/ui.css">
+  </head>
+  <body class="goi-extension-ui goi-companion">
+    <header class="app-header">
+      <span class="mark" aria-hidden="true">語</span>
+      <div>
+        <h1>Transcript and mining</h1>
+        <p id="video-title">Waiting for YouTube…</p>
+      </div>
+    </header>
+
+    <main>
+      <section class="transcript" aria-labelledby="transcript-heading">
+        <div class="section-heading">
+          <div>
+            <h2 id="transcript-heading">Full transcript</h2>
+            <p id="line-count" role="status" aria-live="polite">Loading transcript…</p>
+          </div>
+        </div>
+        <p id="transcript-note" class="visually-hidden">The comprehension score uses the complete Japanese transcript.</p>
+        <div class="transcript-toolbar" aria-label="Transcript tools">
+          <label class="transcript-search">
+            <span class="visually-hidden">Search subtitles</span>
+            <input id="subtitle-search" type="search" placeholder="Search subtitles…" autocomplete="off">
+          </label>
+          <label class="switch-control">
+            <input id="unknown-only" type="checkbox" role="switch">
+            <span>Unknown only</span>
+          </label>
+          <label class="switch-control">
+            <input id="auto-follow" type="checkbox" role="switch" checked>
+            <span>Follow</span>
+          </label>
+          <button id="translate-selection" class="quiet" type="button" hidden>Translate selection</button>
+          <button id="translation-tools-toggle" class="quiet" type="button" aria-expanded="false" aria-controls="translation-tools">Translate text</button>
+          <button id="batch-tools-toggle" class="quiet" type="button" aria-expanded="false" aria-controls="batch-tools">1T mining</button>
+          <button id="transcript-retry" class="quiet" type="button" hidden>Retry transcript</button>
+        </div>
+        <div id="translation-tools" class="transcript-tool-panel translation-tools" aria-labelledby="translation-tools-toggle" hidden>
+          <textarea id="translation-input" rows="2" maxlength="8000" lang="ja" placeholder="Paste Japanese text from a book, game, or anywhere else"></textarea>
+          <div class="translation-tools-actions">
+            <button id="translate-pasted" class="quiet" type="button" hidden>Retry</button>
+            <span id="translation-status" class="status" role="status" aria-live="polite"></span>
+          </div>
+          <p id="translation-result" class="translation-result" lang="en" hidden></p>
+        </div>
+        <div id="batch-tools" class="transcript-tool-panel batch-tools" aria-labelledby="batch-tools-toggle" hidden>
+          <div class="batch-row">
+            <span>Lines with exactly one unknown word</span>
+            <button id="batch-one-target" type="button" disabled>Send lines to mining</button>
+          </div>
+          <p id="coverage-readiness" class="session-note" hidden>Unchecked lines stay hidden.</p>
+        </div>
+        <ol id="subtitle-lines" class="subtitle-lines"></ol>
+        <div id="empty-state" class="empty-state">
+          <strong id="empty-title">Loading transcript</strong>
+          <span id="empty-detail">Reading the video’s Japanese subtitles.</span>
+        </div>
+      </section>
+
+      <aside class="workspace">
+        <div id="capture-empty" class="workspace-empty">
+          <strong>Select a subtitle line</strong>
+          <span>No line selected.</span>
+        </div>
+        <section id="capture-workspace" aria-labelledby="capture-heading" hidden>
+          <div class="section-heading">
+            <div>
+              <h2 id="capture-heading">Send to mining</h2>
+              <p>Check the target word, then send.</p>
+            </div>
+          </div>
+          <form id="capture-form">
+            <label>
+              Target word
+              <input id="capture-target" type="text" maxlength="200" required autocomplete="off" lang="ja">
+            </label>
+            <div id="dictionary-lookup" class="dictionary-lookup" role="status" aria-live="polite" hidden></div>
+            <label>
+              Sentence
+              <textarea id="capture-sentence" rows="3" readonly lang="ja"></textarea>
+            </label>
+            <div class="capture-meta">
+              <span id="capture-time">No line selected</span>
+              <button id="jump-selected" class="quiet" type="button" disabled>Jump to line</button>
+            </div>
+            <button id="capture-submit" class="primary full-width" type="submit" disabled>Send to mining</button>
+          </form>
+          <p id="capture-status" class="status" role="status" aria-live="polite" aria-atomic="true"></p>
+        </section>
+
+        <details class="settings-disclosure">
+          <summary>Subtitle settings</summary>
+        <section aria-labelledby="settings-heading">
+          <div class="section-heading">
+            <div>
+              <h2 id="settings-heading">Subtitle display</h2>
+            </div>
+          </div>
+          <label class="check-control">
+            <input id="overlay-enabled" type="checkbox">
+            <span>Observe captions for mining and history</span>
+          </label>
+          <fieldset>
+            <legend>Show subtitles</legend>
+            <div class="display-choices">
+              <label><input type="radio" name="display-mode" value="always"><span>Always</span></label>
+              <label><input type="radio" name="display-mode" value="hidden"><span>Hidden (keep mining)</span></label>
+              <label><input type="radio" name="display-mode" value="unknown_only"><span>Unknown lines</span></label>
+              <label><input type="radio" name="display-mode" value="pause_reveal"><span>When paused</span></label>
+            </div>
+          </fieldset>
+          <label class="check-control">
+            <input id="hide-native" type="checkbox">
+            <span>Hide YouTube’s original captions in Always mode</span>
+          </label>
+          <label class="check-control">
+            <input id="furigana" type="checkbox">
+            <span>Furigana on unknown words</span>
+          </label>
+          <label class="check-control">
+            <input id="hover-lookup" type="checkbox">
+            <span>Show definitions on hover</span>
+          </label>
+          <p id="hide-native-detail" class="native-caption-note" hidden>
+            Other display modes hide original captions automatically.
+          </p>
+          <label class="range-control">
+            <span>Text size <output id="font-size-value" for="font-size">34 px</output></span>
+            <input id="font-size" type="range" min="18" max="96" step="1" value="34">
+          </label>
+          <div class="range-pair">
+            <label class="range-control">
+              <span>Vertical position <output id="vertical-position-value" for="vertical-position">Lower</output></span>
+              <input id="vertical-position" type="range" min="10" max="90" step="1" value="78">
+            </label>
+            <label class="range-control">
+              <span>Background <output id="background-opacity-value" for="background-opacity">65%</output></span>
+              <input id="background-opacity" type="range" min="0" max="0.9" step="0.05" value="0.65">
+            </label>
+          </div>
+          <label class="select-control">
+            <span>Coverage indicator</span>
+            <select id="coverage-display">
+              <option value="full">Full details</option>
+              <option value="compact">Percentage only</option>
+              <option value="hidden">Hidden</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>Pause video</legend>
+            <div class="pause-choices">
+              <label><input type="radio" name="pause-behavior" value="never"><span>Never</span></label>
+              <label><input type="radio" name="pause-behavior" value="on_hover"><span>On hover</span></label>
+              <label><input type="radio" name="pause-behavior" value="on_selection"><span>On select</span></label>
+              <label><input type="radio" name="pause-behavior" value="after_capture"><span>After save</span></label>
+            </div>
+          </fieldset>
+          <p id="settings-status" class="status" role="status" aria-live="polite"></p>
+        </section>
+        </details>
+      </aside>
+    </main>
+
+    <p id="page-status" class="page-status" role="status" aria-live="polite"></p>
+    <div id="word-preview" class="word-preview" role="dialog" aria-label="Dictionary preview" hidden></div>
+
+    <script src="../shared/settings-model.js"></script>
+    <script src="../shared/subtitle-model.js"></script>
+    <script src="../shared/subtitle-view.js"></script>
+    <script src="../shared/translation.js"></script>
+    <script src="../shared/dictionary-client.js"></script>
+    <script src="../shared/dictionary-view.js"></script>
+    <script src="companion.js"></script>
+  </body>
+</html>

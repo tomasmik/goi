@@ -1,0 +1,41 @@
+name: goi
+
+services:
+  goi:
+    build:
+      context: .
+    image: goi:local
+    container_name: goi
+    restart: unless-stopped
+    init: true
+
+    ports:
+      - "${GOI_PORT:-8080}:8080"
+
+    environment:
+      APP_LISTEN: ":8080"
+      APP_DATA_DIR: "/data"
+      APP_DATABASE_PATH: "/data/vocab.sqlite"
+      APP_BACKUP_DIR: "/backups"
+
+      APP_BASE_URL: "${APP_BASE_URL:-http://localhost:8080}"
+      APP_TIME_ZONE: "${APP_TIME_ZONE:-UTC}"
+
+      APP_AUTH_MODE: "${APP_AUTH_MODE:-false}"
+      APP_AUTH_USERNAME: "${APP_AUTH_USERNAME:-}"
+      APP_AUTH_PASSWORD: "${APP_AUTH_PASSWORD:-}"
+
+      APP_TRUST_PROXY: "${APP_TRUST_PROXY:-false}"
+
+    volumes:
+      - goi-data:/data
+      - goi-backups:/backups
+
+    stop_grace_period: 30s
+
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  goi-data:
+  goi-backups:
