@@ -28,6 +28,7 @@ type Store struct {
 }
 
 type StudyCounts struct {
+	RecentLessons  int
 	RecentMistakes int
 	Current        int
 	Leeches        int

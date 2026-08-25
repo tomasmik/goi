@@ -82,6 +82,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/reviews/session/{id}/pause", h.pause)
 	r.Post("/reviews/session/{id}/resume", h.resume)
 	r.Post("/reviews/session/{id}/undo", h.undo)
+	r.Post("/study/recent-lessons", h.study)
 	r.Post("/study/recent-mistakes", h.study)
 	r.Post("/study/current", h.study)
 	r.Post("/study/leeches", h.study)

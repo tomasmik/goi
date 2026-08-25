@@ -17,6 +17,17 @@
 
 <section class="study-panel">
   <div class="study-grid">
+    {{if .Study.RecentLessons}}
+    <form method="post" action="/study/recent-lessons">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="study-card" type="submit">
+        <strong>Recently learned</strong>
+        <small>Words completed within your recent lesson window.</small>
+        <span>{{.Study.RecentLessons}} {{if eq .Study.RecentLessons 1}}word{{else}}words{{end}}</span>
+        <span class="study-card-action">Practice <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></span>
+      </button>
+    </form>
+    {{end}}
     {{if .Study.Current}}
     <form method="post" action="/study/current">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -51,7 +62,7 @@
     </form>
     {{end}}
   </div>
-  {{if and (eq .Study.RecentMistakes 0) (eq .Study.Current 0) (eq .Study.Leeches 0)}}
+  {{if and (eq .Study.RecentLessons 0) (eq .Study.RecentMistakes 0) (eq .Study.Current 0) (eq .Study.Leeches 0)}}
   <p class="empty-inline">No words are available for extra practice.</p>
   {{end}}
 </section>

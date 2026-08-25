@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	captureBodyLimit      = 64 << 10
-	captureMediaBodyLimit = 256 << 20
+	captureBodyLimit            = 128 << 10
+	CaptureMediaBodyLimit int64 = 256 << 20
 )
 
 //go:embed bookmarklet.js
@@ -553,7 +553,7 @@ func (h *Handler) addMedia(w http.ResponseWriter, r *http.Request) {
 		h.notFound(w)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, captureMediaBodyLimit)
+	r.Body = http.MaxBytesReader(w, r.Body, CaptureMediaBodyLimit)
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
 		h.renderDetail(w, r, id, detailForm{}, "The media upload is too large or invalid.", "", http.StatusBadRequest)
 		return

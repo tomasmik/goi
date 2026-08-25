@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -1196,15 +1197,22 @@ func TestReviewsAndExtraPracticeAreSeparatePages(t *testing.T) {
 	if strings.Contains(body, "Learning words") || strings.Contains(body, "Recent words") || strings.Contains(body, `class="study-grid"`) {
 		t.Fatalf("reviews page contains extra-practice choices: %s", body)
 	}
+	now := time.Now().UTC().Unix()
+	if _, err := db.Exec(`
+		INSERT INTO vocabulary (expression, normalized_expression, status, lesson_completed_at, created_at, updated_at)
+		VALUES ('猫', '猫', 'active', ?, ?, ?)`, now, now, now); err != nil {
+		t.Fatal(err)
+	}
 
 	request = httptest.NewRequest(http.MethodGet, "/practice", nil)
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	body = response.Body.String()
-	if response.Code != http.StatusOK || !strings.Contains(body, "Extra practice") {
+	if response.Code != http.StatusOK || !strings.Contains(body, "Extra practice") ||
+		!strings.Contains(body, "Recently learned") || !strings.Contains(body, `action="/study/recent-lessons"`) {
 		t.Fatalf("practice response = %d, body = %s", response.Code, body)
 	}
-	for _, unwanted := range []string{"Recent words", "Newer words", "View and practice leeches"} {
+	for _, unwanted := range []string{"Newer words", "View and practice leeches"} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("practice page contains obsolete choice %q: %s", unwanted, body)
 		}

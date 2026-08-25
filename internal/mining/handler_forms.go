@@ -143,7 +143,7 @@ func parseCardForm(w http.ResponseWriter, r *http.Request) error {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
 		return parseSmallForm(w, r)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, captureMediaBodyLimit)
+	r.Body = http.MaxBytesReader(w, r.Body, CaptureMediaBodyLimit)
 	if err := r.ParseMultipartForm(1 << 20); err != nil {
 		return handlerValidationError("the card form is too large or invalid")
 	}

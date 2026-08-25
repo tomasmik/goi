@@ -90,11 +90,6 @@ func (s *Store) StartNormal(ctx context.Context, limit int) (int64, error) {
 func (s *Store) StartExtraSource(ctx context.Context, source string, selected []int64) (int64, error) {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
-	if sessionID, found, err := s.activeStandaloneSession(ctx, "extra"); err != nil {
-		return 0, fmt.Errorf("check active study session: %w", err)
-	} else if found {
-		return sessionID, nil
-	}
 	extraStudyLimit := 10
 	if err := s.db.QueryRowContext(ctx, "SELECT extra_study_limit FROM user_settings WHERE id = 1").Scan(&extraStudyLimit); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, fmt.Errorf("load extra-study list size: %w", err)
@@ -109,6 +104,12 @@ func (s *Store) StartExtraSource(ctx context.Context, source string, selected []
 	preferences, err := s.reviewPreferences(ctx)
 	if err != nil {
 		return 0, err
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE review_sessions
+		SET status = 'abandoned'
+		WHERE kind = 'extra' AND lesson_session_id IS NULL AND status IN ('active', 'paused')`); err != nil {
+		return 0, fmt.Errorf("replace active practice session: %w", err)
 	}
 	return s.startSessionWithPreferences(ctx, "extra", ids, preferences, 0)
 }

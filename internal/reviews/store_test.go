@@ -1900,6 +1900,90 @@ func TestSelectedStudyRejectsAnOversizedSelection(t *testing.T) {
 	}
 }
 
+func TestRecentLessonPracticeUsesConfiguredWindow(t *testing.T) {
+	ctx, db := openReviewTestDatabase(t)
+	now := time.Now().UTC()
+	if _, err := db.Exec("INSERT INTO user_settings (id, lesson_window_hours) VALUES (1, 4)"); err != nil {
+		t.Fatal(err)
+	}
+	insert := func(expression string, completedAt time.Time) int64 {
+		t.Helper()
+		result, err := db.Exec(`
+			INSERT INTO vocabulary (expression, normalized_expression, status, lesson_completed_at, created_at, updated_at)
+			VALUES (?, ?, 'active', ?, ?, ?)`, expression, expression, completedAt.Unix(), now.Unix(), now.Unix())
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := result.LastInsertId()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	recentID := insert("猫", now.Add(-3*time.Hour))
+	insert("犬", now.Add(-5*time.Hour))
+
+	store := NewStore(db)
+	counts, err := store.StudyCounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.RecentLessons != 1 {
+		t.Fatalf("recent lesson count = %d, want 1", counts.RecentLessons)
+	}
+	ids, err := store.studyIDs(ctx, "recent-lessons", nil, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != recentID {
+		t.Fatalf("recent lesson IDs = %v, want [%d]", ids, recentID)
+	}
+}
+
+func TestChoosingAPracticeListReplacesThePreviousSource(t *testing.T) {
+	ctx, db := openReviewTestDatabase(t)
+	insertDueVocabularyWithExpression(t, db, "食べる")
+	insertDueVocabularyWithExpression(t, db, "見る")
+	now := time.Now().UTC().Unix()
+	var recentID int64
+	if err := db.QueryRow("SELECT id FROM vocabulary WHERE expression = '見る'").Scan(&recentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE vocabulary SET lesson_completed_at = ? WHERE id = ?", now, recentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE srs_states SET stage = 5 WHERE vocabulary_id = ?", recentID); err != nil {
+		t.Fatal(err)
+	}
+
+	store := NewStore(db)
+	currentSessionID, err := store.StartExtraSource(ctx, "current", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recentSessionID, err := store.StartExtraSource(ctx, "recent-lessons", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recentSessionID == currentSessionID {
+		t.Fatal("recent lesson practice reused the current-words session")
+	}
+	var status string
+	if err := db.QueryRow("SELECT status FROM review_sessions WHERE id = ?", currentSessionID).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "abandoned" {
+		t.Fatalf("previous practice status = %q, want abandoned", status)
+	}
+	var vocabularyID int64
+	if err := db.QueryRow("SELECT vocabulary_id FROM review_session_items WHERE session_id = ?", recentSessionID).Scan(&vocabularyID); err != nil {
+		t.Fatal(err)
+	}
+	if vocabularyID != recentID {
+		t.Fatalf("recent practice vocabulary = %d, want %d", vocabularyID, recentID)
+	}
+}
+
 func answerForState(state State) string {
 	if state.PromptType == "pronunciation" {
 		return "たべる"

@@ -13,6 +13,7 @@ import (
 	"github.com/tomasmik/goi/internal/backups"
 	"github.com/tomasmik/goi/internal/captureapi"
 	appimports "github.com/tomasmik/goi/internal/imports"
+	"github.com/tomasmik/goi/internal/mining"
 	"github.com/tomasmik/goi/internal/vocabulary"
 	internalweb "github.com/tomasmik/goi/internal/web"
 )
@@ -87,7 +88,7 @@ func securityHeaders(secure bool) func(http.Handler) http.Handler {
 const (
 	defaultRequestBodyLimit    int64 = 1 << 20
 	vocabularyRequestBodyLimit int64 = 25 << 20
-	miningRequestBodyLimit     int64 = 64 << 10
+	miningRequestBodyLimit     int64 = 128 << 10
 	defaultRequestTimeout            = 15 * time.Second
 	translationRequestTimeout        = 65 * time.Second
 	mediaRequestTimeout              = 2 * time.Minute
@@ -168,7 +169,7 @@ func timeoutForRequest(r *http.Request) time.Duration {
 	if r.Method == http.MethodPost && r.URL.Path == "/settings/jmdict/refresh" {
 		return longRequestTimeout
 	}
-	if r.Method == http.MethodPost && extensionCaptureMediaPath(r.URL.Path) {
+	if r.Method == http.MethodPost && (extensionCaptureMediaPath(r.URL.Path) || miningMediaUploadPath(r.URL.Path)) {
 		return mediaRequestTimeout
 	}
 	if r.Method == http.MethodPost && (r.URL.Path == "/vocabulary" || strings.HasPrefix(r.URL.Path, "/vocabulary/")) {
@@ -203,6 +204,9 @@ func requestBodyLimit(r *http.Request) int64 {
 	if r.URL.Path == "/settings/backups/restore/upload" {
 		return backups.RestoreUploadRequestLimit
 	}
+	if miningMediaUploadPath(r.URL.Path) {
+		return mining.CaptureMediaBodyLimit
+	}
 	if r.URL.Path == "/mining/captures" || strings.HasPrefix(r.URL.Path, "/mining/captures/") {
 		return miningRequestBodyLimit
 	}
@@ -225,4 +229,16 @@ func requestBodyLimit(r *http.Request) int64 {
 		return vocabularyRequestBodyLimit
 	}
 	return defaultRequestBodyLimit
+}
+
+func miningMediaUploadPath(path string) bool {
+	remainder, found := strings.CutPrefix(path, "/mining/captures/")
+	if !found {
+		return false
+	}
+	captureID, action, found := strings.Cut(remainder, "/")
+	if !found || captureID == "" || strings.Contains(action, "/") {
+		return false
+	}
+	return action == "accept" || action == "attach-candidate" || action == "media"
 }

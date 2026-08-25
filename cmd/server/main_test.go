@@ -20,6 +20,7 @@ import (
 	"github.com/tomasmik/goi/internal/captureapi"
 	"github.com/tomasmik/goi/internal/database"
 	appimports "github.com/tomasmik/goi/internal/imports"
+	"github.com/tomasmik/goi/internal/mining"
 	"github.com/tomasmik/goi/internal/vocabulary"
 	internalweb "github.com/tomasmik/goi/internal/web"
 )
@@ -134,8 +135,11 @@ func TestRequestBodyLimitUsesRouteSpecificLimits(t *testing.T) {
 		{path: "/vocabulary/42/action", want: defaultRequestBodyLimit},
 		{path: "/mining/captures", want: miningRequestBodyLimit},
 		{path: "/mining/captures/42", want: miningRequestBodyLimit},
-		{path: "/mining/captures/42/accept", want: miningRequestBodyLimit},
+		{path: "/mining/captures/42/accept", want: mining.CaptureMediaBodyLimit},
 		{path: "/mining/captures/42/attach", want: miningRequestBodyLimit},
+		{path: "/mining/captures/42/attach-candidate", want: mining.CaptureMediaBodyLimit},
+		{path: "/mining/captures/42/media", want: mining.CaptureMediaBodyLimit},
+		{path: "/mining/captures/42/media/9/delete", want: miningRequestBodyLimit},
 		{path: "/mining/captures/42/discard", want: miningRequestBodyLimit},
 		{path: "/mining/captures/42/restore", want: miningRequestBodyLimit},
 		{path: "/mining/captures/42/delete", want: miningRequestBodyLimit},
@@ -166,6 +170,10 @@ func TestRequestTimeoutUsesRouteSpecificDurations(t *testing.T) {
 		{method: http.MethodPost, path: "/vocabulary", want: mediaRequestTimeout},
 		{method: http.MethodPost, path: "/vocabulary/42", want: mediaRequestTimeout},
 		{method: http.MethodPost, path: "/api/extension/v1/captures/42/media", want: mediaRequestTimeout},
+		{method: http.MethodPost, path: "/mining/captures/42/accept", want: mediaRequestTimeout},
+		{method: http.MethodPost, path: "/mining/captures/42/attach-candidate", want: mediaRequestTimeout},
+		{method: http.MethodPost, path: "/mining/captures/42/media", want: mediaRequestTimeout},
+		{method: http.MethodPost, path: "/mining/captures/42/attach", want: defaultRequestTimeout},
 		{method: http.MethodPost, path: "/imports/anki/upload", want: longRequestTimeout},
 		{method: http.MethodPost, path: "/imports/anki/42/apply", want: longRequestTimeout},
 		{method: http.MethodPost, path: "/settings/backups/restore/upload", want: longRequestTimeout},

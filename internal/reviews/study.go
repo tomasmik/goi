@@ -2,6 +2,8 @@ package reviews
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +13,10 @@ const maximumStudySelectionSize = 100
 
 func (s *Store) StudyCounts(ctx context.Context) (StudyCounts, error) {
 	var counts StudyCounts
+	windowHours := 12
+	if err := s.db.QueryRowContext(ctx, "SELECT lesson_window_hours FROM user_settings WHERE id = 1").Scan(&windowHours); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return StudyCounts{}, fmt.Errorf("load study window: %w", err)
+	}
 	now := time.Now().UTC()
 	queries := []struct {
 		name        string
@@ -18,6 +24,14 @@ func (s *Store) StudyCounts(ctx context.Context) (StudyCounts, error) {
 		statement   string
 		arguments   []any
 	}{
+		{
+			name:        "recent lessons",
+			destination: &counts.RecentLessons,
+			statement: `SELECT COUNT(*)
+			 FROM vocabulary
+			 WHERE status = 'active' AND lesson_completed_at >= ?`,
+			arguments: []any{now.Add(-time.Duration(windowHours) * time.Hour).Unix()},
+		},
 		{
 			name:        "recent mistakes",
 			destination: &counts.RecentMistakes,
@@ -99,6 +113,18 @@ func (s *Store) studyIDs(ctx context.Context, source string, selected []int64, l
 	var query string
 	var args []any
 	switch source {
+	case "recent-lessons":
+		windowHours := 12
+		if err := s.db.QueryRowContext(ctx, "SELECT lesson_window_hours FROM user_settings WHERE id = 1").Scan(&windowHours); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("load study window: %w", err)
+		}
+		query = `
+			SELECT id
+			FROM vocabulary
+			WHERE status = 'active' AND lesson_completed_at >= ?
+			ORDER BY lesson_completed_at DESC, id DESC
+			LIMIT ?`
+		args = append(args, time.Now().UTC().Add(-time.Duration(windowHours)*time.Hour).Unix(), limit)
 	case "recent-mistakes":
 		query = `
 			SELECT rsi.vocabulary_id
