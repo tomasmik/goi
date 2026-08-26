@@ -1476,6 +1476,39 @@ func TestMiningRequiresCompletingASparseExistingCardBeforeRestart(t *testing.T) 
 	}
 }
 
+func TestMiningPrefillsASparseExistingCardFromTheDictionary(t *testing.T) {
+	ctx, db := openMiningTestDatabase(t)
+	store := NewStore(db)
+	if _, err := vocabulary.NewStore(db).AddKnown(ctx, "猫"); err != nil {
+		t.Fatal(err)
+	}
+	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000064")
+	completeMiningEnrichment(t, ctx, store, readyMiningMatch("猫", "ねこ", "cat"))
+
+	response := httptest.NewRecorder()
+	miningTestRouter(t, store, "https://goi.example").ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, fmt.Sprintf("/mining/captures/%d", capture.ID), nil),
+	)
+	body := response.Body.String()
+	for _, expected := range []string{
+		"This card already exists",
+		"Choose the matching entry",
+		`name="pronunciation" value="ねこ"`,
+		">cat</textarea>",
+		fmt.Sprintf(`action="/mining/captures/%d/accept"`, capture.ID),
+		fmt.Sprintf(`formaction="/mining/captures/%d/attach-candidate"`, capture.ID),
+		"Restart from first lesson",
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("sparse existing card does not contain %q: %s", expected, body)
+		}
+	}
+	if strings.Contains(body, ">Complete card</a>") {
+		t.Fatalf("sparse existing card still requires manual completion: %s", body)
+	}
+}
+
 func TestFormatTimestamp(t *testing.T) {
 	tests := []struct {
 		milliseconds int64

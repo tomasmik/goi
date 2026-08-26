@@ -20,7 +20,7 @@
   --brand: #d95f4d;
   --brand-deep: #a64034;
   --brand-soft: #f1d3cc;
-  --brand-fill: #c95040;
+  --brand-fill: #c74e3f;
   --brand-fill-alt: #b84538;
   --brand-fill-edge: #96382f;
   --reading: #177f83;
@@ -64,7 +64,7 @@
   --brand-soft: #50342f;
   --brand-fill: #e76552;
   --brand-fill-alt: #f27a66;
-  --brand-fill-edge: #ac493c;
+  --brand-fill-edge: #cf5b4b;
   --reading: #3ab2b2;
   --reading-deep: #6bcaca;
   --reading-soft: #244849;
@@ -1630,6 +1630,20 @@ kbd {
 .section-help {
   max-width: 34rem;
   margin: .2rem 0 0;
+}
+
+.dashboard-review-completion {
+  display: grid;
+  gap: .2rem;
+  font-weight: 500;
+}
+
+.dashboard-review-completion > * {
+  margin: 0;
+}
+
+.dashboard-review-completion h2 {
+  font-size: 1rem;
 }
 
 .dashboard-actions {

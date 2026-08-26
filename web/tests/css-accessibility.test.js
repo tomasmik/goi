@@ -34,8 +34,20 @@ test("theme tokens preserve text and focus contrast", () => {
       assert.ok(contrast(tokens.muted, background) >= 4.5, `${name} muted text must meet 4.5:1`);
       assert.ok(contrast(tokens["focus-ring"], background) >= 3, `${name} focus ring must meet 3:1`);
     }
+    for (const background of [tokens["brand-fill"], tokens["brand-fill-alt"], tokens["brand-fill-edge"]]) {
+      assert.ok(contrast(tokens["accent-fill-ink"], background) >= 4.5, `${name} filled controls must meet 4.5:1`);
+    }
+    assert.ok(contrast(tokens["reading-deep"], tokens.canvas) >= 4.5, `${name} reading text must meet 4.5:1`);
+    assert.ok(contrast(tokens["success-ink"], tokens["success-soft"]) >= 4.5, `${name} success text must meet 4.5:1`);
+    assert.ok(contrast(tokens["danger-ink"], tokens["danger-soft"]) >= 4.5, `${name} danger text must meet 4.5:1`);
     assert.ok(contrast(tokens.ink, tokens["warning-soft"]) >= 4.5, `${name} marked text must meet 4.5:1`);
   }
+});
+
+test("every web CSS variable reference has a definition", () => {
+  const definitions = new Set(Array.from(css.matchAll(/--([\w-]+)\s*:/g), ([, name]) => name));
+  const references = new Set(Array.from(css.matchAll(/var\(--([\w-]+)/g), ([, name]) => name));
+  assert.deepEqual(Array.from(references).filter((name) => !definitions.has(name)).sort(), []);
 });
 
 test("mobile forms keep visual and keyboard action order aligned", () => {

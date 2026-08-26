@@ -150,6 +150,8 @@
     <input type="hidden" name="example_target" value="{{$.ExampleTarget}}">
     <div class="form-actions"><button class="button" type="submit">Restart from first lesson</button></div>
   </form>
+  {{else if $.HasCandidates}}
+  <p class="alert alert-warning">This card needs a reading and meaning before it can restart. Choose the matching dictionary entry below to fill them in.</p>
   {{else}}
   <p class="alert alert-warning">This card needs a reading and meaning before it can restart.</p>
   <a class="button button-secondary" href="/vocabulary/{{.ID}}/edit">Complete card</a>
@@ -158,7 +160,7 @@
 {{end}}
 
 {{with .Enrichment}}
-{{if not $.ExistingVocabulary}}
+{{if or (not $.ExistingVocabulary) (not $.ExistingVocabulary.Pronunciation) (not $.ExistingVocabulary.Meanings)}}
 <section class="panel mining-enrichment mining-enrichment-{{.State}}">
   <div class="mining-enrichment-heading">
     <div>

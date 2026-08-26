@@ -124,7 +124,7 @@ func TestCorrectAnswerWaitsForExplicitConfirmation(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 	body := response.Body.String()
-	for _, expected := range []string{`id="study-stage"`, `class="review-result-row is-correct"`, `data-review-confirmation`, `data-review-confirm`, `<summary>Word details</summary>`, `name="answer"`, state.Pronunciation, "to eat", fmt.Sprintf(`src="/media/%d"`, pictureID)} {
+	for _, expected := range []string{`id="study-stage"`, `class="review-result-row is-correct" role="status"`, `data-review-confirmation`, `data-review-confirm`, `<summary aria-keyshortcuts="E">Word details</summary>`, "Your answer", `name="answer"`, state.Pronunciation, "to eat", fmt.Sprintf(`src="/media/%d"`, pictureID)} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("confirmation fragment does not contain %q: %s", expected, body)
 		}
@@ -481,15 +481,20 @@ func TestRejectedMeaningCanBeAddedAsASynonymFromTheReview(t *testing.T) {
 	body := response.Body.String()
 	for _, expected := range []string{
 		"consume",
+		"Not quite",
 		"Your answer",
-		"Incorrect",
 		"Correct answer",
 		`<details class="review-answer-details"`,
+		`data-review-details`,
+		`aria-keyshortcuts="E"`,
+		`aria-keyshortcuts="S"`,
+		`aria-keyshortcuts="M"`,
 		"Add “consume” as meaning",
 		"Mark this answer correct",
-		"Retry prompt",
-		"Continue",
+		"Try again",
+		"Continue as incorrect",
 		`data-review-confirmation`,
+		`class="review-result-row is-incorrect" role="status"`,
 		fmt.Sprintf(`action="/reviews/session/%d/synonym"`, sessionID),
 		fmt.Sprintf(`action="/reviews/session/%d/accept-failure"`, sessionID),
 		fmt.Sprintf(`name="prompt_id" value="%d"`, state.PromptID),
@@ -500,9 +505,24 @@ func TestRejectedMeaningCanBeAddedAsASynonymFromTheReview(t *testing.T) {
 			t.Fatalf("review does not contain %q: %s", expected, body)
 		}
 	}
-	for _, absent := range []string{"Not quite", "Show answer", "Attempt 2", `data-review-answer`} {
+	for _, absent := range []string{"Your answer · Incorrect", "Continue — counts as incorrect", "Show answer", "Attempt 2", `data-review-answer`, `<details class="review-answer-details" open>`} {
 		if strings.Contains(body, absent) {
 			t.Fatalf("incorrect confirmation contains %q: %s", absent, body)
+		}
+	}
+
+	fullRequest := httptest.NewRequest(
+		http.MethodPost,
+		fmt.Sprintf("/reviews/session/%d/answer", sessionID),
+		strings.NewReader(answer.Encode()),
+	)
+	fullRequest.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	fullResponse := httptest.NewRecorder()
+	router.ServeHTTP(fullResponse, fullRequest)
+	fullBody := fullResponse.Body.String()
+	for _, expected := range []string{"<!doctype html>", "Not quite", "Your answer", "consume", "Continue as incorrect", `data-review-confirmation`} {
+		if fullResponse.Code != http.StatusOK || !strings.Contains(fullBody, expected) {
+			t.Fatalf("full-page incorrect confirmation does not contain %q: status %d, body = %s", expected, fullResponse.Code, fullBody)
 		}
 	}
 
@@ -543,7 +563,8 @@ func TestRejectedMeaningCanBeAddedAsASynonymFromTheReview(t *testing.T) {
 	request = httptest.NewRequest(http.MethodGet, wantLocation, nil)
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/dashboard" {
+	wantDashboard := fmt.Sprintf("/dashboard?completed_review=%d", sessionID)
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != wantDashboard {
 		t.Fatalf("completed synonym review = %d, location %q", response.Code, response.Header().Get("Location"))
 	}
 }
@@ -623,12 +644,12 @@ func TestFinalRejectedAnswerStillShowsWhatWasTyped(t *testing.T) {
 	reviewTestRouter(t, store).ServeHTTP(response, request)
 
 	body := response.Body.String()
-	for _, expected := range []string{"Your answer", "ちがう", "Incorrect", "Correct answer", `<details class="review-answer-details" open>`, `data-review-confirmation`, fmt.Sprintf(`action="/reviews/session/%d/continue"`, sessionID)} {
+	for _, expected := range []string{"Not quite", "Your answer", "ちがう", "Correct answer", `<details class="review-answer-details" data-review-details>`, `data-review-confirmation`, `aria-keyshortcuts="E"`, `aria-keyshortcuts="M"`, fmt.Sprintf(`action="/reviews/session/%d/continue"`, sessionID)} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("final incorrect confirmation does not contain %q: %s", expected, body)
 		}
 	}
-	for _, absent := range []string{"Try again", "Attempt 2", "Not quite"} {
+	for _, absent := range []string{"Try again", "Continue as incorrect", "Attempt 2", "Your answer · Incorrect"} {
 		if strings.Contains(body, absent) {
 			t.Fatalf("final incorrect confirmation contains %q: %s", absent, body)
 		}
@@ -663,7 +684,7 @@ func TestShowAnswerRendersTheNormalCorrectionPanel(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("show answer status = %d, body = %s", response.Code, body)
 	}
-	for _, expected := range []string{"Correct answer", "たべる", "to eat", "Mark this answer correct", "Continue"} {
+	for _, expected := range []string{"Not quite", "Your answer", "consume", "Correct answer", "たべる", "to eat", "Mark this answer correct", "Continue", `class="correction-heading" role="status"`} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("show answer response does not contain %q: %s", expected, body)
 		}
@@ -991,11 +1012,23 @@ func TestFinalStandaloneReviewAnswerReturnsToItsStartingArea(t *testing.T) {
 			if test.fragment {
 				request.Header.Set("X-Goi-Fragment", "review")
 			}
+			router := reviewTestRouter(t, store)
 			response := httptest.NewRecorder()
-			reviewTestRouter(t, store).ServeHTTP(response, request)
+			router.ServeHTTP(response, request)
 
-			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != test.destination {
+			wantDestination := test.destination
+			if test.kind == "normal" {
+				wantDestination = fmt.Sprintf("/dashboard?completed_review=%d", sessionID)
+			}
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != wantDestination {
 				t.Fatalf("final answer response = %d, location %q", response.Code, response.Header().Get("Location"))
+			}
+
+			request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/reviews/session/%d", sessionID), nil)
+			response = httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != wantDestination {
+				t.Fatalf("completed review response = %d, location %q", response.Code, response.Header().Get("Location"))
 			}
 		})
 	}

@@ -10,9 +10,11 @@
   --goi-line: #d5d0c5;
   --goi-line-strong: #b5afa4;
   --goi-brand: #d95f4d;
-  --goi-brand-fill: #c95040;
+  --goi-brand-fill: #c74e3f;
   --goi-brand-edge: #96382f;
   --goi-reading: #177f83;
+  --goi-reading-ink: #0f6367;
+  --goi-accent-fill-ink: #ffffff;
   --goi-focus: #775000;
   --goi-danger: #a73d48;
   --goi-font-ui: "Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -46,8 +48,8 @@
 
 .goi-extension-ui .mark {
   border-radius: 4px;
-  background: var(--goi-brand);
-  color: #fff;
+  background: var(--goi-brand-fill);
+  color: var(--goi-accent-fill-ink);
   font-family: var(--goi-font-japanese);
   font-weight: 600;
 }
@@ -74,18 +76,19 @@
 .goi-extension-ui .file-button.primary {
   border-color: var(--goi-brand-edge);
   background: var(--goi-brand-fill);
-  color: #fff;
+  color: var(--goi-accent-fill-ink);
 }
 
 .goi-extension-ui button.quiet {
-  color: var(--goi-reading);
+  color: var(--goi-reading-ink);
 }
 
 .goi-extension-ui button:focus-visible,
 .goi-extension-ui input:focus-visible,
 .goi-extension-ui textarea:focus-visible,
 .goi-extension-ui select:focus-visible {
-  outline-color: var(--goi-focus);
+  outline: 3px solid var(--goi-focus);
+  outline-offset: 2px;
 }
 
 .goi-popup main {
@@ -312,6 +315,16 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .goi-extension-ui *,
+  .goi-extension-ui *::before,
+  .goi-extension-ui *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --goi-canvas: #131a24;
@@ -325,8 +338,10 @@
     --goi-line-strong: #536172;
     --goi-brand: #ff735f;
     --goi-brand-fill: #e76552;
-    --goi-brand-edge: #ac493c;
+    --goi-brand-edge: #cf5b4b;
     --goi-reading: #6bcaca;
+    --goi-reading-ink: #6bcaca;
+    --goi-accent-fill-ink: #111620;
     --goi-focus: #efb84f;
     --goi-danger: #ff8b98;
   }

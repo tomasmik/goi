@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -13,8 +14,87 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/tomasmik/goi/internal/database"
+	"github.com/tomasmik/goi/internal/reviews"
 	internalweb "github.com/tomasmik/goi/internal/web"
 )
+
+func TestDashboardShowsCompletedNormalReviewSummary(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "review-completion.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	reviewStore, sessionID := completeDashboardReview(t, ctx, db)
+	renderer, err := internalweb.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(newDashboardTestStore(db, time.UTC), renderer)
+	path := "/dashboard?completed_review=" + stringID(sessionID)
+	response := httptest.NewRecorder()
+	handler.Dashboard(response, httptest.NewRequest(http.MethodGet, path, nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, expected := range []string{
+		`role="status" aria-labelledby="review-completion-title"`,
+		"Reviews complete",
+		"1 word reviewed",
+		"2 of 2 prompts correct first try",
+		"Next review",
+		"data-local-time",
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("dashboard completion does not contain %q: %s", expected, body)
+		}
+	}
+	if strings.Contains(body, "retries completed") {
+		t.Fatalf("dashboard invents retries for a first-try review: %s", body)
+	}
+
+	if err := reviewStore.Undo(ctx, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	response = httptest.NewRecorder()
+	handler.Dashboard(response, httptest.NewRequest(http.MethodGet, path, nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("reopened review status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "Reviews complete") {
+		t.Fatalf("dashboard shows stale completion after undo: %s", response.Body.String())
+	}
+}
+
+func TestDashboardIgnoresUnknownCompletedReview(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "unknown-review-completion.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	renderer, err := internalweb.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(newDashboardTestStore(db, time.UTC), renderer)
+
+	for _, value := range []string{"not-a-session", "999"} {
+		response := httptest.NewRecorder()
+		handler.Dashboard(response, httptest.NewRequest(http.MethodGet, "/dashboard?completed_review="+value, nil))
+		if response.Code != http.StatusOK || strings.Contains(response.Body.String(), "Reviews complete") {
+			t.Fatalf("completed_review=%q response = %d, body = %s", value, response.Code, response.Body.String())
+		}
+	}
+}
 
 func TestDashboardRendersActiveLessonAction(t *testing.T) {
 	ctx := context.Background()
@@ -283,4 +363,52 @@ func dashboardActions(t *testing.T, body string) string {
 		t.Fatalf("dashboard actions are not closed: %s", body)
 	}
 	return body[start : start+end]
+}
+
+func completeDashboardReview(t *testing.T, ctx context.Context, db *sql.DB) (*reviews.Store, int64) {
+	t.Helper()
+	now := time.Now().UTC().Unix()
+	result, err := db.Exec(`
+		INSERT INTO vocabulary (
+			expression, normalized_expression, pronunciation, normalized_pronunciation,
+			status, created_at, updated_at
+		)
+		VALUES ('食べる', '食べる', 'たべる', 'たべる', 'active', ?, ?)`, now, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	vocabularyID, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO meanings (vocabulary_id, position, text, normalized_text) VALUES (?, 0, 'to eat', 'to eat')`, vocabularyID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO srs_states (vocabulary_id, stage, due_at) VALUES (?, 0, ?)`, vocabularyID, now-1); err != nil {
+		t.Fatal(err)
+	}
+
+	store := reviews.NewStore(db)
+	sessionID, err := store.StartNormal(ctx, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempts := 0; attempts < 10; attempts++ {
+		state, err := store.State(ctx, sessionID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.Status == "completed" {
+			return store, sessionID
+		}
+		answer := state.Meanings[0]
+		if state.PromptType == "pronunciation" {
+			answer = state.Pronunciation
+		}
+		if _, err := store.Answer(ctx, sessionID, state.PromptID, answer); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Fatal("review did not complete")
+	return nil, 0
 }

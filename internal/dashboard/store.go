@@ -44,6 +44,14 @@ type Summary struct {
 	BackupWarning         string
 }
 
+type ReviewCompletion struct {
+	WordTotal       int
+	FirstTryCorrect int
+	PromptCount     int
+	RetriesComplete int
+	NextReviewAt    time.Time
+}
+
 type UpcomingReviewBatch struct {
 	DateTime string
 	Label    string
@@ -89,6 +97,29 @@ func NewStore(
 		reviews:    reviews,
 		statistics: statistics,
 	}
+}
+
+func (s *Store) ReviewCompletion(ctx context.Context, sessionID int64) (ReviewCompletion, bool, error) {
+	if sessionID <= 0 {
+		return ReviewCompletion{}, false, nil
+	}
+	state, err := s.reviews.State(ctx, sessionID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ReviewCompletion{}, false, nil
+	}
+	if err != nil {
+		return ReviewCompletion{}, false, fmt.Errorf("load review completion: %w", err)
+	}
+	if state.Status != "completed" || state.Kind != "normal" || state.LessonSessionID != 0 {
+		return ReviewCompletion{}, false, nil
+	}
+	return ReviewCompletion{
+		WordTotal:       state.WordTotal,
+		FirstTryCorrect: state.FirstTryCorrect,
+		PromptCount:     state.PromptCount,
+		RetriesComplete: state.RetriesComplete,
+		NextReviewAt:    state.NextReviewAt,
+	}, true, nil
 }
 
 func (s *Store) Summary(ctx context.Context, now time.Time) (Summary, error) {

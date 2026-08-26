@@ -140,8 +140,8 @@
 }
 
 .status-leech-suspended {
-  color: var(--danger-ink);
-  background: var(--danger-soft);
+  color: var(--ink);
+  background: var(--warning-soft);
 }
 
 .filter-tabs {
@@ -333,7 +333,7 @@
 .match-badge {
   flex: 0 0 auto;
   padding: .35rem .65rem;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   font-size: .72rem;
   font-weight: 800;
 }
@@ -867,7 +867,7 @@
 
 .mining-card-media > legend {
   padding-right: .5rem;
-  color: var(--text);
+  color: var(--ink);
   font-size: 1rem;
   font-weight: 700;
 }

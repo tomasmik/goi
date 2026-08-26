@@ -9,9 +9,9 @@
       {{if .State.RetriesQueued}}<span aria-hidden="true"> · </span>{{.State.RetriesQueued}} retr{{if eq .State.RetriesQueued 1}}y{{else}}ies{{end}} queued{{end}}
     </span>
   </div>
-  {{if .State.LeechSuspended}}<span class="status status-leech-suspended">Suspended leech</span>
-  {{else if .State.LeechActive}}<span class="status status-leech">Leech</span>
-  {{else if .State.FormerLeech}}<span class="status status-leech-former">Former leech</span>{{end}}
+  {{if .State.LeechSuspended}}<span class="status status-leech-suspended">Reviews paused</span>
+  {{else if .State.LeechActive}}<span class="status status-leech">Difficult word</span>
+  {{else if .State.FormerLeech}}<span class="status status-leech-former">Previously difficult</span>{{end}}
   <div class="review-status-tools">
     {{if .State.UndoAvailable}}
     <form method="post" action="/reviews/session/{{.State.ID}}/undo">
@@ -76,22 +76,22 @@
 
 {{define "review-add-synonym"}}
 {{if and (eq .State.PromptType "meaning") .State.RejectedAnswer}}
-<form method="post" action="/reviews/session/{{.State.ID}}/synonym" data-review-action>
+<form method="post" action="/reviews/session/{{.State.ID}}/synonym" data-review-action data-review-synonym>
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
   <input type="hidden" name="rejected_answer" value="{{.State.RejectedAnswer}}">
   <input type="hidden" name="synonym" value="{{.State.RejectedAnswer}}">
-  <button class="button button-secondary button-small" type="submit">Add “{{.State.RejectedAnswer}}” as meaning</button>
+  <button class="button button-secondary button-small" type="submit" aria-keyshortcuts="S">Add “{{.State.RejectedAnswer}}” as meaning</button>
 </form>
 {{end}}
 {{end}}
 
 {{define "review-mark-correct"}}
 {{if .State.Attempts}}
-<form method="post" action="/reviews/session/{{.State.ID}}/mark-correct" data-review-action>
+<form method="post" action="/reviews/session/{{.State.ID}}/mark-correct" data-review-action data-review-mark-correct>
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
-  <button class="button button-secondary button-small" type="submit">Mark this answer correct</button>
+  <button class="button button-secondary button-small" type="submit" aria-keyshortcuts="M">Mark this answer correct</button>
 </form>
 {{end}}
 {{end}}
@@ -132,17 +132,18 @@
     {{template "review-expression" .State}}
   </section>
 
-  <section class="correction-panel review-confirmation" data-review-confirmation aria-live="polite">
-    <div class="review-result-row {{if .Confirmation.Correct}}is-correct{{else}}is-incorrect{{end}}">
+  <section class="correction-panel review-confirmation" data-review-confirmation>
+    <div class="review-result-row {{if .Confirmation.Correct}}is-correct{{else}}is-incorrect{{end}}" role="status">
       <div class="review-result-answer">
         <div>
-      <p>{{if .Confirmation.Correct}}{{if .Confirmation.Retry}}Correct on retry{{else}}Correct{{end}}{{else}}Your answer · Incorrect{{end}}</p>
-          <strong class="confirmation-answer">{{.Confirmation.Answer}}</strong>
+          <p>{{if .Confirmation.Correct}}{{if .Confirmation.Retry}}Correct on retry{{else}}Correct{{end}}{{else}}Not quite{{end}}</p>
+          <span class="review-result-answer-label">Your answer</span>
+          <strong class="confirmation-answer" {{if eq .State.PromptType "pronunciation"}}lang="ja"{{end}}>{{.Confirmation.Answer}}</strong>
         </div>
       </div>
       <div class="review-confirmation-actions">
         {{if and (not .Confirmation.Correct) (not .State.Feedback)}}
-        <a class="button button-secondary" href="/reviews/session/{{.State.ID}}" data-review-retry aria-keyshortcuts="Escape">Retry prompt</a>
+        <a class="button button-secondary" href="/reviews/session/{{.State.ID}}" data-review-retry aria-keyshortcuts="Escape">Try again</a>
         {{end}}
         {{if .Confirmation.Correct}}
         <form method="post" action="/reviews/session/{{.State.ID}}/confirm" data-review-confirm>
@@ -160,14 +161,14 @@
         <form method="post" action="/reviews/session/{{.State.ID}}/accept-failure" data-review-confirm>
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="prompt_id" value="{{.Confirmation.PromptID}}">
-          <button class="button" type="submit" autofocus aria-keyshortcuts="Enter">Continue — counts as incorrect<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
+          <button class="button" type="submit" autofocus aria-keyshortcuts="Enter">Continue as incorrect<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
         </form>
         {{end}}
       </div>
     </div>
-    <p class="review-keyboard-hint"><kbd>Enter</kbd> continue{{if and (not .Confirmation.Correct) (not .State.Feedback)}} · <kbd>Esc</kbd> try again{{end}}</p>
-    <details class="review-answer-details" {{if or .State.Feedback (not .Confirmation.Correct)}}open{{end}}>
-      <summary>{{if or .State.Feedback (not .Confirmation.Correct)}}Correct answer{{else}}Word details{{end}}</summary>
+    <p class="review-keyboard-hint"><kbd>Enter</kbd> continue{{if and (not .Confirmation.Correct) (not .State.Feedback)}} · <kbd>Esc</kbd> try again{{end}} · <kbd>E</kbd> answer details{{if and (eq .State.PromptType "meaning") .State.RejectedAnswer}} · <kbd>S</kbd> add meaning{{end}}{{if .State.Attempts}} · <kbd>M</kbd> mark correct{{end}}</p>
+    <details class="review-answer-details" data-review-details>
+      <summary aria-keyshortcuts="E">{{if or .State.Feedback (not .Confirmation.Correct)}}Correct answer{{else}}Word details{{end}}</summary>
       <div class="review-answer-details-body">
         <div class="correction-sections">
           {{if and (not .Confirmation.Correct) (eq .State.PromptType "meaning")}}
@@ -188,8 +189,8 @@
     {{if not .Confirmation.Correct}}
     <div class="review-answer-details is-actions-only">
       <div class="review-answer-options" aria-label="Correct this result">
+        <span class="review-answer-option-label">If your answer was valid</span>
         {{template "review-add-synonym" .}}
-        <span class="review-answer-option-label">Valid answer rejected?</span>
         {{template "review-mark-correct" .}}
       </div>
     </div>
@@ -204,14 +205,17 @@
     {{template "review-expression" .State}}
   </section>
 
-  <section class="correction-panel" aria-live="polite">
-    <div class="correction-heading">
+  <section class="correction-panel">
+    <div class="correction-heading" role="status">
       <span class="result-mark is-incorrect" aria-hidden="true"><span class="ui-icon icon-x"></span></span>
       <div>
-        <p class="study-kicker">Incorrect</p>
+        <p class="study-kicker">Not quite</p>
         <h2>Correct answer</h2>
       </div>
     </div>
+    {{if .State.RejectedAnswer}}
+    <p class="review-submitted-answer">Your answer <strong class="confirmation-answer" {{if eq .State.PromptType "pronunciation"}}lang="ja"{{end}}>{{.State.RejectedAnswer}}</strong></p>
+    {{end}}
     <div class="correction-sections">
       {{if eq .State.PromptType "pronunciation"}}
       {{template "review-correction-reading" .}}
@@ -226,11 +230,14 @@
       {{template "review-correction-picture" .}}
       {{template "review-correction-example" .State.Example}}
     </div>
-    {{template "review-add-synonym" .}}
+    {{if .State.Attempts}}
+    <p class="review-keyboard-hint">{{if and (eq .State.PromptType "meaning") .State.RejectedAnswer}}<kbd>S</kbd> add meaning · {{end}}<kbd>M</kbd> mark correct</p>
+    {{end}}
     <div class="review-correction-actions">
-      <span class="review-answer-option-label">Valid answer rejected?</span>
+      <span class="review-answer-option-label">If your answer was valid</span>
+      {{template "review-add-synonym" .}}
       {{template "review-mark-correct" .}}
-      <form method="post" action="/reviews/session/{{.State.ID}}/continue" data-review-action>
+      <form class="review-continue-action" method="post" action="/reviews/session/{{.State.ID}}/continue" data-review-action>
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button class="button" type="submit" autofocus>Continue<span class="ui-icon icon-arrow-right" aria-hidden="true"></span></button>
       </form>
@@ -245,8 +252,8 @@
     {{template "review-expression" .State}}
   </section>
 
-  <section class="correction-panel review-self-grade" data-review-self-grade aria-live="polite">
-    <div class="correction-heading">
+  <section class="correction-panel review-self-grade" data-review-self-grade>
+    <div class="correction-heading" role="status">
       <div>
         <p class="study-kicker">Check your answer</p>
         <h2>{{if eq .State.PromptType "pronunciation"}}{{.State.Pronunciation}}{{else if .State.Meanings}}{{index .State.Meanings 0}}{{else}}Meaning{{end}}</h2>

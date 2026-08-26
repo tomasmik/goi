@@ -37,12 +37,24 @@ function contrast(foreground, background) {
   return (light + 0.05) / (dark + 0.05);
 }
 
+function sharedVariables(last) {
+  const start = last ? sharedCSS.lastIndexOf(":root {") : sharedCSS.indexOf(":root {");
+  assert.notEqual(start, -1, "missing shared theme variables");
+  const end = sharedCSS.indexOf("}", start);
+  return Object.fromEntries(Array.from(
+    sharedCSS.slice(start, end).matchAll(/--([\w-]+):\s*(#[0-9a-f]{6})\s*;/giu),
+    ([, name, value]) => [name, value],
+  ));
+}
+
 test("popup normal text colors meet WCAG AA contrast", function () {
   const bodyBackground = hexColor("body", "background");
   const surfaceBackground = hexColor("form,\nsection", "background");
+  const shared = sharedVariables(false);
   const pairs = [
-    [hexColor(".mark", "color"), hexColor(".mark", "background"), "brand mark"],
-    [hexColor("button.primary", "color"), hexColor("button.primary", "background"), "primary button"],
+    [shared["goi-accent-fill-ink"], shared["goi-brand-fill"], "brand mark"],
+    [shared["goi-accent-fill-ink"], shared["goi-brand-fill"], "primary button"],
+    [shared["goi-reading-ink"], shared["goi-canvas"], "quiet action"],
     [hexColor("#status", "color"), bodyBackground, "status"],
     [hexColor("#status.error", "color"), bodyBackground, "error status"],
     [hexColor(".outbox-status", "color"), bodyBackground, "outbox status"],
@@ -60,7 +72,14 @@ test("popup normal text colors meet WCAG AA contrast", function () {
 test("popup keyboard focus indicators use opaque high-contrast colors", function () {
   assert.match(
     sharedCSS,
-    /\.goi-extension-ui button:focus-visible,[\s\S]*outline-color:\s*var\(--goi-focus\)/u,
+    /\.goi-extension-ui button:focus-visible,[\s\S]*outline:\s*3px solid var\(--goi-focus\);[\s\S]*outline-offset:\s*2px/u,
+  );
+});
+
+test("shared extension styles respect reduced motion", function () {
+  assert.match(
+    sharedCSS,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]*transition-duration:\s*\.01ms !important;[\s\S]*animation-duration:\s*\.01ms !important;/u,
   );
 });
 
@@ -68,8 +87,10 @@ test("popup dark-mode text colors meet WCAG AA contrast", function () {
   const bodyBackground = hexColor(":root,\n  body", "background");
   const surfaceBackground = hexColor("form,\n  section", "background", true);
   const muted = hexColor("label,\n  header p,\n  .analyze-section p,\n  .site-auto-detail,\n  .hint", "color");
+  const shared = sharedVariables(true);
   const pairs = [
-    [hexColor(".mark,\n  button.primary", "color"), hexColor(".mark,\n  button.primary", "background"), "primary button"],
+    [shared["goi-accent-fill-ink"], shared["goi-brand-fill"], "primary button"],
+    [shared["goi-reading-ink"], shared["goi-canvas"], "quiet action"],
     [hexColor("#status", "color", true), bodyBackground, "status"],
     [hexColor("#status.error", "color", true), bodyBackground, "error status"],
     [hexColor(".outbox-status", "color", true), bodyBackground, "outbox status"],

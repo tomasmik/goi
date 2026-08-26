@@ -1,6 +1,14 @@
 {{template "header" .}}
 <h1 class="visually-hidden">Home</h1>
 
+{{with .ReviewCompletion}}
+<section class="alert alert-success dashboard-review-completion" role="status" aria-labelledby="review-completion-title">
+  <h2 id="review-completion-title">Reviews complete</h2>
+  <p>{{.WordTotal}} word{{if ne .WordTotal 1}}s{{end}} reviewed · {{.FirstTryCorrect}} of {{.PromptCount}} prompt{{if ne .PromptCount 1}}s{{end}} correct first try{{if .RetriesComplete}} · {{.RetriesComplete}} retr{{if eq .RetriesComplete 1}}y{{else}}ies{{end}} completed{{end}}</p>
+  {{if not .NextReviewAt.IsZero}}<p>Next review <time datetime="{{.NextReviewAt.Format "2006-01-02T15:04:05Z07:00"}}" data-local-time>{{.NextReviewAt.Format "Jan 2, 15:04 UTC"}}</time></p>{{end}}
+</section>
+{{end}}
+
 {{if .Summary.BackupWarning}}
 <aside class="alert alert-warning dashboard-backup-warning" role="status">
   {{.Summary.BackupWarning}} <a href="/settings/backups">Open backups</a>

@@ -25,6 +25,30 @@ export function reviewConfirmationKeyboardAction(event) {
   return "";
 }
 
+export function reviewCorrectionKeyboardAction(event) {
+  if (
+    event.defaultPrevented ||
+    event.repeat ||
+    event.isComposing ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    event.shiftKey
+  ) {
+    return "";
+  }
+  if (event.key === "e") {
+    return "details";
+  }
+  if (event.key === "s") {
+    return "synonym";
+  }
+  if (event.key === "m") {
+    return "mark-correct";
+  }
+  return "";
+}
+
 export function lessonNavigationKeyboardAction(event, interactiveTarget = false) {
   if (
     interactiveTarget ||
@@ -302,6 +326,36 @@ function handleReviewConfirmationKey(event) {
   return true;
 }
 
+function handleReviewCorrectionKey(event) {
+  const action = reviewCorrectionKeyboardAction(event);
+  if (!action) {
+    return false;
+  }
+  const target = event.target;
+  if (
+    target instanceof Element &&
+    target.closest("input, textarea, select, audio, video, [contenteditable='true']")
+  ) {
+    return false;
+  }
+  if (action === "details") {
+    const details = document.querySelector("[data-review-details]");
+    if (!(details instanceof HTMLDetailsElement)) {
+      return false;
+    }
+    event.preventDefault();
+    details.open = !details.open;
+    return true;
+  }
+  const form = document.querySelector(`[data-review-${action}]`);
+  if (!(form instanceof HTMLFormElement)) {
+    return false;
+  }
+  event.preventDefault();
+  form.requestSubmit();
+  return true;
+}
+
 function handleSelfGradeKey(event) {
   const selfGrade = document.querySelector("[data-review-self-grade]");
   const revealForm = document.querySelector("[data-review-reveal]");
@@ -382,6 +436,7 @@ function handleLessonNavigationKey(event) {
 function handleStudyKeydown(event) {
   if (
     handleReviewConfirmationKey(event) ||
+    handleReviewCorrectionKey(event) ||
     handleSelfGradeKey(event) ||
     handleReviewAnswerKey(event)
   ) {

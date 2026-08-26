@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -15,9 +16,10 @@ type Handler struct {
 }
 
 type Page struct {
-	Title     string
-	CSRFToken string
-	Summary   Summary
+	Title            string
+	CSRFToken        string
+	Summary          Summary
+	ReviewCompletion *ReviewCompletion
 }
 
 func NewHandler(store *Store, renderer *internalweb.Renderer) *Handler {
@@ -30,7 +32,18 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		internalweb.InternalError(w, r, "could not load dashboard", err)
 		return
 	}
-	h.renderer.Render(w, "dashboard.html", Page{Title: "Dashboard", CSRFToken: internalweb.CSRFToken(r), Summary: summary})
+	page := Page{Title: "Dashboard", CSRFToken: internalweb.CSRFToken(r), Summary: summary}
+	if sessionID, err := strconv.ParseInt(r.URL.Query().Get("completed_review"), 10, 64); err == nil && sessionID > 0 {
+		completion, found, err := h.store.ReviewCompletion(r.Context(), sessionID)
+		if err != nil {
+			internalweb.InternalError(w, r, "could not load completed review", err)
+			return
+		}
+		if found {
+			page.ReviewCompletion = &completion
+		}
+	}
+	h.renderer.Render(w, "dashboard.html", page)
 }
 
 func (h *Handler) ReviewScheduleRedirect(w http.ResponseWriter, r *http.Request) {

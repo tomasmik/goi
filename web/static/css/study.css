@@ -667,7 +667,7 @@
   margin: 1rem 0 0;
   padding: .75rem;
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
@@ -937,15 +937,15 @@
 }
 
 .review-result-row.is-correct {
-  color: #fff;
-  border-color: color-mix(in srgb, var(--success-fill) 80%, #000);
-  background: var(--success-fill);
+  color: var(--success-ink);
+  border-color: color-mix(in srgb, var(--success-ink) 35%, var(--line));
+  background: var(--success-soft);
 }
 
 .review-result-row.is-incorrect {
-  color: #fff;
-  border-color: color-mix(in srgb, var(--danger-fill) 82%, #000);
-  background: var(--danger-fill);
+  color: var(--danger-ink);
+  border-color: color-mix(in srgb, var(--danger-ink) 35%, var(--line));
+  background: var(--danger-soft);
 }
 
 .review-result-answer {
@@ -957,16 +957,23 @@
 
 .review-result-answer p {
   margin: 0 0 .1rem;
-  color: rgba(255, 255, 255, .78);
+  color: currentColor;
   font-size: .72rem;
   font-weight: 800;
   letter-spacing: .05em;
   text-transform: uppercase;
 }
 
+.review-result-answer-label {
+  display: block;
+  color: var(--ink-soft);
+  font-size: .75rem;
+  font-weight: 650;
+}
+
 .review-result-answer strong {
   display: block;
-  color: #fff;
+  color: var(--ink);
   font-size: clamp(1.15rem, 3vw, 1.5rem);
   line-height: 1.2;
 }
@@ -1016,6 +1023,21 @@
 
 .confirmation-answer {
   overflow-wrap: anywhere;
+}
+
+.review-submitted-answer {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: .35rem .65rem;
+  margin: -.35rem 0 1rem;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.review-submitted-answer strong {
+  color: var(--ink);
+  font-size: 1rem;
 }
 
 .review-answer-options {
@@ -1112,14 +1134,7 @@
 }
 
 .review-result-row .review-confirmation-actions .button {
-  color: #fff;
-  border-color: rgba(255, 255, 255, .62);
-  background: rgba(255, 255, 255, .1);
   box-shadow: none;
-}
-
-.review-result-row .review-confirmation-actions .button:hover {
-  background: rgba(255, 255, 255, .2);
 }
 
 .review-correction-actions,

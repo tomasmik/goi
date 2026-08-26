@@ -821,6 +821,20 @@
     grid-template-columns: 1fr 52px;
   }
 
+  .review-confirmation-actions,
+  .review-correction-actions,
+  .review-answer-options {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .review-confirmation-actions > *,
+  .review-correction-actions > *,
+  .review-answer-options > *,
+  .review-answer-options .button {
+    width: 100%;
+  }
+
   .correction-heading {
     align-items: flex-start;
   }

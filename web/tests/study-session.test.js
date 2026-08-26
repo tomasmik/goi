@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   lessonNavigationKeyboardAction,
   reviewConfirmationKeyboardAction,
+  reviewCorrectionKeyboardAction,
   selfGradeKeyboardAction,
   stageFocusTarget
 } from "../static/js/study-session.js";
@@ -26,6 +27,27 @@ test("ignores repeated, composing, and modified confirmation keys", () => {
   ]) {
     assert.equal(reviewConfirmationKeyboardAction({ key: "Enter", ...blocked }), "");
     assert.equal(reviewConfirmationKeyboardAction({ key: "Escape", ...blocked }), "");
+  }
+});
+
+test("maps correction keys to review recovery actions", () => {
+  assert.equal(reviewCorrectionKeyboardAction({ key: "e" }), "details");
+  assert.equal(reviewCorrectionKeyboardAction({ key: "s" }), "synonym");
+  assert.equal(reviewCorrectionKeyboardAction({ key: "m" }), "mark-correct");
+  assert.equal(reviewCorrectionKeyboardAction({ key: "Enter" }), "");
+});
+
+test("ignores repeated, composing, and modified correction keys", () => {
+  for (const blocked of [
+    { repeat: true },
+    { isComposing: true },
+    { metaKey: true },
+    { ctrlKey: true },
+    { altKey: true },
+    { shiftKey: true },
+    { defaultPrevented: true }
+  ]) {
+    assert.equal(reviewCorrectionKeyboardAction({ key: "m", ...blocked }), "");
   }
 });
 

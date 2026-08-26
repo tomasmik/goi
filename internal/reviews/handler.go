@@ -584,6 +584,8 @@ func (h *Handler) finishCompletedReview(w http.ResponseWriter, r *http.Request, 
 		destination = "/lessons"
 	} else if state.Kind == "extra" {
 		destination = "/practice"
+	} else {
+		destination += "?completed_review=" + strconv.FormatInt(state.ID, 10)
 	}
 	http.Redirect(w, r, destination, http.StatusSeeOther)
 	return true
