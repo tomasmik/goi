@@ -248,6 +248,7 @@ func validateStoragePaths(dataDir, databasePath, backupDir string) error {
 		"google-drive-client.json",
 		"example-generation.json",
 		"installation-id",
+		"wanikani-token",
 	} {
 		reservedResolved, err := resolveStoragePath(filepath.Join(dataDir, name))
 		if err != nil {

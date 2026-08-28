@@ -34,6 +34,7 @@ import (
 	"github.com/tomasmik/goi/internal/settings"
 	"github.com/tomasmik/goi/internal/statistics"
 	"github.com/tomasmik/goi/internal/vocabulary"
+	"github.com/tomasmik/goi/internal/wanikani"
 	internalweb "github.com/tomasmik/goi/internal/web"
 	appweb "github.com/tomasmik/goi/web"
 )
@@ -56,6 +57,7 @@ type application struct {
 	backupStore      *backups.Store
 	backupService    *backups.Service
 	anki             *appimports.Store
+	wanikani         *wanikani.Service
 }
 
 func openApplication(ctx context.Context, cfg config.Config, logger *slog.Logger) (_ *application, returnErr error) {
@@ -154,6 +156,13 @@ func (app *application) initializeCore(ctx context.Context, cfg config.Config, l
 	if err != nil {
 		return fmt.Errorf("initialize example generator: %w", err)
 	}
+	app.wanikani = wanikani.NewService(wanikani.ServiceConfig{
+		Client:      wanikani.NewClient(&http.Client{Timeout: 30 * time.Second}),
+		Credentials: wanikani.NewCredentials(filepath.Join(cfg.DataDir, wanikani.TokenFilename)),
+		Store:       wanikani.NewStore(app.db),
+		Vocabulary:  app.vocabulary,
+		Logger:      logger,
+	})
 	return nil
 }
 
@@ -261,6 +270,7 @@ func (app *application) registerRoutes(router chi.Router, cfg config.Config) {
 	backups.NewHandler(app.backupStore, app.backupService, app.googleDrive, cfg.DataDir, app.renderer).Routes(router)
 	statistics.NewHandler(app.statistics, app.renderer).Routes(router)
 	appimports.NewHandler(app.anki, app.renderer).Routes(router)
+	wanikani.NewHandler(app.wanikani, app.renderer).Routes(router)
 }
 
 func (app *application) registerHealthRoutes(router chi.Router) {
@@ -301,5 +311,6 @@ func (app *application) startWorkers(ctx context.Context, logger *slog.Logger) f
 	}
 	start(func() { app.dictionary.Run(ctx) })
 	start(func() { app.backupService.Run(ctx) })
+	start(func() { app.wanikani.Run(ctx) })
 	return workers.Wait
 }

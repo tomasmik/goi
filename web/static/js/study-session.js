@@ -3,11 +3,11 @@ import { initLocalTimes } from "./settings-controls.js";
 
 let requestInFlight = false;
 let primedFeedbackAudio = null;
+let reviewConfirmationReadyAt = 0;
 
-export function reviewConfirmationKeyboardAction(event) {
+export function reviewConfirmationKeyboardAction(event, enterReady = true) {
   if (
     event.defaultPrevented ||
-    event.repeat ||
     event.isComposing ||
     event.metaKey ||
     event.ctrlKey ||
@@ -17,6 +17,9 @@ export function reviewConfirmationKeyboardAction(event) {
     return "";
   }
   if (event.key === "Enter") {
+    if (event.repeat || !enterReady) {
+      return "block";
+    }
     return "confirm";
   }
   if (event.key === "Escape") {
@@ -130,6 +133,7 @@ function replaceStage(nextStage) {
     return false;
   }
   current.replaceWith(nextStage);
+  reviewConfirmationReadyAt = performance.now() + 100;
   initKanaInputs(nextStage);
   initLocalTimes(nextStage);
   focusStage(nextStage);
@@ -296,7 +300,14 @@ function handleReviewConfirmationKey(event) {
     return false;
   }
 
-  const action = reviewConfirmationKeyboardAction(event);
+  const action = reviewConfirmationKeyboardAction(
+    event,
+    performance.now() >= reviewConfirmationReadyAt
+  );
+  if (action === "block") {
+    event.preventDefault();
+    return true;
+  }
   if (action === "retry") {
     const retry = confirmation.querySelector("[data-review-retry]");
     if (!(retry instanceof HTMLAnchorElement)) {

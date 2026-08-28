@@ -2,6 +2,7 @@
 <nav class="settings-navigation" aria-label="Settings sections">
   <a href="/settings" {{if eq . "preferences"}}aria-current="page"{{end}}><span class="ui-icon icon-settings" aria-hidden="true"></span>Preferences</a>
   <a href="/settings/extension" {{if eq . "extension"}}aria-current="page"{{end}}><span class="ui-icon icon-tray" aria-hidden="true"></span>Browser extension</a>
+  <a href="/settings/wanikani" {{if eq . "wanikani"}}aria-current="page"{{end}}><span class="ui-icon icon-books" aria-hidden="true"></span>WaniKani</a>
   <a href="/settings/backups" {{if eq . "backups"}}aria-current="page"{{end}}><span class="ui-icon icon-database" aria-hidden="true"></span>Backups</a>
   <a href="/settings/examples" {{if eq . "language-tools"}}aria-current="page"{{end}}><span class="ui-icon icon-translate" aria-hidden="true"></span>Translation and examples</a>
 </nav>

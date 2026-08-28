@@ -503,6 +503,33 @@ func TestAddKnownCreatesSparseVocabularyFromCommonSeparators(t *testing.T) {
 	}
 }
 
+func TestAddKnownExpressionsTreatsValuesAtomicallyAndDeduplicates(t *testing.T) {
+	ctx, db := openTestDatabase(t)
+
+	result, err := NewStore(db).AddKnownExpressions(ctx, []string{
+		"  見た こと  ",
+		"見た こと",
+		"コンピューター",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Created != 2 || result.MarkedKnown != 0 || result.AlreadyKnown != 0 {
+		t.Fatalf("result = %+v, want two created words", result)
+	}
+
+	var spacedCount, total int
+	if err := db.QueryRow("SELECT COUNT(*) FROM vocabulary WHERE expression = '見た こと'").Scan(&spacedCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow("SELECT COUNT(*) FROM vocabulary").Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if spacedCount != 1 || total != 2 {
+		t.Fatalf("stored counts = spaced %d, total %d; want 1 and 2", spacedCount, total)
+	}
+}
+
 func TestAddKnownPreservesExistingLearningState(t *testing.T) {
 	ctx, db := openTestDatabase(t)
 	now := time.Now().UTC().Unix()

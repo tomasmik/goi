@@ -1,0 +1,86 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>WaniKani</h1>
+  </div>
+</section>
+
+{{template "settings-navigation" "wanikani"}}
+
+{{if .Error}}
+<div class="alert alert-error" role="alert">{{.Error}}</div>
+{{end}}
+{{if .Notice}}
+<div class="alert alert-success" role="status">{{.Notice}}</div>
+{{end}}
+
+{{if .Connected}}
+<section class="form-card" aria-labelledby="wanikani-status-title">
+  <div>
+    <h2 id="wanikani-status-title">Connected as {{.Username}}</h2>
+    <p class="muted">WaniKani level {{.UserLevel}} · {{.SubjectCount}} {{if eq .SubjectCount 1}}subject{{else}}subjects{{end}} synchronized</p>
+    {{if .Syncing}}
+    <p class="help">Synchronization is running.</p>
+    {{else if .LastSuccess}}
+    <p class="help">Last successful synchronization: {{.LastSuccess}}.</p>
+    {{else}}
+    <p class="help">The first synchronization is pending.</p>
+    {{end}}
+    {{if .ShowLastAttempt}}<p class="help">Last attempt: {{.LastAttempt}}.</p>{{end}}
+    {{if .LastError}}<p class="field-error">{{.LastError}}</p>{{end}}
+  </div>
+  <form method="post" action="/settings/wanikani/sync">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button class="button" type="submit">Sync now</button>
+  </form>
+</section>
+
+<details class="form-card form-details">
+  <summary>Replace personal access token</summary>
+  <form class="details-body" method="post" action="/settings/wanikani/connect">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label>
+      New personal access token
+      <input type="password" name="token" autocomplete="new-password" spellcheck="false" required>
+      <span class="help">If this token belongs to another account, its learned vocabulary will be added to the same Goi known-word set.</span>
+    </label>
+    <div class="form-actions">
+      <button class="button button-secondary" type="submit">Replace token and sync</button>
+    </div>
+  </form>
+</details>
+
+<section class="form-card" aria-labelledby="wanikani-disconnect-title">
+  <div>
+    <h2 id="wanikani-disconnect-title">Disconnect WaniKani</h2>
+    <p class="muted">Disconnecting removes the saved token and synchronization history. Imported vocabulary remains known in Goi.</p>
+  </div>
+  <form method="post" action="/settings/wanikani/disconnect" data-confirm="Disconnect WaniKani? Imported vocabulary will remain known in Goi.">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label class="destructive-confirmation" data-confirm-fallback>
+      <input type="checkbox" name="confirmed" value="1" required data-confirm-field>
+      Confirm disconnect
+    </label>
+    <button class="button button-secondary" type="submit">Disconnect WaniKani</button>
+  </form>
+</section>
+{{else}}
+<form class="form-card" method="post" action="/settings/wanikani/connect" aria-labelledby="wanikani-connect-title">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <div>
+    <h2 id="wanikani-connect-title">Connect WaniKani</h2>
+    <p class="muted">Goi imports vocabulary and kana-vocabulary whose WaniKani lessons you have completed.</p>
+    <p class="help">Imported words count as known for coverage, stay out of Goi lessons and reviews, and remain known after disconnecting. Synchronization is read-only and runs every 12 hours.</p>
+  </div>
+  <label>
+    Personal access token
+    <input type="password" name="token" autocomplete="new-password" spellcheck="false" required>
+    <span class="help">Create a read-only personal access token in WaniKani and paste it here. Goi only makes read requests.</span>
+  </label>
+  <p><a class="external-link" href="https://www.wanikani.com/settings/personal_access_tokens" target="_blank" rel="noopener noreferrer">Create a WaniKani personal access token</a></p>
+  <div class="form-actions">
+    <button class="button" type="submit">Connect and sync</button>
+  </div>
+</form>
+{{end}}
+{{template "footer" .}}

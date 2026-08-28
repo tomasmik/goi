@@ -560,6 +560,14 @@ func (s *Store) AddKnown(ctx context.Context, value string) (AddKnownResult, err
 	if err != nil {
 		return AddKnownResult{}, err
 	}
+	return s.AddKnownExpressions(ctx, expressions)
+}
+
+func (s *Store) AddKnownExpressions(ctx context.Context, values []string) (AddKnownResult, error) {
+	expressions, err := cleanKnownExpressions(values)
+	if err != nil {
+		return AddKnownResult{}, err
+	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -653,17 +661,11 @@ func (s *Store) AddKnown(ctx context.Context, value string) (AddKnownResult, err
 	return result, nil
 }
 
-func parseKnownExpressions(value string) ([]string, error) {
-	if !utf8.ValidString(value) {
-		return nil, validationError("known words must be valid UTF-8")
-	}
-	parts := strings.FieldsFunc(value, func(character rune) bool {
-		return unicode.IsSpace(character) || strings.ContainsRune(",、;；，", character)
-	})
-	expressions := make([]string, 0, len(parts))
-	seen := make(map[string]struct{}, len(parts))
-	for _, part := range parts {
-		expression, err := cleanInputText(part, maxExpressionRunes, "word", false)
+func cleanKnownExpressions(values []string) ([]string, error) {
+	expressions := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		expression, err := cleanInputText(value, maxExpressionRunes, "word", false)
 		if err != nil {
 			return nil, err
 		}
@@ -681,6 +683,16 @@ func parseKnownExpressions(value string) ([]string, error) {
 		return nil, validationError("enter at least one word")
 	}
 	return expressions, nil
+}
+
+func parseKnownExpressions(value string) ([]string, error) {
+	if !utf8.ValidString(value) {
+		return nil, validationError("known words must be valid UTF-8")
+	}
+	parts := strings.FieldsFunc(value, func(character rune) bool {
+		return unicode.IsSpace(character) || strings.ContainsRune(",、;；，", character)
+	})
+	return cleanKnownExpressions(parts)
 }
 
 func displayStatus(status string, knownElsewhere bool) (string, string) {

@@ -40,6 +40,8 @@ func TestInitSchemaObjects(t *testing.T) {
 		"vocabulary",
 		"vocabulary_examples",
 		"vocabulary_media",
+		"wanikani_subjects",
+		"wanikani_sync_state",
 		"web_sessions",
 	})
 	assertSchemaNames(t, db, "index", []string{
@@ -139,8 +141,12 @@ func TestInitSchemaColumns(t *testing.T) {
 			"id", "vocabulary_id", "mining_capture_id", "origin", "sentence", "translation", "target_surface",
 			"source_title", "source_url", "source_position_ms", "provider", "model", "created_at", "updated_at",
 		},
-		"vocabulary_media": {"vocabulary_id", "purpose", "media_id"},
-		"web_sessions":     {"token", "data", "expiry_at"},
+		"vocabulary_media":  {"vocabulary_id", "purpose", "media_id"},
+		"wanikani_subjects": {"subject_id", "expression", "synced_at"},
+		"wanikani_sync_state": {
+			"id", "user_id", "username", "user_level", "cursor_at", "last_attempt_at", "last_success_at", "last_error",
+		},
+		"web_sessions": {"token", "data", "expiry_at"},
 	}
 
 	tables := make([]string, 0, len(expected))
@@ -245,7 +251,7 @@ func TestInitMigrationRollsBackCleanly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := provider.Down(ctx); err != nil {
+	if _, err := provider.DownTo(ctx, 0); err != nil {
 		t.Fatal(err)
 	}
 	var applicationID, vocabularyTables int

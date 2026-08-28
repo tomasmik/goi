@@ -16,7 +16,7 @@ var migrationFiles embed.FS
 
 const (
 	applicationID = 1196378417
-	schemaVersion = 13
+	schemaVersion = 14
 )
 
 var errInvalidSchema = errors.New("invalid Goi database schema")

@@ -111,6 +111,7 @@ func TestLoadRejectsDatabasePathOwnedByBackups(t *testing.T) {
 		"google-drive-client.json",
 		"example-generation.json",
 		"installation-id",
+		"wanikani-token",
 		"failed-restore-20260805T120000Z.goi-backup.zip",
 	} {
 		t.Run(relative, func(t *testing.T) {

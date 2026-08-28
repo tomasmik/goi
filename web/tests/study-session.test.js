@@ -11,13 +11,14 @@ import {
 
 test("maps confirmation keys to deliberate review actions", () => {
   assert.equal(reviewConfirmationKeyboardAction({ key: "Enter" }), "confirm");
+  assert.equal(reviewConfirmationKeyboardAction({ key: "Enter" }, false), "block");
+  assert.equal(reviewConfirmationKeyboardAction({ key: "Enter", repeat: true }), "block");
   assert.equal(reviewConfirmationKeyboardAction({ key: "Escape" }), "retry");
   assert.equal(reviewConfirmationKeyboardAction({ key: "ArrowRight" }), "");
 });
 
-test("ignores repeated, composing, and modified confirmation keys", () => {
+test("ignores composing and modified confirmation keys", () => {
   for (const blocked of [
-    { repeat: true },
     { isComposing: true },
     { metaKey: true },
     { ctrlKey: true },
