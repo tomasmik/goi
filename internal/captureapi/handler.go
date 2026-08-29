@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -46,6 +47,7 @@ type DictionaryLookup interface {
 
 type KnownVocabulary interface {
 	AddKnown(context.Context, string) (vocabulary.AddKnownResult, error)
+	KnownExpressionStatuses(context.Context) (map[string]string, error)
 }
 
 type Handler struct {
@@ -96,6 +98,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/api/extension/v1/captures/{id}/media", h.attachCaptureMedia)
 	r.Post("/api/extension/v1/coverage", h.analyzeCoverage)
 	r.Get("/api/extension/v1/dictionary", h.lookupDictionary)
+	r.Get("/api/extension/v1/known", h.listKnown)
 	r.Post("/api/extension/v1/known", h.markKnown)
 	r.Post("/api/extension/v1/translate", h.translate)
 }
@@ -154,6 +157,32 @@ type knownRequest struct {
 
 type knownResponse struct {
 	State string `json:"state"`
+}
+
+type knownVocabularyResponse struct {
+	Expressions []string `json:"expressions"`
+}
+
+func (h *Handler) listKnown(w http.ResponseWriter, r *http.Request) {
+	if !h.authorize(w, r) {
+		return
+	}
+	if h.vocabulary == nil {
+		writeAPIError(w, http.StatusServiceUnavailable, "vocabulary_unavailable", "vocabulary is unavailable")
+		return
+	}
+	statuses, err := h.vocabulary.KnownExpressionStatuses(r.Context())
+	if err != nil {
+		internalweb.LogError(r, "could not list extension known vocabulary", err)
+		writeAPIError(w, http.StatusInternalServerError, "internal_error", "could not list known vocabulary")
+		return
+	}
+	expressions := make([]string, 0, len(statuses))
+	for expression := range statuses {
+		expressions = append(expressions, expression)
+	}
+	sort.Strings(expressions)
+	writeJSON(w, http.StatusOK, knownVocabularyResponse{Expressions: expressions})
 }
 
 func (h *Handler) markKnown(w http.ResponseWriter, r *http.Request) {

@@ -171,26 +171,21 @@ func (s *Service) Sync(ctx context.Context) (returnErr error) {
 	if !status.CursorAt.IsZero() {
 		updatedAfter = status.CursorAt.Add(-time.Minute)
 	}
-	assignments, err := s.client.Assignments(ctx, token, updatedAfter)
+	assignments, err := s.client.Assignments(ctx, token, updatedAfter, user.MaxLevelGranted)
 	if err != nil {
 		return err
 	}
-	type assignmentKey struct {
-		typeName string
-		level    int
-	}
-	assignmentBySubject := make(map[int64]assignmentKey, len(assignments))
+	assignmentTypes := make(map[int64]string, len(assignments))
 	ids := make([]int64, 0, len(assignments))
 	for _, assignment := range assignments {
 		if !assignment.Started || assignment.Hidden ||
-			(assignment.SubjectType != "vocabulary" && assignment.SubjectType != "kana_vocabulary") ||
-			assignment.Level < 1 || assignment.Level > user.MaxLevelGranted {
+			(assignment.SubjectType != "vocabulary" && assignment.SubjectType != "kana_vocabulary") {
 			continue
 		}
-		if _, exists := assignmentBySubject[assignment.SubjectID]; exists {
+		if _, exists := assignmentTypes[assignment.SubjectID]; exists {
 			continue
 		}
-		assignmentBySubject[assignment.SubjectID] = assignmentKey{typeName: assignment.SubjectType, level: assignment.Level}
+		assignmentTypes[assignment.SubjectID] = assignment.SubjectType
 		ids = append(ids, assignment.SubjectID)
 	}
 	unseen, err := s.store.UnseenSubjectIDs(ctx, ids)
@@ -204,8 +199,8 @@ func (s *Service) Sync(ctx context.Context) (returnErr error) {
 	mappings := make([]SubjectMapping, 0, len(subjects))
 	expressions := make([]string, 0, len(subjects))
 	for _, subject := range subjects {
-		assignment, exists := assignmentBySubject[subject.ID]
-		if !exists || subject.Type != assignment.typeName || subject.Level != assignment.level {
+		assignmentType, exists := assignmentTypes[subject.ID]
+		if !exists || subject.Type != assignmentType {
 			return errors.New("WaniKani returned a subject that did not match its assignment")
 		}
 		if subject.Hidden || subject.Level > user.MaxLevelGranted {

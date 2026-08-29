@@ -45,7 +45,6 @@ type User struct {
 type Assignment struct {
 	SubjectID   int64
 	SubjectType string
-	Level       int
 	Started     bool
 	Hidden      bool
 }
@@ -72,7 +71,6 @@ type assignmentResource struct {
 	Data   struct {
 		SubjectID   int64      `json:"subject_id"`
 		SubjectType string     `json:"subject_type"`
-		Level       int        `json:"level"`
 		StartedAt   *time.Time `json:"started_at"`
 		Hidden      bool       `json:"hidden"`
 	} `json:"data"`
@@ -153,10 +151,18 @@ func (c *Client) User(ctx context.Context, token string) (User, error) {
 	return user, nil
 }
 
-func (c *Client) Assignments(ctx context.Context, token string, updatedAfter time.Time) ([]Assignment, error) {
+func (c *Client) Assignments(ctx context.Context, token string, updatedAfter time.Time, maxLevelGranted int) ([]Assignment, error) {
+	if maxLevelGranted < 1 || maxLevelGranted > 60 {
+		return nil, errors.New("WaniKani maximum granted level must be between 1 and 60")
+	}
+	levels := make([]string, 0, maxLevelGranted)
+	for level := 1; level <= maxLevelGranted; level++ {
+		levels = append(levels, strconv.Itoa(level))
+	}
 	query := url.Values{
 		"started":       {"true"},
 		"hidden":        {"false"},
+		"levels":        {strings.Join(levels, ",")},
 		"subject_types": {"vocabulary,kana_vocabulary"},
 	}
 	if !updatedAfter.IsZero() {
@@ -172,13 +178,12 @@ func (c *Client) Assignments(ctx context.Context, token string, updatedAfter tim
 		validType := resource.Data.SubjectType == "vocabulary" || resource.Data.SubjectType == "kana_vocabulary" ||
 			resource.Data.SubjectType == "kanji" || resource.Data.SubjectType == "radical"
 		if resource.Object != "assignment" || resource.ID <= 0 || resource.Data.SubjectID <= 0 ||
-			!validType || resource.Data.Level < 1 || resource.Data.Level > 60 {
+			!validType {
 			return nil, errors.New("WaniKani returned an invalid assignment")
 		}
 		assignments = append(assignments, Assignment{
 			SubjectID:   resource.Data.SubjectID,
 			SubjectType: resource.Data.SubjectType,
-			Level:       resource.Data.Level,
 			Started:     resource.Data.StartedAt != nil,
 			Hidden:      resource.Data.Hidden,
 		})

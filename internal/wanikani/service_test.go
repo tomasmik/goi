@@ -54,13 +54,13 @@ func (api *serviceAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func assignmentJSON(id, subjectID int64, subjectType string, level int, started, hidden bool) string {
+func assignmentJSON(id, subjectID int64, subjectType string, started, hidden bool) string {
 	startedAt := "null"
 	if started {
 		startedAt = `"2026-01-01T00:00:00Z"`
 	}
-	return fmt.Sprintf(`{"id":%d,"object":"assignment","data":{"subject_id":%d,"subject_type":%q,"level":%d,"started_at":%s,"hidden":%t}}`,
-		id, subjectID, subjectType, level, startedAt, hidden)
+	return fmt.Sprintf(`{"id":%d,"object":"assignment","data":{"subject_id":%d,"subject_type":%q,"started_at":%s,"hidden":%t}}`,
+		id, subjectID, subjectType, startedAt, hidden)
 }
 
 func subjectJSON(id int64, subjectType string, level int, expression string, hidden bool) string {
@@ -95,15 +95,17 @@ func TestServiceFullAndIncrementalSync(t *testing.T) {
 	api := &serviceAPI{
 		userID: "user-1", username: "turtle", level: 12, maxLevel: 3,
 		assignments: strings.Join([]string{
-			assignmentJSON(1, 10, "vocabulary", 2, true, false),
-			assignmentJSON(2, 11, "kana_vocabulary", 3, true, false),
-			assignmentJSON(3, 12, "kanji", 2, true, false),
-			assignmentJSON(4, 13, "vocabulary", 2, false, false),
-			assignmentJSON(5, 14, "vocabulary", 2, true, true),
-			assignmentJSON(6, 15, "vocabulary", 4, true, false),
+			assignmentJSON(1, 10, "vocabulary", true, false),
+			assignmentJSON(2, 11, "kana_vocabulary", true, false),
+			assignmentJSON(3, 12, "kanji", true, false),
+			assignmentJSON(4, 13, "vocabulary", false, false),
+			assignmentJSON(5, 14, "vocabulary", true, true),
+			assignmentJSON(6, 15, "vocabulary", true, false),
 		}, ","),
 		subjects: map[string]string{
-			"10,11": subjectJSON(10, "vocabulary", 2, "食べる", false) + "," + subjectJSON(11, "kana_vocabulary", 3, "おやつ", false),
+			"10,11,15": subjectJSON(10, "vocabulary", 2, "食べる", false) + "," +
+				subjectJSON(11, "kana_vocabulary", 3, "おやつ", false) + "," +
+				subjectJSON(15, "vocabulary", 4, "四月", false),
 		},
 	}
 	service, store, _, _ := newTestService(t, api, now)
@@ -133,7 +135,7 @@ func TestServiceFullAndIncrementalSync(t *testing.T) {
 	}
 
 	api.mu.Lock()
-	api.assignments = assignmentJSON(7, 10, "vocabulary", 2, true, false) + "," + assignmentJSON(8, 16, "vocabulary", 2, true, false)
+	api.assignments = assignmentJSON(7, 10, "vocabulary", true, false) + "," + assignmentJSON(8, 16, "vocabulary", true, false)
 	api.subjects["16"] = subjectJSON(16, "vocabulary", 2, "新しい", false)
 	api.mu.Unlock()
 	if err := service.Sync(t.Context()); err != nil {
@@ -161,7 +163,7 @@ func TestServiceFailureDoesNotAdvanceCursorOrLoseVocabulary(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	api := &serviceAPI{
 		userID: "user-1", username: "turtle", level: 3, maxLevel: 3,
-		assignments: assignmentJSON(1, 10, "vocabulary", 2, true, false),
+		assignments: assignmentJSON(1, 10, "vocabulary", true, false),
 		subjects:    map[string]string{"10": subjectJSON(10, "vocabulary", 2, "食べる", false)},
 	}
 	service, store, _, _ := newTestService(t, api, now)
@@ -218,7 +220,7 @@ func TestServiceRecordedSubjectDoesNotRecreateDeletedVocabulary(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	api := &serviceAPI{
 		userID: "user-1", username: "turtle", level: 3, maxLevel: 3,
-		assignments: assignmentJSON(1, 10, "vocabulary", 2, true, false),
+		assignments: assignmentJSON(1, 10, "vocabulary", true, false),
 		subjects:    map[string]string{"10": subjectJSON(10, "vocabulary", 2, "食べる", false)},
 	}
 	service, store, _, _ := newTestService(t, api, now)

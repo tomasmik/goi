@@ -17,11 +17,68 @@ type fakeKnownVocabulary struct {
 	expression string
 	result     vocabulary.AddKnownResult
 	err        error
+	statuses   map[string]string
+	readErr    error
 }
 
 func (store *fakeKnownVocabulary) AddKnown(_ context.Context, expression string) (vocabulary.AddKnownResult, error) {
 	store.expression = expression
 	return store.result, store.err
+}
+
+func (store *fakeKnownVocabulary) KnownExpressionStatuses(context.Context) (map[string]string, error) {
+	return store.statuses, store.readErr
+}
+
+func TestListKnownReturnsAllExpressionsSorted(t *testing.T) {
+	known := &fakeKnownVocabulary{statuses: map[string]string{
+		"難しい":   "known",
+		"食べる":   "leech",
+		"気を付ける": "suspended_leech",
+	}}
+	router, token := knownTestRouter(t, known)
+	request := httptest.NewRequest(http.MethodGet, "/api/extension/v1/known", nil)
+	request.TLS = &tls.ConnectionState{}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || response.Body.String() != "{\"expressions\":[\"気を付ける\",\"難しい\",\"食べる\"]}\n" {
+		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q", response.Header().Get("Cache-Control"))
+	}
+}
+
+func TestListKnownHandlesEmptyUnauthorizedAndStoreFailure(t *testing.T) {
+	router, token := knownTestRouter(t, &fakeKnownVocabulary{})
+	request := httptest.NewRequest(http.MethodGet, "/api/extension/v1/known", nil)
+	request.TLS = &tls.ConnectionState{}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Body.String() != "{\"expressions\":[]}\n" {
+		t.Fatalf("empty response = %d %s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/extension/v1/known", nil)
+	request.TLS = &tls.ConnectionState{}
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized response = %d %s", response.Code, response.Body.String())
+	}
+
+	router, token = knownTestRouter(t, &fakeKnownVocabulary{readErr: context.Canceled})
+	request = httptest.NewRequest(http.MethodGet, "/api/extension/v1/known", nil)
+	request.TLS = &tls.ConnectionState{}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError || strings.Contains(response.Body.String(), context.Canceled.Error()) {
+		t.Fatalf("failure response = %d %s", response.Code, response.Body.String())
+	}
 }
 
 func TestMarkKnownAddsWordWithoutMining(t *testing.T) {

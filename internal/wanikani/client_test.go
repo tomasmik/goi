@@ -47,7 +47,8 @@ func TestClientAssignmentsFollowsPagesAndFiltersRequest(t *testing.T) {
 		requests.Add(1)
 		query := r.URL.Query()
 		if query.Get("started") != "true" || query.Get("hidden") != "false" ||
-			query.Get("subject_types") != "vocabulary,kana_vocabulary" || query.Get("updated_after") != "2026-08-27T09:29:00Z" {
+			query.Get("levels") != "1,2,3" || query.Get("subject_types") != "vocabulary,kana_vocabulary" ||
+			query.Get("updated_after") != "2026-08-27T09:29:00Z" {
 			t.Errorf("query = %v", query)
 		}
 		next := "null"
@@ -58,13 +59,13 @@ func TestClientAssignmentsFollowsPagesAndFiltersRequest(t *testing.T) {
 			id = 2
 		}
 		_, _ = fmt.Fprintf(w, `{"object":"collection","pages":{"next_url":%s},"data":[{
-			"id":%d,"object":"assignment","data":{"subject_id":%d,"subject_type":"vocabulary","level":3,"started_at":"2026-01-01T00:00:00Z","hidden":false}
+			"id":%d,"object":"assignment","data":{"subject_id":%d,"subject_type":"vocabulary","started_at":"2026-01-01T00:00:00Z","hidden":false}
 		}]}`, next, id, id+10)
 	}))
 	defer server.Close()
 
 	client := newClient(server.Client(), server.URL+"/v2/")
-	assignments, err := client.Assignments(t.Context(), testToken, time.Date(2026, 8, 27, 9, 29, 0, 0, time.UTC))
+	assignments, err := client.Assignments(t.Context(), testToken, time.Date(2026, 8, 27, 9, 29, 0, 0, time.UTC), 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +92,7 @@ func TestClientRejectsPaginationLoopAndForeignHost(t *testing.T) {
 				_, _ = fmt.Fprintf(w, `{"object":"collection","pages":{"next_url":%q},"data":[]}`, test.next(r))
 			}))
 			defer server.Close()
-			_, err := newClient(server.Client(), server.URL+"/v2/").Assignments(t.Context(), testToken, time.Time{})
+			_, err := newClient(server.Client(), server.URL+"/v2/").Assignments(t.Context(), testToken, time.Time{}, 60)
 			if err == nil {
 				t.Fatal("Assignments() accepted unsafe pagination")
 			}
