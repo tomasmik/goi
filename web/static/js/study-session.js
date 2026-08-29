@@ -117,6 +117,16 @@ export function stageFocusTarget(stage, includeHeading = true) {
   );
 }
 
+export function reviewAnswerFocusTarget(activeElement, currentStage, nextStage) {
+  if (
+    !activeElement?.matches?.("[data-review-answer] .review-answer-input") ||
+    !currentStage?.contains?.(activeElement)
+  ) {
+    return null;
+  }
+  return nextStage?.querySelector?.("[data-review-answer] .review-answer-input[autofocus]") || null;
+}
+
 function focusStage(stage, includeHeading = true) {
   const target = stageFocusTarget(stage, includeHeading);
   if (target instanceof HTMLElement) {
@@ -132,11 +142,21 @@ function replaceStage(nextStage) {
   if (!current || !nextStage) {
     return false;
   }
-  current.replaceWith(nextStage);
+  const answerFocusTarget = reviewAnswerFocusTarget(document.activeElement, current, nextStage);
+  if (answerFocusTarget) {
+    current.after(nextStage);
+  } else {
+    current.replaceWith(nextStage);
+  }
   reviewConfirmationReadyAt = performance.now() + 100;
   initKanaInputs(nextStage);
   initLocalTimes(nextStage);
-  focusStage(nextStage);
+  if (answerFocusTarget) {
+    answerFocusTarget.focus({ preventScroll: true });
+    current.remove();
+  } else {
+    focusStage(nextStage);
+  }
   return true;
 }
 
@@ -224,7 +244,7 @@ async function submitFragment(form, kind) {
   requestInFlight = true;
   form.setAttribute("aria-busy", "true");
   const formData = new FormData(form);
-  form.querySelectorAll("button, input, select, textarea").forEach((control) => {
+  form.querySelectorAll("button").forEach((control) => {
     control.disabled = true;
   });
 
@@ -281,7 +301,7 @@ function handleStudySubmit(event) {
     return;
   }
   if (form.matches("[data-prime-feedback-audio]")) {
-    primeFeedbackAudio(form.closest("#study-stage"));
+    primeFeedbackAudio(form.dataset.feedbackAudioSrc ? form : form.closest("#study-stage"));
   }
   if (form.matches("[data-review-answer], [data-review-confirm], [data-review-action]")) {
     event.preventDefault();

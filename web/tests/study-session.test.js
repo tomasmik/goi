@@ -5,6 +5,7 @@ import {
   lessonNavigationKeyboardAction,
   reviewConfirmationKeyboardAction,
   reviewCorrectionKeyboardAction,
+  reviewAnswerFocusTarget,
   selfGradeKeyboardAction,
   stageFocusTarget
 } from "../static/js/study-session.js";
@@ -121,4 +122,26 @@ test("focuses the useful control or heading after replacing a study stage", () =
   assert.equal(selectors.length, 2);
   assert.equal(stageFocusTarget(headingStage, false), null);
   assert.equal(selectors.length, 3);
+});
+
+test("hands focus directly between typed review answer inputs", () => {
+  const activeAnswer = {
+    matches(selector) {
+      assert.equal(selector, "[data-review-answer] .review-answer-input");
+      return true;
+    }
+  };
+  const nextAnswer = {};
+  const currentStage = { contains: (element) => element === activeAnswer };
+  const nextStage = {
+    querySelector(selector) {
+      assert.equal(selector, "[data-review-answer] .review-answer-input[autofocus]");
+      return nextAnswer;
+    }
+  };
+
+  assert.equal(reviewAnswerFocusTarget(activeAnswer, currentStage, nextStage), nextAnswer);
+  assert.equal(reviewAnswerFocusTarget(null, currentStage, nextStage), null);
+  assert.equal(reviewAnswerFocusTarget(activeAnswer, { contains: () => false }, nextStage), null);
+  assert.equal(reviewAnswerFocusTarget(activeAnswer, currentStage, { querySelector: () => null }), null);
 });

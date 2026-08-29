@@ -840,6 +840,15 @@ button.primary.sent:disabled {
     text-decoration-color: #ff9b8c;
   }
 
+  .dictionary-lookup,
+  .word-preview {
+    --goi-dictionary-line: var(--goi-line-strong);
+    --goi-dictionary-muted: var(--goi-muted);
+    --goi-dictionary-reading: var(--goi-reading);
+    --goi-dictionary-tag: var(--goi-surface-raised);
+    --goi-dictionary-term: var(--goi-ink);
+  }
+
   .dictionary-lookup {
     background: #20262d;
     color: #d7dde2;

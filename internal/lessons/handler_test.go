@@ -125,6 +125,44 @@ func TestLessonShowsExampleContext(t *testing.T) {
 	}
 }
 
+func TestLessonAudioAutoplayFollowsSetting(t *testing.T) {
+	renderer, err := internalweb.NewRenderer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	render := func(enabled bool) string {
+		response := httptest.NewRecorder()
+		renderer.Render(response, "lesson-session.html", SessionPage{
+			Title: "Lesson",
+			Session: Session{
+				ID: 1, Status: "active", Phase: "study", BatchCount: 1,
+				AudioEnabled: enabled, CanStudyNext: true,
+				Items: []StudyItem{
+					{Expression: "猫", AudioID: 7},
+					{Position: 1, Expression: "犬", AudioID: 8},
+				},
+				StudyItem: StudyItem{Expression: "猫", AudioID: 7},
+			},
+		})
+		return response.Body.String()
+	}
+
+	disabled := render(false)
+	if !strings.Contains(disabled, `<audio controls preload="metadata"`) || strings.Contains(disabled, "data-feedback-audio") {
+		t.Fatalf("disabled lesson autoplay changed manual audio: %s", disabled)
+	}
+	enabled := render(true)
+	for _, expected := range []string{
+		`data-feedback-audio-src="/media/7"`,
+		`<audio controls data-feedback-audio preload="auto"`,
+		`data-feedback-audio-src="/media/8"`,
+	} {
+		if !strings.Contains(enabled, expected) {
+			t.Fatalf("enabled lesson autoplay does not contain %q: %s", expected, enabled)
+		}
+	}
+}
+
 func TestStudyNavigationReturnsUpdatedFragment(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "lesson-handler.sqlite"))

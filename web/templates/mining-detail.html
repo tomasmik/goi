@@ -57,7 +57,7 @@
       {{end}}
       <div class="mining-audio-actions">
         <div class="mining-audio-source-actions">
-          {{if not .Capture.PronunciationAudioID}}<a class="button button-secondary button-small" href="/mining/captures/{{.Capture.ID}}?find_audio=1">Find word audio</a>{{end}}
+          {{if not .Capture.PronunciationAudioID}}<button class="button button-secondary button-small" type="submit" formaction="/mining/captures/{{.Capture.ID}}/pronunciations/search" formmethod="post" formenctype="application/x-www-form-urlencoded" formnovalidate>Find word audio</button>{{end}}
           <a class="text-action external-link" href="{{.ForvoURL}}" target="_blank" rel="noopener noreferrer">Search Forvo</a>
         </div>
         <div class="mining-audio-upload">

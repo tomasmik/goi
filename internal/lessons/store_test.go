@@ -63,6 +63,9 @@ func TestLessonCurrentLoadsAttachedMedia(t *testing.T) {
 	vocabularyID := insertUnlearnedVocabulary(t, db, 1)[0]
 	audioID := attachLessonTestMedia(t, db, vocabularyID, "pronunciation", "audio", "audio/mpeg", "a")
 	pictureID := attachLessonTestMedia(t, db, vocabularyID, "picture", "image", "image/png", "b")
+	if _, err := db.Exec("INSERT INTO user_settings (id, audio_enabled) VALUES (1, 1)"); err != nil {
+		t.Fatal(err)
+	}
 	store := NewStore(db)
 	lessonID, err := store.Start(ctx, []int64{vocabularyID})
 	if err != nil {
@@ -74,6 +77,9 @@ func TestLessonCurrentLoadsAttachedMedia(t *testing.T) {
 	}
 	if session.StudyItem.AudioID != audioID || session.StudyItem.PictureID != pictureID {
 		t.Fatalf("lesson media = audio %d, picture %d; want %d and %d", session.StudyItem.AudioID, session.StudyItem.PictureID, audioID, pictureID)
+	}
+	if !session.AudioEnabled {
+		t.Fatal("lesson did not load the automatic audio setting")
 	}
 }
 

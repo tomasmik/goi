@@ -417,6 +417,30 @@ func (h *Handler) searchPronunciations(w http.ResponseWriter, r *http.Request) {
 	}
 	reading := strings.TrimSpace(r.FormValue("pronunciation"))
 	recordings, searchErr := h.recordings.Search(r.Context(), expression, reading)
+	if searchErr == nil && len(recordings) == 1 {
+		revision, err := parseContentRevision(r.FormValue("content_revision"))
+		if err != nil {
+			h.renderPronunciationError(w, r, id, http.StatusConflict, err.Error())
+			return
+		}
+		err = h.setPronunciationAudio(r.Context(), id, recordings[0].ID, revision, expression, reading)
+		if errors.Is(err, ErrRevisionConflict) {
+			h.renderPronunciationError(w, r, id, http.StatusConflict, "This card changed in another tab. Reload it and find the recording again.")
+			return
+		}
+		if err != nil {
+			internalweb.LogError(r, "could not attach pronunciation audio", err)
+			h.renderPronunciationError(w, r, id, http.StatusBadGateway, "Could not attach that recording. Try again or upload an audio file.")
+			return
+		}
+		item, err = h.store.Get(r.Context(), id)
+		if err != nil {
+			internalweb.InternalError(w, r, "could not reload vocabulary", err)
+			return
+		}
+		h.renderer.Render(w, "vocabulary-new.html", h.editPageFromForm(r, item, "Pronunciation audio added.", ""))
+		return
+	}
 	page := h.editPageFromForm(r, item, "", "")
 	if revision, err := parseContentRevision(r.FormValue("content_revision")); err == nil {
 		page.ContentRevision = revision
@@ -461,10 +485,7 @@ func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
 		expression = item.Expression
 	}
 	reading := strings.TrimSpace(r.FormValue("pronunciation"))
-	upload, err := h.recordings.Download(r.Context(), recordingID, expression, reading)
-	if err == nil {
-		err = h.store.SetPronunciationAudio(r.Context(), id, revision, upload)
-	}
+	err = h.setPronunciationAudio(r.Context(), id, recordingID, revision, expression, reading)
 	if errors.Is(err, ErrRevisionConflict) {
 		h.renderPronunciationError(w, r, id, http.StatusConflict, "This card changed in another tab. Reload it and choose the recording again.")
 		return
@@ -480,6 +501,14 @@ func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderer.Render(w, "vocabulary-new.html", h.editPageFromForm(r, item, "Pronunciation audio added.", ""))
+}
+
+func (h *Handler) setPronunciationAudio(ctx context.Context, id, recordingID, revision int64, expression, reading string) error {
+	upload, err := h.recordings.Download(ctx, recordingID, expression, reading)
+	if err != nil {
+		return err
+	}
+	return h.store.SetPronunciationAudio(ctx, id, revision, upload)
 }
 
 func (h *Handler) renderPronunciationError(w http.ResponseWriter, r *http.Request, id int64, status int, message string) {

@@ -56,6 +56,7 @@ type Session struct {
 	ReviewSessionID int64
 	Total           int
 	Completed       int
+	AudioEnabled    bool
 	Items           []StudyItem
 	StudyItem       StudyItem
 	StudyReady      bool
@@ -308,6 +309,12 @@ func (s *Store) Current(ctx context.Context, sessionID int64) (Session, error) {
 		FROM lesson_session_items
 		WHERE session_id = ?`, sessionID).Scan(&session.Total, &session.Completed, &session.BatchCount); err != nil {
 		return Session{}, fmt.Errorf("load lesson progress: %w", err)
+	}
+	var audioEnabled int
+	if err := s.db.QueryRowContext(ctx, `SELECT audio_enabled FROM user_settings WHERE id = 1`).Scan(&audioEnabled); err == nil {
+		session.AudioEnabled = audioEnabled == 1
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return Session{}, fmt.Errorf("load lesson audio setting: %w", err)
 	}
 	if session.Status == "completed" {
 		return session, nil

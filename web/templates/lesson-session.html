@@ -1,5 +1,5 @@
 {{define "lesson-session-body"}}
-<div id="study-stage" class="lesson-stage">
+<div id="study-stage" class="lesson-stage" {{if and .Session.AudioEnabled .Session.StudyItem.AudioID}}data-feedback-audio-src="/media/{{.Session.StudyItem.AudioID}}"{{end}}>
   <section class="study-status" aria-label="Lesson progress">
     <div class="study-status-copy">
       <span class="study-kicker">Lesson</span>
@@ -34,7 +34,7 @@
       <img src="/media/{{.Session.StudyItem.PictureID}}" alt="Illustration for {{.Session.StudyItem.Expression}}">
       {{end}}
       {{if .Session.StudyItem.AudioID}}
-      <audio controls preload="metadata" src="/media/{{.Session.StudyItem.AudioID}}" aria-label="Pronunciation audio for {{.Session.StudyItem.Expression}}"></audio>
+      <audio controls {{if .Session.AudioEnabled}}data-feedback-audio preload="auto"{{else}}preload="metadata"{{end}} src="/media/{{.Session.StudyItem.AudioID}}" aria-label="Pronunciation audio for {{.Session.StudyItem.Expression}}"></audio>
       {{end}}
     </div>
     {{end}}
@@ -74,7 +74,7 @@
         <span class="jp-word" lang="ja">{{.Expression}}</span>
       </button>
       {{else}}
-      <form method="post" action="/lessons/session/{{$.Session.ID}}/word/{{.Position}}" data-lesson-nav>
+      <form method="post" action="/lessons/session/{{$.Session.ID}}/word/{{.Position}}" data-lesson-nav {{if and $.Session.AudioEnabled .AudioID}}data-prime-feedback-audio data-feedback-audio-src="/media/{{.AudioID}}"{{end}}>
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <button class="study-queue-item{{if .Viewed}} is-viewed{{end}}" type="submit">
           <span class="jp-word" lang="ja">{{.Expression}}</span>
@@ -86,11 +86,13 @@
 
     <div class="lesson-navigation">
       {{if .Session.CanStudyBack}}
+      {{$back := index .Session.Items (add .Session.StudyPosition -1)}}
       <form
         method="post"
         action="/lessons/session/{{.Session.ID}}/word/{{add .Session.StudyPosition -1}}"
         data-lesson-nav
         data-lesson-direction="back"
+        {{if and .Session.AudioEnabled $back.AudioID}}data-prime-feedback-audio data-feedback-audio-src="/media/{{$back.AudioID}}"{{end}}
       >
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button class="button button-secondary lesson-nav-button" type="submit">
@@ -102,11 +104,13 @@
       {{end}}
 
       {{if .Session.CanStudyNext}}
+      {{$next := index .Session.Items (add .Session.StudyPosition 1)}}
       <form
         method="post"
         action="/lessons/session/{{.Session.ID}}/word/{{add .Session.StudyPosition 1}}"
         data-lesson-nav
         data-lesson-direction="next"
+        {{if and .Session.AudioEnabled $next.AudioID}}data-prime-feedback-audio data-feedback-audio-src="/media/{{$next.AudioID}}"{{end}}
       >
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <button class="button lesson-nav-button" type="submit">

@@ -84,13 +84,24 @@ func TestMiningCanFindPreviewAndAttachPronunciationAudio(t *testing.T) {
 		t.Fatalf("preview response = %d, %q", preview.Code, preview.Header().Get("Content-Type"))
 	}
 
-	form := url.Values{"revision": {strconvInt(capture.Revision)}, "reading": {"にほん"}}
+	form := url.Values{
+		"revision":      {strconvInt(capture.Revision)},
+		"reading":       {"にほん"},
+		"pronunciation": {"にほん"},
+		"meanings":      {"Japan"},
+		"notes":         {"keep this note"},
+	}
 	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/mining/captures/%d/pronunciations/42", capture.ID), strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther {
+	if response.Code != http.StatusOK {
 		t.Fatalf("attach response = %d, body = %s", response.Code, response.Body.String())
+	}
+	for _, expected := range []string{"Pronunciation audio added to the card.", `value="にほん"`, ">Japan</textarea>", ">keep this note</textarea>"} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("attach response did not preserve %q: %s", expected, response.Body.String())
+		}
 	}
 	stored, err := store.Get(ctx, capture.ID)
 	if err != nil {
@@ -98,6 +109,40 @@ func TestMiningCanFindPreviewAndAttachPronunciationAudio(t *testing.T) {
 	}
 	if stored.PronunciationAudioID == 0 {
 		t.Fatal("pronunciation audio was not attached")
+	}
+}
+
+func TestMiningAutomaticallyUsesSinglePronunciationResult(t *testing.T) {
+	ctx, db := openMiningTestDatabase(t)
+	store := NewStore(db)
+	capture := createMiningCapture(t, ctx, store, "日本", "00000000000000000000000000000097")
+	recordings := &fakePronunciationProvider{
+		results: []pronunciation.Recording{{ID: 42, Label: "にほん"}},
+		upload:  media.Upload{Kind: media.KindAudio, MimeType: "audio/wav", Content: silentMiningWAV()},
+	}
+	router := miningTestRouterWithServices(t, store, "https://goi.example", nil, recordings)
+	form := url.Values{
+		"revision":      {strconvInt(capture.Revision)},
+		"reading":       {"にほん"},
+		"pronunciation": {"にほん"},
+		"meanings":      {"Japan"},
+		"notes":         {"keep this note"},
+	}
+	response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/pronunciations/search", capture.ID), form)
+	if response.Code != http.StatusOK {
+		t.Fatalf("response = %d, body = %s", response.Code, response.Body.String())
+	}
+	for _, expected := range []string{"Pronunciation audio added to the card.", `value="にほん"`, ">Japan</textarea>", ">keep this note</textarea>"} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("response did not preserve %q: %s", expected, response.Body.String())
+		}
+	}
+	stored, err := store.Get(ctx, capture.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.PronunciationAudioID == 0 {
+		t.Fatal("single pronunciation result was not attached")
 	}
 }
 
@@ -595,6 +640,7 @@ func TestAcceptCaptureCreatesVocabulary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	next := createMiningCapture(t, ctx, store, "飲む", "00000000000000000000000000000013")
 	router := miningTestRouter(t, store, "https://goi.example")
 	form := url.Values{
 		"revision":      {strconvInt(capture.Revision)},
@@ -605,7 +651,7 @@ func TestAcceptCaptureCreatesVocabulary(t *testing.T) {
 		"meanings":      {"to eat\nto have a meal"},
 	}
 	response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/accept", capture.ID), form)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/vocabulary/1" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != capturePath(capture.ID) {
 		t.Fatalf("response = %d %q, body = %s", response.Code, response.Header().Get("Location"), response.Body.String())
 	}
 	accepted, err := store.Get(ctx, capture.ID)
@@ -614,6 +660,18 @@ func TestAcceptCaptureCreatesVocabulary(t *testing.T) {
 	}
 	if accepted.Status != StatusAccepted || accepted.VocabularyID == nil {
 		t.Fatalf("accepted capture = %#v", accepted)
+	}
+	completion := httptest.NewRecorder()
+	router.ServeHTTP(completion, httptest.NewRequest(http.MethodGet, capturePath(capture.ID), nil))
+	for _, expected := range []string{
+		"Linked vocabulary",
+		fmt.Sprintf(`href="/vocabulary/%d"`, *accepted.VocabularyID),
+		fmt.Sprintf(`href="/mining/captures/%d"`, next.ID),
+		"Next capture",
+	} {
+		if !strings.Contains(completion.Body.String(), expected) {
+			t.Fatalf("completion page does not contain %q: %s", expected, completion.Body.String())
+		}
 	}
 	var expression, sourceLabel string
 	if err := db.QueryRow("SELECT expression, source_label FROM vocabulary WHERE id = ?", *accepted.VocabularyID).Scan(&expression, &sourceLabel); err != nil {
@@ -1133,7 +1191,7 @@ func TestAcceptDictionaryCandidateUsesCopiedDefaults(t *testing.T) {
 		"candidate_id": {"1"},
 	}
 	response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/accept", capture.ID), form)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/vocabulary/1" {
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != capturePath(capture.ID) {
 		t.Fatalf("response = %d %q, body = %s", response.Code, response.Header().Get("Location"), response.Body.String())
 	}
 	var pronunciation, meaning string

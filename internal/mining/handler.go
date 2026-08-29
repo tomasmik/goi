@@ -134,6 +134,7 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Post("/mining/captures/{id}/translate", h.translate)
 	r.Post("/mining/captures/{id}/media", h.addMedia)
 	r.Post("/mining/captures/{id}/media/{mediaID}/delete", h.removeMedia)
+	r.Post("/mining/captures/{id}/pronunciations/search", h.findPronunciation)
 	r.Get("/mining/captures/{id}/pronunciations/{recordingID}", h.previewPronunciation)
 	r.Post("/mining/captures/{id}/pronunciations/{recordingID}", h.usePronunciation)
 	r.Post("/mining/captures/{id}/attach", h.attach)
@@ -448,7 +449,6 @@ func (h *Handler) accept(w http.ResponseWriter, r *http.Request) {
 	if err == nil && form.candidateID > 0 {
 		candidate, err = h.resolveCandidate(r.Context(), id, form.revision, form.candidateID)
 	}
-	var vocabularyID int64
 	if err == nil {
 		err = h.saveCardMedia(r, id, form.revision)
 	}
@@ -462,16 +462,16 @@ func (h *Handler) accept(w http.ResponseWriter, r *http.Request) {
 			ExampleTarget:      form.exampleTarget,
 		}
 		if form.candidateID > 0 {
-			vocabularyID, err = h.store.AcceptCandidate(r.Context(), id, form.revision, candidate, input)
+			_, err = h.store.AcceptCandidate(r.Context(), id, form.revision, candidate, input)
 		} else {
-			vocabularyID, err = h.store.Accept(r.Context(), id, form.revision, input)
+			_, err = h.store.Accept(r.Context(), id, form.revision, input)
 		}
 	}
 	if err != nil {
 		h.renderDetailError(w, r, id, form, err)
 		return
 	}
-	http.Redirect(w, r, "/vocabulary/"+strconv.FormatInt(vocabularyID, 10), http.StatusSeeOther)
+	http.Redirect(w, r, capturePath(id), http.StatusSeeOther)
 }
 
 func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
@@ -603,20 +603,62 @@ func (h *Handler) previewPronunciation(w http.ResponseWriter, r *http.Request) {
 	w.Write(upload.Content)
 }
 
+func (h *Handler) findPronunciation(w http.ResponseWriter, r *http.Request) {
+	id, ok := captureID(r)
+	if !ok || h.recordings == nil {
+		h.notFound(w)
+		return
+	}
+	form, err := readAcceptForm(w, r)
+	if err != nil {
+		h.renderDetail(w, r, id, form, publicError(err), "", http.StatusBadRequest)
+		return
+	}
+	capture, err := h.store.Get(r.Context(), id)
+	if err != nil {
+		h.renderDetailError(w, r, id, form, err)
+		return
+	}
+	expression := pronunciationExpression(capture.Expression, r.FormValue("expression"))
+	reading := strings.TrimSpace(r.FormValue("reading"))
+	recordings, err := h.recordings.Search(r.Context(), expression, reading)
+	if err != nil {
+		internalweb.LogError(r, "could not search pronunciation audio", err)
+		h.renderDetail(w, r, id, form, "The open pronunciation library could not be reached. Try again or use the external search.", "", http.StatusBadGateway)
+		return
+	}
+	if len(recordings) != 1 {
+		query := r.URL.Query()
+		query.Set("find_audio", "1")
+		r.URL.RawQuery = query.Encode()
+		h.renderDetail(w, r, id, form, "", "", http.StatusOK)
+		return
+	}
+	upload, err := h.recordings.Download(r.Context(), recordings[0].ID, expression, reading)
+	if err == nil {
+		err = h.store.SetPronunciationAudio(r.Context(), id, form.revision, upload)
+	}
+	if err != nil {
+		h.renderDetailError(w, r, id, form, err)
+		return
+	}
+	h.renderDetail(w, r, id, form, "", "Pronunciation audio added to the card.", http.StatusOK)
+}
+
 func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
 	id, ok := captureID(r)
 	if !ok {
 		h.notFound(w)
 		return
 	}
-	if err := parseSmallForm(w, r); err != nil {
-		h.renderDetail(w, r, id, detailForm{}, publicError(err), "", http.StatusBadRequest)
+	form, err := readAcceptForm(w, r)
+	if err != nil {
+		h.renderDetail(w, r, id, form, publicError(err), "", http.StatusBadRequest)
 		return
 	}
 	recordingID, ok := positiveInt64(chi.URLParam(r, "recordingID"))
-	revision, revisionOK := positiveInt64(r.FormValue("revision"))
-	if !ok || !revisionOK || h.recordings == nil {
-		h.renderDetail(w, r, id, detailForm{}, "The pronunciation choice is invalid. Search again.", "", http.StatusBadRequest)
+	if !ok || h.recordings == nil {
+		h.renderDetail(w, r, id, form, "The pronunciation choice is invalid. Search again.", "", http.StatusBadRequest)
 		return
 	}
 	capture, err := h.store.Get(r.Context(), id)
@@ -625,15 +667,15 @@ func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
 		if downloadErr != nil {
 			err = downloadErr
 		} else {
-			err = h.store.SetPronunciationAudio(r.Context(), id, revision, upload)
+			err = h.store.SetPronunciationAudio(r.Context(), id, form.revision, upload)
 		}
 	}
 	if err != nil {
 		internalweb.LogError(r, "could not attach pronunciation audio", err)
-		h.renderDetail(w, r, id, detailForm{}, "Could not attach that recording. Try another one or use the manual upload.", "", http.StatusBadGateway)
+		h.renderDetail(w, r, id, form, "Could not attach that recording. Try another one or use the manual upload.", "", http.StatusBadGateway)
 		return
 	}
-	http.Redirect(w, r, capturePath(id)+"?pronunciation_added=1", http.StatusSeeOther)
+	h.renderDetail(w, r, id, form, "", "Pronunciation audio added to the card.", http.StatusOK)
 }
 
 func readCaptureMedia(form *multipart.Form) ([]media.Upload, *media.Upload, *media.Upload, error) {

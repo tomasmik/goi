@@ -107,7 +107,10 @@ func TestVocabularyEditFindsAndAttachesPronunciation(t *testing.T) {
 		t.Fatal(err)
 	}
 	provider := &fakePronunciationProvider{
-		recordings: []pronunciation.Recording{{ID: 42, Label: "そだてる", SourceName: "Test recordings"}},
+		recordings: []pronunciation.Recording{
+			{ID: 42, Label: "そだてる", SourceName: "Test recordings"},
+			{ID: 43, Label: "そだてる", SourceName: "Test recordings"},
+		},
 		upload: media.Upload{
 			Kind:       media.KindAudio,
 			MimeType:   "audio/mpeg",
@@ -167,6 +170,49 @@ func TestVocabularyEditFindsAndAttachesPronunciation(t *testing.T) {
 	}
 	if updated.Expression != item.Expression || updated.Pronunciation != item.Pronunciation || strings.Join(updated.Meanings, "\n") != strings.Join(item.Meanings, "\n") {
 		t.Fatalf("attaching audio changed card text: before=%+v after=%+v", item, updated)
+	}
+}
+
+func TestVocabularyEditAutomaticallyUsesSinglePronunciationResult(t *testing.T) {
+	ctx, db := openTestDatabase(t)
+	store := NewStore(db)
+	id, err := store.Create(ctx, CreateInput{
+		Expression: "育てる", Pronunciation: "そだてる", Meanings: []string{"to raise"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &fakePronunciationProvider{
+		recordings: []pronunciation.Recording{{ID: 42, Label: "そだてる"}},
+		upload:     media.Upload{Kind: media.KindAudio, MimeType: "audio/mpeg", Content: []byte("pronunciation audio")},
+	}
+	form := url.Values{
+		"content_revision": {strconv.FormatInt(item.ContentRevision, 10)},
+		"expression":       {item.Expression},
+		"pronunciation":    {item.Pronunciation},
+		"meanings":         {strings.Join(item.Meanings, "\n")},
+		"notes":            {"unsaved note"},
+	}
+	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/vocabulary/%d/pronunciations/search", id), strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	vocabularyTestRouterWithPronunciation(t, store, provider).ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Pronunciation audio added.") {
+		t.Fatalf("response = %d, body = %s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "Use this recording") {
+		t.Fatal("single pronunciation result still requires a second click")
+	}
+	updated, err := store.Get(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(updated.Media) != 1 || provider.downloads != 1 {
+		t.Fatalf("updated media = %d, downloads = %d", len(updated.Media), provider.downloads)
 	}
 }
 
