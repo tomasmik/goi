@@ -110,7 +110,12 @@
 {{end}}
 
 {{define "review-session-body"}}
-<div id="study-stage" class="review-stage" {{if and (eq .State.PromptType "pronunciation") .State.AudioEnabled .State.AudioID}}data-feedback-audio-src="/media/{{.State.AudioID}}"{{end}}>
+<div
+  id="study-stage"
+  class="review-stage"
+  {{if and (eq .State.PromptType "pronunciation") .State.AudioEnabled .State.AudioID}}data-feedback-audio-src="/media/{{.State.AudioID}}"{{end}}
+  {{if or .PlayAnswerAudio (and (eq .State.PromptType "pronunciation") .State.AudioEnabled .State.AudioID (or (and .Confirmation .Confirmation.Correct) .Revealed .State.Feedback))}}data-play-primed-feedback-audio{{end}}
+>
   {{template "review-progress" .}}
   {{if .Notice}}
   <p class="review-notice" role="status">{{.Notice}}</p>

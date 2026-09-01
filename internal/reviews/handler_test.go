@@ -182,10 +182,31 @@ func TestCorrectAnswerWaitsForExplicitConfirmation(t *testing.T) {
 
 func TestCorrectAnswerAdvancesWhenConfigured(t *testing.T) {
 	ctx, db := openReviewTestDatabase(t)
-	if _, err := db.Exec("INSERT INTO user_settings (id, review_auto_advance) VALUES (1, 1)"); err != nil {
+	if _, err := db.Exec("INSERT INTO user_settings (id, review_auto_advance, audio_enabled) VALUES (1, 1, 1)"); err != nil {
 		t.Fatal(err)
 	}
 	insertDueVocabulary(t, db)
+	var vocabularyID int64
+	if err := db.QueryRow("SELECT id FROM vocabulary").Scan(&vocabularyID); err != nil {
+		t.Fatal(err)
+	}
+	result, err := db.Exec(
+		"INSERT INTO media (kind, mime_type, sha256, created_at) VALUES ('audio', 'audio/mpeg', ?, 1)",
+		strings.Repeat("a", 64),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioID, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		"INSERT INTO vocabulary_media (vocabulary_id, purpose, media_id) VALUES (?, 'pronunciation', ?)",
+		vocabularyID, audioID,
+	); err != nil {
+		t.Fatal(err)
+	}
 	store := NewStore(db)
 	sessionID, err := store.StartNormal(ctx, 1)
 	if err != nil {
@@ -194,6 +215,9 @@ func TestCorrectAnswerAdvancesWhenConfigured(t *testing.T) {
 	before, err := store.State(ctx, sessionID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if before.PromptType != "pronunciation" || !before.AudioEnabled || before.AudioID != audioID {
+		t.Fatalf("reading prompt audio state = %+v", before)
 	}
 
 	form := url.Values{
@@ -209,8 +233,12 @@ func TestCorrectAnswerAdvancesWhenConfigured(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if body := response.Body.String(); strings.Contains(body, "data-review-confirmation") {
+	body := response.Body.String()
+	if strings.Contains(body, "data-review-confirmation") {
 		t.Fatalf("automatic advance rendered a confirmation: %s", body)
+	}
+	if !strings.Contains(body, "data-play-primed-feedback-audio") {
+		t.Fatalf("automatic advance did not preserve correct-answer audio: %s", body)
 	}
 	after, err := store.State(ctx, sessionID)
 	if err != nil {

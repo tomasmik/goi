@@ -39,12 +39,13 @@ type PracticePage struct {
 }
 
 type SessionPage struct {
-	Title        string
-	CSRFToken    string
-	State        State
-	Notice       string
-	Confirmation *AnswerConfirmation
-	Revealed     bool
+	Title           string
+	CSRFToken       string
+	State           State
+	Notice          string
+	Confirmation    *AnswerConfirmation
+	Revealed        bool
+	PlayAnswerAudio bool
 }
 
 type AnswerConfirmation struct {
@@ -307,7 +308,8 @@ func (h *Handler) answer(w http.ResponseWriter, r *http.Request) {
 				h.writeStoreError(w, r, err, "could not confirm review answer", sessionID)
 				return
 			}
-			h.respondAfterReviewAction(w, r, sessionID, "")
+			playAnswerAudio := before.PromptType == "pronunciation" && before.AudioEnabled && before.AudioID != 0
+			h.respondAfterReviewAction(w, r, sessionID, "", playAnswerAudio)
 			return
 		}
 		page := SessionPage{
@@ -361,7 +363,7 @@ func (h *Handler) confirmAnswer(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, r, err, "could not confirm review answer", sessionID)
 		return
 	}
-	h.respondAfterReviewAction(w, r, sessionID, "")
+	h.respondAfterReviewAction(w, r, sessionID, "", false)
 }
 
 func (h *Handler) acceptFailure(w http.ResponseWriter, r *http.Request) {
@@ -382,7 +384,7 @@ func (h *Handler) acceptFailure(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, r, err, "could not continue review", sessionID)
 		return
 	}
-	h.respondAfterReviewAction(w, r, sessionID, "")
+	h.respondAfterReviewAction(w, r, sessionID, "", false)
 }
 
 func (h *Handler) revealAnswer(w http.ResponseWriter, r *http.Request) {
@@ -440,7 +442,7 @@ func (h *Handler) gradeAnswer(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, r, err, "could not grade review answer", sessionID)
 		return
 	}
-	h.respondAfterReviewAction(w, r, sessionID, "")
+	h.respondAfterReviewAction(w, r, sessionID, "", false)
 }
 
 func (h *Handler) markCorrect(w http.ResponseWriter, r *http.Request) {
@@ -458,7 +460,7 @@ func (h *Handler) markCorrect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Header.Get("X-Goi-Fragment") == "review" {
-		h.respondAfterReviewAction(w, r, sessionID, "Answer marked correct.")
+		h.respondAfterReviewAction(w, r, sessionID, "Answer marked correct.", false)
 		return
 	}
 	http.Redirect(w, r, reviewSessionURL(sessionID)+"?corrected=1", http.StatusSeeOther)
@@ -478,7 +480,7 @@ func (h *Handler) showAnswer(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, r, err, "could not reveal review answer", sessionID)
 		return
 	}
-	h.respondAfterReviewAction(w, r, sessionID, "")
+	h.respondAfterReviewAction(w, r, sessionID, "", false)
 }
 
 func (h *Handler) addSynonym(w http.ResponseWriter, r *http.Request) {
@@ -543,13 +545,13 @@ func (h *Handler) addSynonym(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Header.Get("X-Goi-Fragment") == "review" {
-		h.respondAfterReviewAction(w, r, sessionID, "Meaning added and answer marked correct.")
+		h.respondAfterReviewAction(w, r, sessionID, "Meaning added and answer marked correct.", false)
 		return
 	}
 	http.Redirect(w, r, reviewSessionURL(sessionID)+"?synonym=added", http.StatusSeeOther)
 }
 
-func (h *Handler) respondAfterReviewAction(w http.ResponseWriter, r *http.Request, sessionID int64, notice string) {
+func (h *Handler) respondAfterReviewAction(w http.ResponseWriter, r *http.Request, sessionID int64, notice string, playAnswerAudio bool) {
 	state, err := h.store.State(r.Context(), sessionID)
 	if err != nil {
 		internalweb.InternalError(w, r, "could not load review", err)
@@ -564,6 +566,7 @@ func (h *Handler) respondAfterReviewAction(w http.ResponseWriter, r *http.Reques
 	}
 	h.renderer.Render(w, "review-session-body", SessionPage{
 		Title: "Review", CSRFToken: internalweb.CSRFToken(r), State: state, Notice: notice,
+		PlayAnswerAudio: playAnswerAudio,
 	})
 }
 
@@ -601,7 +604,7 @@ func (h *Handler) continueReview(w http.ResponseWriter, r *http.Request) {
 		h.writeStoreError(w, r, err, "could not continue review", sessionID)
 		return
 	}
-	h.respondAfterReviewAction(w, r, sessionID, "")
+	h.respondAfterReviewAction(w, r, sessionID, "", false)
 }
 
 func parseID(r *http.Request) (int64, bool) {

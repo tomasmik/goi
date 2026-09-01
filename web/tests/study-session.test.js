@@ -7,7 +7,9 @@ import {
   reviewCorrectionKeyboardAction,
   reviewAnswerFocusTarget,
   selfGradeKeyboardAction,
-  stageFocusTarget
+  stageFocusTarget,
+  primeFeedbackAudio,
+  playFeedbackAudio
 } from "../static/js/study-session.js";
 
 test("maps confirmation keys to deliberate review actions", () => {
@@ -144,4 +146,38 @@ test("hands focus directly between typed review answer inputs", () => {
   assert.equal(reviewAnswerFocusTarget(null, currentStage, nextStage), null);
   assert.equal(reviewAnswerFocusTarget(activeAnswer, { contains: () => false }, nextStage), null);
   assert.equal(reviewAnswerFocusTarget(activeAnswer, currentStage, { querySelector: () => null }), null);
+});
+
+test("plays primed audio when a correct answer advances directly", () => {
+  const originalAudio = globalThis.Audio;
+  const originalHTMLAudioElement = globalThis.HTMLAudioElement;
+  const instances = [];
+  class FakeAudio {
+    constructor(src) {
+      this.src = src;
+      this.paused = false;
+      this.readyState = 1;
+      instances.push(this);
+    }
+    play() { return Promise.resolve(); }
+    pause() { this.paused = true; }
+  }
+  globalThis.Audio = FakeAudio;
+  globalThis.HTMLAudioElement = FakeAudio;
+  try {
+    primeFeedbackAudio({ dataset: { feedbackAudioSrc: "/media/9" } });
+    playFeedbackAudio({
+      hasAttribute: (name) => name === "data-play-primed-feedback-audio",
+      querySelector: () => null
+    });
+
+    assert.equal(instances.length, 1);
+    assert.equal(instances[0].loop, false);
+    assert.equal(instances[0].volume, 1);
+    assert.equal(instances[0].currentTime, 0);
+    assert.equal(instances[0].paused, false);
+  } finally {
+    globalThis.Audio = originalAudio;
+    globalThis.HTMLAudioElement = originalHTMLAudioElement;
+  }
 });
