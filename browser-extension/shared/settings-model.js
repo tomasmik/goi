@@ -18,6 +18,7 @@
     pauseBehavior: "never",
     hideNativeCaptions: true,
     displayMode: "always",
+    automaticCaptionMode: "full",
     coverageDisplay: "full",
     furiganaEnabled: false,
     hoverLookupEnabled: false,
@@ -25,6 +26,7 @@
 
   const PAUSE_BEHAVIORS = new Set(["never", "on_hover", "on_selection", "after_capture"]);
   const DISPLAY_MODES = new Set(["always", "hidden", "unknown_only", "pause_reveal"]);
+  const AUTOMATIC_CAPTION_MODES = new Set(["full", "live"]);
   const COVERAGE_DISPLAYS = new Set(["full", "compact", "hidden"]);
   const STORAGE_KEY = "youtubeSettings";
 
@@ -58,6 +60,9 @@
     }
     if (DISPLAY_MODES.has(patch.displayMode)) {
       sanitized.displayMode = patch.displayMode;
+    }
+    if (AUTOMATIC_CAPTION_MODES.has(patch.automaticCaptionMode)) {
+      sanitized.automaticCaptionMode = patch.automaticCaptionMode;
     }
     if (COVERAGE_DISPLAYS.has(patch.coverageDisplay)) {
       sanitized.coverageDisplay = patch.coverageDisplay;

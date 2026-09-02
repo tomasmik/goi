@@ -53,6 +53,7 @@
     backgroundOpacity: document.getElementById("background-opacity"),
     backgroundOpacityValue: document.getElementById("background-opacity-value"),
     coverageDisplay: document.getElementById("coverage-display"),
+    automaticCaptionMode: document.getElementById("automatic-caption-mode"),
     settingsStatus: document.getElementById("settings-status"),
     pageStatus: document.getElementById("page-status"),
     wordPreview: document.getElementById("word-preview"),
@@ -763,6 +764,7 @@
     elements.backgroundOpacityValue.value = Math.round(settings.backgroundOpacity * 100) + "%";
     elements.backgroundOpacityValue.textContent = Math.round(settings.backgroundOpacity * 100) + "%";
     elements.coverageDisplay.value = settings.coverageDisplay;
+    elements.automaticCaptionMode.value = settings.automaticCaptionMode;
     displayModeInputs.forEach(function (input) {
       input.checked = input.value === settings.displayMode;
     });
@@ -964,6 +966,9 @@
     });
     elements.coverageDisplay.addEventListener("change", function () {
       saveSetting({ coverageDisplay: elements.coverageDisplay.value });
+    });
+    elements.automaticCaptionMode.addEventListener("change", function () {
+      saveSetting({ automaticCaptionMode: elements.automaticCaptionMode.value });
     });
     displayModeInputs.forEach(function (input) {
       input.addEventListener("change", function () {

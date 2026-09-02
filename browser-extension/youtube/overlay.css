@@ -491,7 +491,8 @@
   gap: 6px;
 }
 
-.goi-ext-overlay-choice-group--displayMode {
+.goi-ext-overlay-choice-group--displayMode,
+.goi-ext-overlay-choice-group--automaticCaptionMode {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 

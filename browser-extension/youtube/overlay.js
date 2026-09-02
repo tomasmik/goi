@@ -484,6 +484,13 @@
       setSettings({ displayMode: value }, true);
     }));
 
+    controls.appendChild(radioControl("automaticCaptionMode", "Auto captions", [
+      ["full", "Full lines (timed)"],
+      ["live", "Live (rolling)"]
+    ], settings.automaticCaptionMode, function (value) {
+      setSettings({ automaticCaptionMode: value }, true);
+    }));
+
     controls.appendChild(radioControl("pauseBehavior", "Pause", [
       ["never", "Never"],
       ["on_hover", "On hover"],
@@ -792,6 +799,7 @@
     const wasOverlayEnabled = settings.overlayEnabled;
     const wasHoverPause = settings.pauseBehavior === "on_hover";
     const furiganaChanged = settings.furiganaEnabled !== nextSettings.furiganaEnabled;
+    const automaticCaptionModeChanged = settings.automaticCaptionMode !== nextSettings.automaticCaptionMode;
     if (nextSettings.displayMode !== "hidden") {
       restoreDisplayMode = nextSettings.displayMode;
     }
@@ -811,6 +819,12 @@
       if (wasOverlayEnabled) {
         resetCoverage();
       }
+    }
+    if (automaticCaptionModeChanged && settings.overlayEnabled) {
+      lastObservedCaption = undefined;
+      clearMirroredCaption();
+      clearSelectedCapture();
+      scheduleCaptionRead();
     }
     applySettings();
     if (furiganaChanged && caption) {
@@ -885,7 +899,9 @@
       return;
     }
     const visible = visibleCaption();
-    const transcriptLine = transcriptRuntime.automatic ? currentTranscriptLine() : undefined;
+    const transcriptLine = transcriptRuntime.automatic && settings.automaticCaptionMode === "full"
+      ? currentTranscriptLine()
+      : undefined;
     const nextCaption = transcriptLine ? transcriptLine.text : visible.text;
     if (nextCaption && nextCaption !== caption) {
       clearTimeout(captionClearTimer);
@@ -958,6 +974,7 @@
       observedVideo.removeEventListener("pause", handlePlaybackState);
       observedVideo.removeEventListener("play", handlePlaybackState);
       observedVideo.removeEventListener("seeking", handleVideoSeeking);
+      observedVideo.removeEventListener("timeupdate", handleVideoTimeUpdate);
     }
     observedVideo = video;
     transcriptRuntime.observedRevision += 1;
@@ -965,6 +982,7 @@
       observedVideo.addEventListener("pause", handlePlaybackState);
       observedVideo.addEventListener("play", handlePlaybackState);
       observedVideo.addEventListener("seeking", handleVideoSeeking);
+      observedVideo.addEventListener("timeupdate", handleVideoTimeUpdate);
     }
   }
 
@@ -985,6 +1003,12 @@
     lastObservedCaption = undefined;
     clearMirroredCaption();
     clearSelectedCapture();
+  }
+
+  function handleVideoTimeUpdate() {
+    if (transcriptRuntime.automatic && settings.automaticCaptionMode === "full") {
+      scheduleCaptionRead();
+    }
   }
 
   function captionNodes(text, coverage) {

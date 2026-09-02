@@ -358,8 +358,58 @@ test("shows the complete automatic transcript cue instead of rolling words", asy
 
   harness.video.currentTime = 2.5;
   harness.setCaption("本当に");
-  harness.readCaption();
+  harness.video.dispatch("timeupdate");
+  harness.runTimer(16);
   assert.equal(harness.activeCaption(), nextCaption);
+});
+
+test("switches saved automatic caption modes while paused without native caption mutations", async () => {
+  const fullCaption = "こちらのホテルは駅から歩いて3分で着く";
+  const harness = createHarness("こちら", {
+    currentTime: 1,
+    videoPaused: true,
+    persistedSettings: { automaticCaptionMode: "live" },
+    transcriptResponse: {
+      ok: true,
+      state: "ready",
+      automatic: true,
+      cues: [{ startMs: 0, endMs: 5000, text: fullCaption }],
+    },
+    coverageResponse(blocks) {
+      return {
+        summary: { known_occurrences: 0, total_occurrences: 0, unknown_unique: 0, excluded_names: 0 },
+        blocks: blocks.map(function (block) { return { id: block.id, tokens: [] }; }),
+      };
+    },
+  });
+  await harness.start();
+  assert.equal(harness.activeCaption(), "こちら");
+  harness.video.dispatch("timeupdate");
+  assert.deepEqual(harness.pendingTimerIDs(16), []);
+
+  const choices = descendants(harness.player).filter((node) => node.name === "goi-ext-automaticCaptionMode");
+  const full = choices.find((node) => node.value === "full");
+  full.checked = true;
+  full.dispatch("change");
+  await new Promise(setImmediate);
+  harness.runTimer(16);
+  assert.equal(harness.activeCaption(), fullCaption);
+  assert.deepEqual(choices.filter((node) => node.checked).map((node) => node.value), ["full"]);
+
+  const live = choices.find((node) => node.value === "live");
+  live.checked = true;
+  live.dispatch("change");
+  await new Promise(setImmediate);
+  harness.runTimer(16);
+  assert.equal(harness.activeCaption(), "こちら");
+  assert.deepEqual(choices.filter((node) => node.checked).map((node) => node.value), ["live"]);
+  harness.setCaption("こちらのホテルは");
+  harness.readCaption();
+  assert.equal(harness.activeCaption(), "こちらのホテルは");
+  assert.equal(harness.video.paused, true);
+
+  const patches = harness.messages.filter((message) => message.type === "goi.settings.patch");
+  assert.deepEqual(patches.map((message) => message.patch.automaticCaptionMode), ["full", "live"]);
 });
 
 test("uses live caption analysis for highlighting and mining", async () => {

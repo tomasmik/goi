@@ -115,7 +115,7 @@ function createHarness(options = {}) {
     "overlay-enabled",
     "hide-native", "furigana", "hover-lookup", "hide-native-detail", "font-size", "font-size-value", "vertical-position",
     "vertical-position-value", "background-opacity", "background-opacity-value",
-    "coverage-display", "settings-status", "page-status", "word-preview",
+    "coverage-display", "automatic-caption-mode", "settings-status", "page-status", "word-preview",
     "translate-selection", "translation-tools-toggle", "translation-tools", "translation-input",
     "translate-pasted", "translation-status", "translation-result", "batch-tools-toggle", "batch-tools",
   ];
@@ -723,7 +723,7 @@ test("makes a successful mining capture unmistakable until the target changes", 
   assert.equal(harness.elements["capture-status"].textContent, "");
 });
 
-test("shows and saves subtitle position, background, and coverage detail", async () => {
+test("shows and saves subtitle position, background, coverage detail, and auto caption mode", async () => {
   const harness = createHarness({
     settings: { verticalPercent: 62, backgroundOpacity: 0.4, coverageDisplay: "compact" },
   });
@@ -734,6 +734,7 @@ test("shows and saves subtitle position, background, and coverage detail", async
   assert.equal(harness.elements["background-opacity"].value, "0.4");
   assert.equal(harness.elements["background-opacity-value"].textContent, "40%");
   assert.equal(harness.elements["coverage-display"].value, "compact");
+  assert.equal(harness.elements["automatic-caption-mode"].value, "full");
 
   harness.elements["vertical-position"].value = "71";
   await harness.elements["vertical-position"].dispatch("input");
@@ -751,6 +752,11 @@ test("shows and saves subtitle position, background, and coverage detail", async
   await harness.elements["coverage-display"].dispatch("change");
   await settle();
 
+  harness.elements["automatic-caption-mode"].value = "live";
+  await harness.elements["automatic-caption-mode"].dispatch("change");
+  await settle();
+  assert.equal(harness.elements["automatic-caption-mode"].value, "live");
+
   const patches = harness.messages
     .filter((message) => message.type === "goi.settings.patch")
     .map((message) => message.patch);
@@ -758,6 +764,7 @@ test("shows and saves subtitle position, background, and coverage detail", async
     { verticalPercent: 71 },
     { backgroundOpacity: 0.8 },
     { coverageDisplay: "hidden" },
+    { automaticCaptionMode: "live" },
   ]);
 });
 
