@@ -487,8 +487,8 @@ test("uses live caption analysis for highlighting and mining", async () => {
     "よみ",
   );
   assert.equal(
-    descendants(lookup).find((node) => classNames(node).has("goi-dictionary-commonness")).textContent,
-    "Commonness 80/100",
+    descendants(lookup).find((node) => classNames(node).has("goi-dictionary-frequency")).textContent,
+    "G 080",
   );
   assert.equal(
     descendants(lookup).find((node) => node.tagName === "LI").textContent,
@@ -638,16 +638,16 @@ test("shows ambiguous dictionary entries in one anchored popover", async () => {
           entry_sequence: 1001,
           written: "最初",
           reading: "さいしょ",
-          commonness: 9,
-          commonness_score: 90,
+          global_rank: 90,
+          novel_rank: 190,
           meanings: ["beginning", "first"],
           senses: [{ parts_of_speech: ["noun", "adverb"], meanings: ["beginning", "first"] }],
         }, {
           entry_sequence: 1002,
           written: "最初",
           reading: "しょっぱな",
-          commonness: 3,
-          commonness_score: 30,
+          global_rank: 30,
+          novel_rank: 130,
           meanings: ["very beginning"],
           senses: [{ parts_of_speech: ["noun"], meanings: ["very beginning"] }],
         }],

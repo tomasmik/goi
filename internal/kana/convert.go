@@ -152,7 +152,7 @@ func convertRun(input string) (string, error) {
 			index++
 			continue
 		}
-		if input[index] == 'n' && index+2 == len(input) && input[index+1] == 'n' {
+		if input[index] == 'n' && index+1 < len(input) && input[index+1] == 'n' {
 			output.WriteString("ん")
 			index += 2
 			continue

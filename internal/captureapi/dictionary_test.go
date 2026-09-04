@@ -3,6 +3,7 @@ package captureapi
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +36,8 @@ func TestDictionaryLookupReturnsUsefulEnglishDetails(t *testing.T) {
 			EntrySequence: 123456,
 			Written:       "食べる",
 			Reading:       "たべる",
-			Priority:      10*1001 + 10,
+			GlobalRank:    new(192),
+			NovelRank:     new(210),
 			Senses: []jmdict.Sense{{
 				PartsOfSpeech: []string{"Ichidan verb"},
 				Glosses: []jmdict.Gloss{
@@ -63,7 +65,7 @@ func TestDictionaryLookupReturnsUsefulEnglishDetails(t *testing.T) {
 	if lookup.query != "食べる" {
 		t.Fatalf("query = %q", lookup.query)
 	}
-	want := `{"query":"食べる","state":"ready","candidates":[{"entry_sequence":123456,"written":"食べる","reading":"たべる","commonness":4,"commonness_score":35,"meanings":["to eat","to live on"],"senses":[{"parts_of_speech":["Ichidan verb"],"meanings":["to eat"]},{"parts_of_speech":["transitive verb"],"meanings":["to eat","to live on"]}]}]}` + "\n"
+	want := `{"query":"食べる","state":"ready","candidates":[{"entry_sequence":123456,"written":"食べる","reading":"たべる","global_rank":192,"novel_rank":210,"meanings":["to eat","to live on"],"senses":[{"parts_of_speech":["Ichidan verb"],"meanings":["to eat"]},{"parts_of_speech":["transitive verb"],"meanings":["to eat","to live on"]}]}]}` + "\n"
 	if response.Body.String() != want {
 		t.Fatalf("body = %s", response.Body.String())
 	}
@@ -79,6 +81,17 @@ func TestDictionaryLookupReportsUnavailableDictionary(t *testing.T) {
 
 	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "dictionary_unavailable") {
 		t.Fatalf("response = %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestDictionaryMissingRanksAreNull(t *testing.T) {
+	response := dictionaryResult("猫", jmdict.Match{Candidates: []jmdict.Candidate{{Written: "猫", Reading: "ねこ", Senses: []jmdict.Sense{{Glosses: []jmdict.Gloss{{Text: "cat"}}}}}}})
+	data, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"global_rank":null,"novel_rank":null`) || strings.Contains(string(data), "commonness") {
+		t.Fatalf("missing rank response = %s", data)
 	}
 }
 

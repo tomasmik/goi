@@ -24,6 +24,8 @@ import (
 	"github.com/tomasmik/goi/internal/coverage"
 	"github.com/tomasmik/goi/internal/dashboard"
 	"github.com/tomasmik/goi/internal/database"
+	"github.com/tomasmik/goi/internal/dictionary"
+	"github.com/tomasmik/goi/internal/dictionary/jiten"
 	"github.com/tomasmik/goi/internal/dictionary/jmdict"
 	"github.com/tomasmik/goi/internal/examplegen"
 	appimports "github.com/tomasmik/goi/internal/imports"
@@ -44,6 +46,7 @@ type application struct {
 	databaseLock     *database.Lock
 	renderer         *internalweb.Renderer
 	dictionary       *jmdict.Manager
+	frequency        *jiten.Manager
 	exampleGenerator *examplegen.Manager
 	vocabulary       *vocabulary.Store
 	mining           *mining.Store
@@ -145,6 +148,10 @@ func (app *application) initializeCore(ctx context.Context, cfg config.Config, l
 			logger.Warn("local dictionary is unavailable", "error", err)
 		}
 	}
+	app.frequency, err = jiten.NewManager(jiten.ManagerConfig{Path: filepath.Join(cfg.DataDir, jiten.CacheFilename)})
+	if err != nil {
+		return fmt.Errorf("initialize Jiten: %w", err)
+	}
 	app.renderer, err = internalweb.NewRenderer()
 	if err != nil {
 		return fmt.Errorf("parse templates: %w", err)
@@ -197,6 +204,10 @@ func (app *application) initializeBackups(cfg config.Config, logger *slog.Logger
 }
 
 func (app *application) Close() error {
+	var frequencyErr error
+	if app.frequency != nil {
+		frequencyErr = app.frequency.Close()
+	}
 	var dictionaryErr error
 	if app.dictionary != nil {
 		dictionaryErr = app.dictionary.Close()
@@ -209,7 +220,7 @@ func (app *application) Close() error {
 	if app.databaseLock != nil {
 		lockErr = app.databaseLock.Close()
 	}
-	return errors.Join(dictionaryErr, databaseErr, lockErr)
+	return errors.Join(frequencyErr, dictionaryErr, databaseErr, lockErr)
 }
 
 func (app *application) handler(cfg config.Config, logger *slog.Logger) http.Handler {
@@ -252,10 +263,11 @@ func (app *application) registerRoutes(router chi.Router, cfg config.Config) {
 	vocabulary.NewHandler(app.vocabulary, app.renderer, app.exampleGenerator).Routes(router)
 	examplegen.NewSettingsHandler(app.exampleGenerator, app.renderer).Routes(router)
 	media.NewHandler(app.db).Routes(router)
-	mining.NewHandler(app.mining, app.renderer, cfg.BaseURL, app.exampleGenerator, app.dictionary).Routes(router)
+	lookup := &dictionary.LookupService{Dictionary: app.dictionary, Frequency: app.frequency}
+	mining.NewHandler(app.mining, app.renderer, cfg.BaseURL, app.exampleGenerator, lookup).Routes(router)
 
 	captureapi.NewHandler(
-		app.extensionTokens, app.mining, app.coverage, app.dictionary, app.vocabulary, app.exampleGenerator, cfg.TrustProxy,
+		app.extensionTokens, app.mining, app.coverage, lookup, app.vocabulary, app.exampleGenerator, cfg.TrustProxy,
 	).Routes(router)
 	captureapi.NewSettingsHandler(app.extensionTokens, app.renderer, func(ctx context.Context) (*time.Location, error) {
 		values, err := app.settings.Get(ctx)
@@ -266,7 +278,7 @@ func (app *application) registerRoutes(router chi.Router, cfg config.Config) {
 	}, cfg.BaseURL).Routes(router)
 	lessons.NewHandler(app.lessons, app.reviews, app.renderer).Routes(router)
 	reviews.NewHandler(app.reviews, app.lessons, app.renderer).Routes(router)
-	settings.NewHandler(app.settings, app.renderer, app.dictionary, cfg.AuthEnabled).Routes(router)
+	settings.NewHandler(app.settings, app.renderer, app.dictionary, app.frequency, cfg.AuthEnabled).Routes(router)
 	backups.NewHandler(app.backupStore, app.backupService, app.googleDrive, cfg.DataDir, app.renderer).Routes(router)
 	statistics.NewHandler(app.statistics, app.renderer).Routes(router)
 	appimports.NewHandler(app.anki, app.renderer).Routes(router)
@@ -310,6 +322,7 @@ func (app *application) startWorkers(ctx context.Context, logger *slog.Logger) f
 		}()
 	}
 	start(func() { app.dictionary.Run(ctx) })
+	start(func() { app.frequency.Run(ctx) })
 	start(func() { app.backupService.Run(ctx) })
 	start(func() { app.wanikani.Run(ctx) })
 	return workers.Wait

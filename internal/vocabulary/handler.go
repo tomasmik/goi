@@ -430,7 +430,7 @@ func (h *Handler) searchPronunciations(w http.ResponseWriter, r *http.Request) {
 		}
 		if err != nil {
 			internalweb.LogError(r, "could not attach pronunciation audio", err)
-			h.renderPronunciationError(w, r, id, http.StatusBadGateway, "Could not attach that recording. Try again or upload an audio file.")
+			h.renderPronunciationError(w, r, id, http.StatusOK, "Could not attach that recording. Try again later or upload an audio file.")
 			return
 		}
 		item, err = h.store.Get(r.Context(), id)
@@ -492,7 +492,7 @@ func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		internalweb.LogError(r, "could not attach pronunciation audio", err)
-		h.renderPronunciationError(w, r, id, http.StatusBadGateway, "Could not attach that recording. Try another one or upload an audio file.")
+		h.renderPronunciationError(w, r, id, http.StatusOK, "Could not attach that recording. Try again later or upload an audio file.")
 		return
 	}
 	item, err = h.store.Get(r.Context(), id)

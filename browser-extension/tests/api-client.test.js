@@ -33,8 +33,8 @@ test("uses only the fixed extension API paths", async () => {
             candidates: [{
               written: "読む",
               reading: "よむ",
-              commonness: 8,
-              commonness_score: 80,
+              global_rank: 80,
+              novel_rank: 180,
               meanings: ["to read"],
               senses: [{ parts_of_speech: ["Godan verb"], meanings: ["to read"] }]
             }]
@@ -112,6 +112,25 @@ test("rejects successful HTTP responses with the wrong API shape", async () => {
   await assert.rejects(client.dictionary("読む"), { code: "unexpected_response", status: 502 });
   await assert.rejects(client.markKnown("読む"), { code: "unexpected_response", status: 502 });
   await assert.rejects(client.translate("本を読みます。"), { code: "unexpected_response", status: 502 });
+});
+
+test("accepts absent or null ranks and rejects malformed ranks independently", async () => {
+  const candidate = { written: "猫", reading: "ねこ", meanings: ["cat"] };
+  const client = create(async () => ({
+    ok: true, status: 200,
+    json: async () => ({ query: "猫", state: "ready", candidates: [candidate] }),
+  }), { baseUrl: "https://goi.example", token: "secret" });
+  for (const field of ["global_rank", "novel_rank"]) {
+    for (const rank of [undefined, null, 1, 123456, 2147483647]) {
+      candidate[field] = rank;
+      await client.dictionary("猫");
+    }
+    for (const rank of [0, -1, 1.5, "39", Infinity, NaN, 2147483648]) {
+      candidate[field] = rank;
+      await assert.rejects(client.dictionary("猫"), { code: "unexpected_response" });
+    }
+    delete candidate[field];
+  }
 });
 
 test("rejects a non-string coverage reading", async () => {

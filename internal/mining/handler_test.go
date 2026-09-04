@@ -146,6 +146,94 @@ func TestMiningAutomaticallyUsesSinglePronunciationResult(t *testing.T) {
 	}
 }
 
+func TestMiningPronunciationFailuresPreserveEditableForm(t *testing.T) {
+	rateLimit := errors.New("pronunciation server returned 429 Too Many Requests")
+	for _, test := range []struct {
+		name        string
+		action      string
+		searchErr   error
+		downloadErr error
+		message     string
+	}{
+		{"search", "search", rateLimit, nil, "The open pronunciation library is temporarily unavailable."},
+		{"automatic download", "search", nil, rateLimit, "Could not download that recording."},
+		{"selected download", "42", nil, rateLimit, "Could not download that recording."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, db := openMiningTestDatabase(t)
+			store := NewStore(db)
+			capture := createMiningCapture(t, ctx, store, "日本", "00000000000000000000000000000096")
+			provider := &fakePronunciationProvider{
+				results:     []pronunciation.Recording{{ID: 42, Label: "にほん"}},
+				searchErr:   test.searchErr,
+				downloadErr: test.downloadErr,
+			}
+			router := miningTestRouterWithServices(t, store, "https://goi.example", nil, provider)
+			form := url.Values{
+				"revision":            {strconvInt(capture.Revision)},
+				"reading":             {"にほん"},
+				"pronunciation":       {"にほん"},
+				"meanings":            {"Japan"},
+				"notes":               {"unsaved note"},
+				"example_sentence":    {"日本に行く。"},
+				"example_translation": {"I go to Japan."},
+				"example_target":      {"日本"},
+			}
+			response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/pronunciations/%s", capture.ID, test.action), form)
+			if response.Code != http.StatusOK {
+				t.Fatalf("response = %d, body = %s", response.Code, response.Body.String())
+			}
+			for _, expected := range []string{
+				test.message, `value="にほん"`, ">Japan</textarea>", ">unsaved note</textarea>",
+				"日本に行く。", "I go to Japan.", "Find word audio", "Save card",
+				fmt.Sprintf(`name="revision" value="%d"`, capture.Revision),
+			} {
+				if !strings.Contains(response.Body.String(), expected) {
+					t.Errorf("response does not contain %q", expected)
+				}
+			}
+			if strings.Contains(response.Body.String(), rateLimit.Error()) {
+				t.Fatal("response exposed upstream error")
+			}
+			stored, err := store.Get(ctx, capture.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored.Revision != capture.Revision || stored.PronunciationAudioID != 0 {
+				t.Fatalf("failed pronunciation changed capture: %+v", stored)
+			}
+		})
+	}
+}
+
+func TestMiningPronunciationSearchDoesNotRepeatLookup(t *testing.T) {
+	for _, count := range []int{0, 2} {
+		t.Run(fmt.Sprintf("%d recordings", count), func(t *testing.T) {
+			ctx, db := openMiningTestDatabase(t)
+			store := NewStore(db)
+			capture := createMiningCapture(t, ctx, store, "日本", "00000000000000000000000000000095")
+			provider := &fakePronunciationProvider{
+				results: []pronunciation.Recording{{ID: 42, Label: "にほん"}, {ID: 43, Label: "にほん"}}[:count],
+			}
+			router := miningTestRouterWithServices(t, store, "https://goi.example", nil, provider)
+			form := url.Values{
+				"revision": {strconvInt(capture.Revision)}, "expression": {"日本"}, "reading": {"にほん"},
+				"pronunciation": {"にほん"}, "meanings": {"Japan"}, "notes": {"unsaved note"},
+			}
+			response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/pronunciations/search", capture.ID), form)
+			if response.Code != http.StatusOK || provider.searches != 1 {
+				t.Fatalf("response = %d, searches = %d, body = %s", response.Code, provider.searches, response.Body.String())
+			}
+			if count == 0 && !strings.Contains(response.Body.String(), "No matching open recording was found.") {
+				t.Fatal("missing empty results message")
+			}
+			if got := strings.Count(response.Body.String(), ">Use this recording</button>"); got != count {
+				t.Fatalf("recording choices = %d, want %d", got, count)
+			}
+		})
+	}
+}
+
 func TestMiningInboxPaginatesAndPreservesStatus(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	insertMiningCaptures(t, ctx, db, StatusDiscarded, 0, maximumCapturePageSize+1)
@@ -1038,8 +1126,9 @@ func TestMiningDetailRendersAmbiguousChoices(t *testing.T) {
 			miningCandidate(102, "空く", "あく", "to become empty"),
 		},
 	}
-	match.Candidates[0].Priority = 0
-	match.Candidates[1].Priority = 68*1001 + 68
+	match.Candidates[0].GlobalRank = new(39)
+	match.Candidates[0].NovelRank = new(36)
+	match.Candidates[1].GlobalRank = new(123456)
 	if _, err := db.Exec(`UPDATE mining_captures SET suggested_entry_sequence = ? WHERE id = ?`, 102, capture.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -1077,9 +1166,9 @@ func TestMiningDetailRendersAmbiguousChoices(t *testing.T) {
 	if strings.Contains(body, "Chosen while mining") || strings.Contains(body, "Entry chosen") {
 		t.Fatalf("internal selection state is exposed to the user: %s", body)
 	}
-	if strings.Count(body, `title="Estimated from JMdict priority data"`) < 2 ||
-		!strings.Contains(body, "Commonness 75/100") || !strings.Contains(body, "Commonness 6/100") ||
-		!strings.Contains(body, ">75/100</span>") || !strings.Contains(body, ">6/100</span>") {
+	if strings.Count(body, `title="Jiten Global rank 39; lower means more frequent"`) < 2 ||
+		!strings.Contains(body, ">G 039</span>") || !strings.Contains(body, ">N 036</span>") ||
+		!strings.Contains(body, ">G 123456</span>") || !strings.Contains(body, ">N —</span>") || strings.Contains(body, "Commonness") {
 		t.Fatalf("frequency cues are missing: %s", body)
 	}
 }
@@ -1811,17 +1900,20 @@ func miningTestRouterWithServices(t *testing.T, store *Store, baseURL string, ge
 }
 
 type fakePronunciationProvider struct {
-	results []pronunciation.Recording
-	upload  media.Upload
-	err     error
+	results     []pronunciation.Recording
+	upload      media.Upload
+	searches    int
+	searchErr   error
+	downloadErr error
 }
 
 func (provider *fakePronunciationProvider) Search(context.Context, string, string) ([]pronunciation.Recording, error) {
-	return provider.results, provider.err
+	provider.searches++
+	return provider.results, provider.searchErr
 }
 
 func (provider *fakePronunciationProvider) Download(context.Context, int64, string, string) (media.Upload, error) {
-	return provider.upload, provider.err
+	return provider.upload, provider.downloadErr
 }
 
 type fakeExampleGenerator struct {

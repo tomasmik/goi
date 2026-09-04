@@ -19,6 +19,16 @@
 <div class="alert alert-error" role="alert">Dictionary update failed. See the status below.</div>
 {{end}}
 
+{{if eq .FrequencyRefreshResult "updated"}}
+<div class="alert alert-success" role="status">Jiten frequency ranks updated.</div>
+{{else if eq .FrequencyRefreshResult "unchanged"}}
+<div class="alert alert-success" role="status">Jiten frequency ranks are up to date.</div>
+{{else if eq .FrequencyRefreshResult "partial"}}
+<div class="alert alert-warning" role="status">One Jiten source could not be updated. See the status below.</div>
+{{else if eq .FrequencyRefreshResult "failed"}}
+<div class="alert alert-error" role="alert">Jiten update failed. Previously downloaded ranks are retained.</div>
+{{end}}
+
 <div class="settings-layout">
   <form class="panel settings-study" method="post" action="/settings" aria-labelledby="study-preferences-title">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -228,6 +238,27 @@
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <button class="button button-secondary button-small" type="submit" {{if .Dictionary.RefreshRunning}}disabled{{end}}>Check for updates</button>
         </form>
+        {{if .Frequencies}}
+        <h3>Word frequency</h3>
+        <p class="muted">G = Global; N = Novel. Lower ranks mean more frequent word forms. — means no rank is available.</p>
+        {{range .Frequencies}}
+        <h4>Jiten {{.Name}}</h4>
+        <dl class="metadata">
+          <dt>Status</dt>
+          <dd>{{if .RefreshRunning}}Refreshing{{else if .Available}}Available{{else}}Unavailable{{end}}{{if and .Available .Error}}; using previously downloaded ranks{{end}}</dd>
+          <dt>Revision</dt><dd>{{if .Revision}}{{.Revision}}{{else}}—{{end}}</dd>
+          <dt>Ranked forms</dt><dd>{{.RowCount}}</dd>
+          <dt>Last checked</dt><dd>{{if .LastCheck}}{{.LastCheck}}{{else}}Never{{end}}</dd>
+          <dt>Last updated</dt><dd>{{if .LastSuccess}}{{.LastSuccess}}{{else}}Never{{end}}</dd>
+          <dt>Latest error</dt><dd>{{if .Error}}{{.Error}}{{else}}None{{end}}</dd>
+        </dl>
+        {{end}}
+        <form method="post" action="/settings/jiten/refresh">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button class="button button-secondary button-small" type="submit" {{if .FrequencyRefreshing}}disabled{{end}}>Update frequency ranks</button>
+        </form>
+        <p class="section-note">Frequency data from <a href="https://jiten.moe/frequency-dictionaries" target="_blank" rel="noopener noreferrer">Jiten</a>, adapted under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>. Downloads run in the background and cached ranks work offline.</p>
+        {{end}}
       </div>
     </details>
 

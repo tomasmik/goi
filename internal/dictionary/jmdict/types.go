@@ -63,6 +63,8 @@ type Candidate struct {
 	Reading       string
 	MatchType     string
 	Priority      int
+	GlobalRank    *int
+	NovelRank     *int
 	SourceOrder   int
 	Senses        []Sense
 }

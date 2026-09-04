@@ -194,8 +194,8 @@ test("keeps dictionary candidates and senses structured for rich popovers", func
         entry_sequence: 1579510,
         written: "最初",
         reading: "さいしょ",
-        commonness: 9,
-        commonness_score: 90,
+        global_rank: 90,
+        novel_rank: 190,
         meanings: ["beginning", "first"],
         senses: [{ parts_of_speech: ["noun", "adverb"], meanings: ["beginning", "first"] }],
       }],
@@ -206,7 +206,8 @@ test("keeps dictionary candidates and senses structured for rich popovers", func
       entrySequence: 1579510,
       written: "最初",
       reading: "さいしょ",
-      commonness: 90,
+      globalRank: 90,
+      novelRank: 190,
       meanings: ["beginning", "first"],
       senses: [{ partsOfSpeech: ["noun", "adverb"], meanings: ["beginning", "first"] }],
     }],
@@ -227,7 +228,7 @@ test("keeps dictionary candidates and senses structured for rich popovers", func
       query: "旧",
       candidates: [{ written: "旧", reading: "きゅう", commonness: 4, meanings: ["old"] }],
     },
-  }).candidates[0].commonness, 40);
+  }).candidates[0].globalRank, null);
 });
 
 test("prefers an exact surface over an earlier matching lemma", function () {

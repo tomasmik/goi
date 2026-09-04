@@ -7,3 +7,7 @@ const reviewSession = readFileSync(new URL("../templates/review-session.html", i
 test("review answer input keeps its repeated prompt label visually hidden", () => {
   assert.match(reviewSession, /<label for="answer">\s*<span class="visually-hidden">/);
 });
+
+test("review subject keeps the same size after an answer", () => {
+  assert.doesNotMatch(reviewSession, /review-subject-compact/);
+});

@@ -15,6 +15,7 @@ import (
 	"github.com/justinas/nosurf"
 
 	"github.com/tomasmik/goi/internal/database"
+	"github.com/tomasmik/goi/internal/dictionary/jiten"
 	"github.com/tomasmik/goi/internal/dictionary/jmdict"
 	internalweb "github.com/tomasmik/goi/internal/web"
 )
@@ -23,6 +24,35 @@ type fakeDictionaryManager struct {
 	status     jmdict.ManagerStatus
 	refreshes  int
 	refreshErr error
+}
+
+type fakeFrequencyManager struct {
+	status    [2]jiten.SourceStatus
+	result    jiten.RefreshResult
+	err       error
+	refreshes int
+}
+
+func (f *fakeFrequencyManager) Status() [2]jiten.SourceStatus { return f.status }
+func (f *fakeFrequencyManager) Refresh(context.Context) (jiten.RefreshResult, error) {
+	f.refreshes++
+	return f.result, f.err
+}
+
+func TestFrequencyRefreshReportsPartialAndRequiresCSRF(t *testing.T) {
+	f := &fakeFrequencyManager{result: jiten.Partial, err: errors.New("Novel download failed")}
+	router := chi.NewRouter()
+	NewHandler(nil, nil, nil, f, false).Routes(router)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/settings/jiten/refresh", nil))
+	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/settings?jiten_refresh=partial" || f.refreshes != 1 {
+		t.Fatalf("refresh response = %d, %v", response.Code, response.Header())
+	}
+	response = httptest.NewRecorder()
+	nosurf.New(router).ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/settings/jiten/refresh", nil))
+	if response.Code != http.StatusBadRequest || f.refreshes != 1 {
+		t.Fatalf("CSRF response = %d; refreshes = %d", response.Code, f.refreshes)
+	}
 }
 
 func (f *fakeDictionaryManager) Status() jmdict.ManagerStatus {
@@ -125,7 +155,7 @@ func TestValuesFromRequestRejectsInvalidNumbers(t *testing.T) {
 func TestDictionaryRefreshRunsAndRedirects(t *testing.T) {
 	dictionary := &fakeDictionaryManager{}
 	router := chi.NewRouter()
-	NewHandler(nil, nil, dictionary, false).Routes(router)
+	NewHandler(nil, nil, dictionary, nil, false).Routes(router)
 	request := httptest.NewRequest(http.MethodPost, "/settings/jmdict/refresh", nil)
 	response := httptest.NewRecorder()
 
@@ -142,7 +172,7 @@ func TestDictionaryRefreshRunsAndRedirects(t *testing.T) {
 func TestDictionaryRefreshReportsFailure(t *testing.T) {
 	dictionary := &fakeDictionaryManager{refreshErr: errors.New("download failed")}
 	router := chi.NewRouter()
-	NewHandler(nil, nil, dictionary, false).Routes(router)
+	NewHandler(nil, nil, dictionary, nil, false).Routes(router)
 	request := httptest.NewRequest(http.MethodPost, "/settings/jmdict/refresh", nil)
 	response := httptest.NewRecorder()
 
@@ -156,7 +186,7 @@ func TestDictionaryRefreshReportsFailure(t *testing.T) {
 func TestDictionaryRefreshRequiresCSRFToken(t *testing.T) {
 	dictionary := &fakeDictionaryManager{}
 	router := chi.NewRouter()
-	NewHandler(nil, nil, dictionary, false).Routes(router)
+	NewHandler(nil, nil, dictionary, nil, false).Routes(router)
 	request := httptest.NewRequest(http.MethodPost, "/settings/jmdict/refresh", nil)
 	response := httptest.NewRecorder()
 
@@ -199,7 +229,11 @@ func TestSettingsPageShowsDictionaryStatusAndAttribution(t *testing.T) {
 		RefreshRunning: true,
 	}}
 	router := chi.NewRouter()
-	NewHandler(store, renderer, dictionary, true).Routes(router)
+	frequency := &fakeFrequencyManager{status: [2]jiten.SourceStatus{
+		{Corpus: jiten.Global, Available: true, Revision: "Jiten fixture", RowCount: 123, Error: "download failed"},
+		{Corpus: jiten.Novel},
+	}}
+	NewHandler(store, renderer, dictionary, frequency, true).Routes(router)
 	request := httptest.NewRequest(http.MethodGet, "/settings?jmdict_refresh=updated", nil)
 	response := httptest.NewRecorder()
 
@@ -210,6 +244,8 @@ func TestSettingsPageShowsDictionaryStatusAndAttribution(t *testing.T) {
 	}
 	body := response.Body.String()
 	for _, value := range []string{
+		"Jiten Global", "Jiten Novel", "Jiten fixture", "using previously downloaded ranks", `action="/settings/jiten/refresh"`,
+		`href="https://jiten.moe/frequency-dictionaries"`,
 		"Dictionary is up to date.", "Refreshing", "1.10", "2026-07-26",
 		"2026-07-26 11:12 UTC", "network timeout", "JMdict/EDRDG", "CC BY-SA 4.0",
 		`action="/settings/jmdict/refresh"`, `href="https://www.edrdg.org/"`,
@@ -250,7 +286,7 @@ func TestMalformedSettingsFormRendersRecoveryPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := chi.NewRouter()
-	NewHandler(nil, renderer, nil, false).Routes(router)
+	NewHandler(nil, renderer, nil, nil, false).Routes(router)
 	request := httptest.NewRequest(
 		http.MethodPost,
 		"/settings",
@@ -291,7 +327,7 @@ func TestPostRedirectsToSavedSettingsPage(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := chi.NewRouter()
-	NewHandler(store, renderer, &fakeDictionaryManager{}, false).Routes(router)
+	NewHandler(store, renderer, &fakeDictionaryManager{}, nil, false).Routes(router)
 	form := url.Values{
 		"time_zone":             {"Asia/Tokyo"},
 		"lesson_window_hours":   {"12"},
@@ -346,7 +382,7 @@ func TestPostHidesStoreFailures(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := chi.NewRouter()
-	NewHandler(store, renderer, &fakeDictionaryManager{}, false).Routes(router)
+	NewHandler(store, renderer, &fakeDictionaryManager{}, nil, false).Routes(router)
 	form := url.Values{
 		"time_zone":             {"UTC"},
 		"lesson_window_hours":   {"12"},
@@ -390,7 +426,7 @@ func TestPostValidationReturnsUnprocessableEntity(t *testing.T) {
 		t.Fatal(err)
 	}
 	router := chi.NewRouter()
-	NewHandler(store, renderer, &fakeDictionaryManager{}, false).Routes(router)
+	NewHandler(store, renderer, &fakeDictionaryManager{}, nil, false).Routes(router)
 
 	tests := []struct {
 		name   string

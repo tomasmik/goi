@@ -130,7 +130,7 @@
     </form>
   </section>
   {{else if .Confirmation}}
-  <section class="review-subject review-subject-compact {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
     <div class="review-prompt-label">
       <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
     </div>
@@ -202,7 +202,7 @@
     {{end}}
   </section>
   {{else if .State.Feedback}}
-  <section class="review-subject review-subject-compact {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
     <div class="review-prompt-label">
       <span>Correction</span>
       <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
@@ -249,7 +249,7 @@
     </div>
   </section>
   {{else if and (eq .State.AnswerMode "self_grade") .Revealed}}
-  <section class="review-subject review-subject-compact {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
     <div class="review-prompt-label">
       <span>Answer</span>
       <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>

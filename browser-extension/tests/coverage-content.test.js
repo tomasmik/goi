@@ -659,7 +659,8 @@ test("shows dictionary meanings and mines the chosen entry", async function () {
             entry_sequence: 1467640,
             written: "猫",
             reading: "ねこ",
-            commonness_score: 92,
+            global_rank: 92,
+            novel_rank: 192,
             senses: [{
               parts_of_speech: ["noun (common)"],
               meanings: ["cat"],

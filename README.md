@@ -46,6 +46,14 @@ APP_DATA_DIR="$PWD/data" APP_AUTH_MODE=false go run ./cmd/server
 
 The first start creates the database and downloads the local dictionary.
 
+Jiten Global and Novel frequency lists download in the background and are
+checked weekly. Word badges show their original ranks as `G 039` and `N 036`;
+lower ranks mean more frequent word forms. `—` means no rank is available.
+
+Frequency data is adapted from [Jiten](https://jiten.moe/frequency-dictionaries)
+under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The local
+`jiten.sqlite` cache can be downloaded again and is excluded from study backups.
+
 ## Configuration
 
 Goi runs without a login by default. For a typical Docker installation, create

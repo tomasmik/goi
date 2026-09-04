@@ -67,6 +67,19 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+Jiten frequency data
+--------------------
+
+Goi downloads Jiten Global and Novel word-form frequency lists. This data is
+licensed under Creative Commons Attribution-ShareAlike 4.0 International.
+Goi normalizes spelling/reading keys and retains the minimum supplied rank for
+duplicate keys. The adapted frequency data remains under CC BY-SA 4.0.
+
+Attribution: Jiten (Sirus)
+Source: https://jiten.moe/frequency-dictionaries
+License: https://creativecommons.org/licenses/by-sa/4.0/
+Data licensing: https://jiten.moe/guides/deck-licensing
+
 Creative Commons audio sources
 ------------------------------
 

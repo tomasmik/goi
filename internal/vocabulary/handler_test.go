@@ -32,26 +32,28 @@ type fakeExampleGenerator struct {
 }
 
 type fakePronunciationProvider struct {
-	recordings []pronunciation.Recording
-	upload     media.Upload
-	searches   int
-	downloads  int
-	expression string
-	reading    string
+	recordings  []pronunciation.Recording
+	upload      media.Upload
+	searches    int
+	downloads   int
+	expression  string
+	reading     string
+	searchErr   error
+	downloadErr error
 }
 
 func (provider *fakePronunciationProvider) Search(_ context.Context, expression, reading string) ([]pronunciation.Recording, error) {
 	provider.searches++
 	provider.expression = expression
 	provider.reading = reading
-	return provider.recordings, nil
+	return provider.recordings, provider.searchErr
 }
 
 func (provider *fakePronunciationProvider) Download(_ context.Context, _ int64, expression, reading string) (media.Upload, error) {
 	provider.downloads++
 	provider.expression = expression
 	provider.reading = reading
-	return provider.upload, nil
+	return provider.upload, provider.downloadErr
 }
 
 func (generator *fakeExampleGenerator) Available() bool {
@@ -213,6 +215,60 @@ func TestVocabularyEditAutomaticallyUsesSinglePronunciationResult(t *testing.T) 
 	}
 	if len(updated.Media) != 1 || provider.downloads != 1 {
 		t.Fatalf("updated media = %d, downloads = %d", len(updated.Media), provider.downloads)
+	}
+}
+
+func TestVocabularyPronunciationFailuresPreserveEditableForm(t *testing.T) {
+	rateLimit := errors.New("pronunciation server returned 429 Too Many Requests")
+	for _, test := range []struct {
+		name        string
+		action      string
+		searchErr   error
+		downloadErr error
+		message     string
+	}{
+		{"search", "search", rateLimit, nil, "The open pronunciation library could not be reached."},
+		{"automatic download", "search", nil, rateLimit, "Could not attach that recording."},
+		{"selected download", "42", nil, rateLimit, "Could not attach that recording."},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, db := openTestDatabase(t)
+			store := NewStore(db)
+			id, err := store.Create(ctx, CreateInput{Expression: "日本", Pronunciation: "にほん", Meanings: []string{"Japan"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			item, err := store.Get(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			provider := &fakePronunciationProvider{
+				recordings: []pronunciation.Recording{{ID: 42}}, searchErr: test.searchErr, downloadErr: test.downloadErr,
+			}
+			form := url.Values{
+				"content_revision": {strconv.FormatInt(item.ContentRevision, 10)}, "expression": {"日本"},
+				"pronunciation": {"にほん"}, "meanings": {"Japan"}, "notes": {"unsaved note"},
+			}
+			request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/vocabulary/%d/pronunciations/%s", id, test.action), strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			response := httptest.NewRecorder()
+			vocabularyTestRouterWithPronunciation(t, store, provider).ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("response = %d, body = %s", response.Code, response.Body.String())
+			}
+			for _, expected := range []string{test.message, `value="にほん"`, ">Japan</textarea>", ">unsaved note</textarea>"} {
+				if !strings.Contains(response.Body.String(), expected) {
+					t.Errorf("response does not contain %q", expected)
+				}
+			}
+			updated, err := store.Get(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if updated.ContentRevision != item.ContentRevision || len(updated.Media) != 0 {
+				t.Fatalf("failed pronunciation changed vocabulary: %+v", updated)
+			}
+		})
 	}
 }
 

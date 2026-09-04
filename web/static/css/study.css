@@ -774,15 +774,6 @@
   line-height: 1.05;
 }
 
-.review-subject-compact .review-expression {
-  min-height: 110px;
-  padding-block: .75rem 1.25rem;
-}
-
-.review-subject-compact .review-expression h1 {
-  font-size: clamp(2.5rem, 8vw, 4.5rem);
-}
-
 .review-expression-content {
   display: grid;
   justify-items: center;

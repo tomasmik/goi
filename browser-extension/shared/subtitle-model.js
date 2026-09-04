@@ -262,14 +262,6 @@
     return {
       query: String(result.query || ""),
       candidates: candidates.map(function (candidate) {
-        let commonnessScore = null;
-        if (Number.isSafeInteger(candidate.commonness_score) &&
-            candidate.commonness_score >= 1 && candidate.commonness_score <= 100) {
-          commonnessScore = candidate.commonness_score;
-        } else if (Number.isSafeInteger(candidate.commonness) &&
-                   candidate.commonness >= 1 && candidate.commonness <= 10) {
-          commonnessScore = candidate.commonness * 10;
-        }
         const meanings = Array.isArray(candidate.meanings)
           ? candidate.meanings.filter(function (meaning) { return typeof meaning === "string" && meaning; })
           : [];
@@ -291,13 +283,18 @@
             : null,
           written: String(candidate.written || ""),
           reading: String(candidate.reading || ""),
-          commonness: commonnessScore,
+          globalRank: frequencyRank(candidate.global_rank),
+          novelRank: frequencyRank(candidate.novel_rank),
           meanings,
           senses: senses.length ? senses : [{ partsOfSpeech: [], meanings }]
         };
       }),
       message: ""
     };
+  }
+
+  function frequencyRank(rank) {
+    return Number.isSafeInteger(rank) && rank >= 1 && rank <= 2147483647 ? rank : null;
   }
 
   function dictionaryText(response, meaningLimit) {

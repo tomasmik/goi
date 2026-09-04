@@ -88,6 +88,32 @@ func TestLoadRejectsDatabasePathAtJMdictCache(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsJitenCacheAndAliases(t *testing.T) {
+	for _, name := range []string{"jiten.sqlite", "jiten.sqlite-wal", "jiten.sqlite-shm", "jiten.sqlite-journal"} {
+		t.Run(name, func(t *testing.T) {
+			directory := t.TempDir()
+			cache := filepath.Join(directory, name)
+			if err := os.WriteFile(cache, []byte("preserve"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			symlink, hardlink := filepath.Join(directory, "symlink"), filepath.Join(directory, "hardlink")
+			if err := os.Symlink(cache, symlink); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Link(cache, hardlink); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("APP_DATA_DIR", directory)
+			for _, path := range []string{cache, symlink, hardlink} {
+				t.Setenv("APP_DATABASE_PATH", path)
+				if _, err := Load(); err == nil {
+					t.Fatalf("accepted cache alias %q", path)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadRejectsDatabasePathInAnkiStaging(t *testing.T) {
 	dataDir := t.TempDir()
 	t.Setenv("APP_DATA_DIR", dataDir)

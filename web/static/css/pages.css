@@ -505,6 +505,17 @@
   display: grid;
 }
 
+.mining-frequency-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+
+.frequency-badge {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .mining-candidate-heading {
   margin-bottom: 1rem;
 }

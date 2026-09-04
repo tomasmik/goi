@@ -63,7 +63,15 @@
   line-height: 1.3;
 }
 
-.goi-dictionary-commonness {
+.goi-dictionary-frequencies {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 150px;
+}
+
+.goi-dictionary-frequency {
   padding: 2px 6px;
   border: 1px solid var(--goi-dictionary-line);
   border-radius: 3px;

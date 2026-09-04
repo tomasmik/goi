@@ -624,21 +624,30 @@ func (h *Handler) findPronunciation(w http.ResponseWriter, r *http.Request) {
 	recordings, err := h.recordings.Search(r.Context(), expression, reading)
 	if err != nil {
 		internalweb.LogError(r, "could not search pronunciation audio", err)
-		h.renderDetail(w, r, id, form, "The open pronunciation library could not be reached. Try again or use the external search.", "", http.StatusBadGateway)
+		// Optional audio failures must leave the editable page available through proxies.
+		h.renderDetail(w, r, id, form, "The open pronunciation library is temporarily unavailable. Try again later or use the external search.", "", http.StatusOK)
 		return
 	}
 	if len(recordings) != 1 {
-		query := r.URL.Query()
-		query.Set("find_audio", "1")
-		r.URL.RawQuery = query.Encode()
-		h.renderDetail(w, r, id, form, "", "", http.StatusOK)
+		page, err := h.detailPage(r, id, form)
+		if err != nil {
+			h.renderDetailError(w, r, id, form, err)
+			return
+		}
+		page.PronunciationSearched = true
+		page.PronunciationResults = recordings
+		page.PronunciationExpression = expression
+		page.PronunciationReading = reading
+		h.renderer.Render(w, "mining-detail.html", page)
 		return
 	}
 	upload, err := h.recordings.Download(r.Context(), recordings[0].ID, expression, reading)
-	if err == nil {
-		err = h.store.SetPronunciationAudio(r.Context(), id, form.revision, upload)
-	}
 	if err != nil {
+		internalweb.LogError(r, "could not download pronunciation audio", err)
+		h.renderDetail(w, r, id, form, "Could not download that recording. Try again later or upload an audio file.", "", http.StatusOK)
+		return
+	}
+	if err := h.store.SetPronunciationAudio(r.Context(), id, form.revision, upload); err != nil {
 		h.renderDetailError(w, r, id, form, err)
 		return
 	}
@@ -662,17 +671,18 @@ func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	capture, err := h.store.Get(r.Context(), id)
-	if err == nil {
-		upload, downloadErr := h.recordings.Download(r.Context(), recordingID, pronunciationExpression(capture.Expression, r.FormValue("expression")), r.FormValue("reading"))
-		if downloadErr != nil {
-			err = downloadErr
-		} else {
-			err = h.store.SetPronunciationAudio(r.Context(), id, form.revision, upload)
-		}
-	}
 	if err != nil {
-		internalweb.LogError(r, "could not attach pronunciation audio", err)
-		h.renderDetail(w, r, id, form, "Could not attach that recording. Try another one or use the manual upload.", "", http.StatusBadGateway)
+		h.renderDetailError(w, r, id, form, err)
+		return
+	}
+	upload, err := h.recordings.Download(r.Context(), recordingID, pronunciationExpression(capture.Expression, r.FormValue("expression")), r.FormValue("reading"))
+	if err != nil {
+		internalweb.LogError(r, "could not download pronunciation audio", err)
+		h.renderDetail(w, r, id, form, "Could not download that recording. Try again later or upload an audio file.", "", http.StatusOK)
+		return
+	}
+	if err := h.store.SetPronunciationAudio(r.Context(), id, form.revision, upload); err != nil {
+		h.renderDetailError(w, r, id, form, err)
 		return
 	}
 	h.renderDetail(w, r, id, form, "", "Pronunciation audio added to the card.", http.StatusOK)

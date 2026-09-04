@@ -52,38 +52,44 @@ type DetailPage struct {
 }
 
 func (h *Handler) renderDetail(w http.ResponseWriter, r *http.Request, id int64, form detailForm, message, notice string, status int) {
-	capture, existingVocabulary, err := h.loadDetailVocabulary(r.Context(), id)
+	page, err := h.detailPage(r, id, form)
 	if errors.Is(err, sql.ErrNoRows) {
 		h.notFound(w)
 		return
 	}
 	if err != nil {
-		internalweb.InternalError(w, r, "could not load capture", err)
+		internalweb.InternalError(w, r, "could not load capture detail", err)
 		return
+	}
+	page.Error = message
+	page.Notice = notice
+	h.renderer.RenderStatus(w, status, "mining-detail.html", page)
+}
+
+func (h *Handler) detailPage(r *http.Request, id int64, form detailForm) (DetailPage, error) {
+	capture, existingVocabulary, err := h.loadDetailVocabulary(r.Context(), id)
+	if err != nil {
+		return DetailPage{}, fmt.Errorf("load capture: %w", err)
 	}
 	form, editRevision, manualAcceptRevision := detailFormDefaults(capture, existingVocabulary, form)
 	enrichment, err := h.detailEnrichment(r.Context(), capture, form)
 	if err != nil {
-		internalweb.InternalError(w, r, "could not load dictionary suggestions", err)
-		return
+		return DetailPage{}, fmt.Errorf("load dictionary suggestions: %w", err)
 	}
 	nextPendingID, err := h.nextPendingID(r.Context(), capture.ID)
 	if err != nil {
-		internalweb.InternalError(w, r, "could not load next mining capture", err)
-		return
+		return DetailPage{}, fmt.Errorf("load next mining capture: %w", err)
 	}
 	audioExpression, audioReading := pronunciationLookup(capture.Expression, form.pronunciation, enrichment)
 	recordings, pronunciationSearched, pronunciationError := h.searchPronunciations(r, capture, audioExpression, audioReading)
 
-	h.renderer.RenderStatus(w, status, "mining-detail.html", DetailPage{
+	return DetailPage{
 		Title:                   capture.Expression,
 		CSRFToken:               internalweb.CSRFToken(r),
 		Capture:                 capture,
 		ExistingVocabulary:      existingVocabulary,
 		EditRevision:            editRevision,
 		ManualAcceptRevision:    manualAcceptRevision,
-		Error:                   message,
-		Notice:                  notice,
 		Expression:              form.expression,
 		ContextText:             form.contextText,
 		SourceKind:              string(form.sourceKind),
@@ -109,7 +115,7 @@ func (h *Handler) renderDetail(w http.ResponseWriter, r *http.Request, id int64,
 		PronunciationSearched:   pronunciationSearched,
 		PronunciationError:      pronunciationError,
 		NextPendingID:           nextPendingID,
-	})
+	}, nil
 }
 
 func (h *Handler) loadDetailVocabulary(ctx context.Context, id int64) (Capture, *vocabulary.Item, error) {
@@ -214,7 +220,7 @@ func pronunciationExpression(captureExpression, requestedExpression string) stri
 }
 
 func (h *Handler) searchPronunciations(r *http.Request, capture Capture, expression, reading string) ([]pronunciation.Recording, bool, string) {
-	searched := capture.Status == StatusPending && r.URL.Query().Get("find_audio") == "1"
+	searched := r.Method == http.MethodGet && capture.Status == StatusPending && r.URL.Query().Get("find_audio") == "1"
 	if !searched || h.recordings == nil {
 		return nil, searched, ""
 	}

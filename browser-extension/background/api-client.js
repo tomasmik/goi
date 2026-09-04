@@ -189,11 +189,10 @@
       response.candidates.every(function (candidate) {
         return candidate && typeof candidate.written === "string" &&
           typeof candidate.reading === "string" &&
-          (candidate.commonness === undefined ||
-            Number.isSafeInteger(candidate.commonness) && candidate.commonness >= 1 && candidate.commonness <= 10) &&
-          (candidate.commonness_score === undefined ||
-            Number.isSafeInteger(candidate.commonness_score) &&
-              candidate.commonness_score >= 1 && candidate.commonness_score <= 100) &&
+          [candidate.global_rank, candidate.novel_rank].every(function (rank) {
+            return rank === undefined || rank === null ||
+              Number.isSafeInteger(rank) && rank >= 1 && rank <= 2147483647;
+          }) &&
           Array.isArray(candidate.meanings) &&
           candidate.meanings.every(function (meaning) { return typeof meaning === "string"; }) &&
           (candidate.senses === undefined || Array.isArray(candidate.senses) &&

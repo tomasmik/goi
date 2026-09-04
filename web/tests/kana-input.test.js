@@ -59,8 +59,13 @@ test("converts the core romaji input cases", () => {
   assert.equal(convertKana("kan", false), "かn");
   assert.equal(convertKana("kan", true), "かん");
   assert.equal(convertKana("nn", false), "ん");
-  assert.equal(convertKana("nna", false), "んな");
-  assert.equal(convertKana("nnya", false), "んにゃ");
+  assert.equal(convertKana("nna", false), "んあ");
+  assert.equal(convertKana("nnya", false), "んや");
+  assert.equal(convertKana("nnnya", false), "んにゃ");
+  assert.equal(convertKana("honnyu", true), "ほんゆ");
+  assert.equal(convertKana("honnyuu", true), "ほんゆう");
+  assert.equal(convertKana("HONNYUU", true), "ホンユウ");
+  assert.equal(convertKana("hon'yuu", true), "ほんゆう");
   assert.equal(convertKana("スーパー", true), "スーパー");
 });
 
@@ -84,7 +89,7 @@ test("matches server conversion for modern kana combinations", () => {
   }
 });
 
-test("commits repeated n input without leaving romaji behind", () => {
+test("commits each double n without reusing it for the next syllable", () => {
   const previousInput = globalThis.HTMLInputElement;
   globalThis.HTMLInputElement = KanaInput;
   try {
@@ -99,18 +104,24 @@ test("commits repeated n input without leaving romaji behind", () => {
     };
 
     assert.equal(type("nn"), "ん");
-    assert.equal(type("nnn"), "んん");
-    assert.equal(type("nnnn"), "んんん");
-    assert.equal(type("nna"), "んな");
-    assert.equal(type("nnya"), "んにゃ");
-    assert.equal(type("konnichiha"), "こんにちは");
-    assert.equal(type("nna", null), "んな");
+    assert.equal(type("nnn"), "んn");
+    assert.equal(type("nnnn"), "んん");
+    assert.equal(type("nna"), "んあ");
+    assert.equal(type("nnya"), "んや");
+    assert.equal(type("nnnya"), "んにゃ");
+    assert.equal(type("konnnichiha"), "こんにちは");
+    assert.equal(type("nna", null), "んあ");
+    assert.equal(type("honnyu"), "ほんゆ");
+    assert.equal(type("honnyuu"), "ほんゆう");
+    assert.equal(type("HONNYUU"), "ホンユウ");
+    assert.equal(type("honnyuu", null), "ほんゆう");
+    assert.equal(type("hon'yuu"), "ほんゆう");
   } finally {
     globalThis.HTMLInputElement = previousInput;
   }
 });
 
-test("keeps a batched double n reusable for the next kana", () => {
+test("keeps input after a batched double n visible until it converts", () => {
   const previousInput = globalThis.HTMLInputElement;
   globalThis.HTMLInputElement = KanaInput;
   try {
@@ -119,8 +130,10 @@ test("keeps a batched double n reusable for the next kana", () => {
 
     input.type("nn", "nn");
     assert.equal(input.value, "ん");
-    input.type("a");
-    assert.equal(input.value, "んな");
+    input.type("y");
+    assert.equal(input.value, "んy");
+    input.type("u");
+    assert.equal(input.value, "んゆ");
   } finally {
     globalThis.HTMLInputElement = previousInput;
   }
@@ -136,6 +149,9 @@ test("falls back to input events when beforeinput cannot be handled", () => {
     input.type("n", "n", { cancelable: false });
     input.type("n", "n", { cancelable: false });
     assert.equal(input.value, "ん");
+    input.type("y", "y", { cancelable: false });
+    input.type("u", "u", { cancelable: false });
+    assert.equal(input.value, "んゆ");
   } finally {
     globalThis.HTMLInputElement = previousInput;
   }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/tomasmik/goi/internal/dictionary/jiten"
 	"github.com/tomasmik/goi/internal/dictionary/jmdict"
 	internalweb "github.com/tomasmik/goi/internal/web"
 )
@@ -19,10 +20,16 @@ type DictionaryManager interface {
 	Refresh(context.Context) error
 }
 
+type FrequencyManager interface {
+	Status() [2]jiten.SourceStatus
+	Refresh(context.Context) (jiten.RefreshResult, error)
+}
+
 type Handler struct {
 	store       *Store
 	renderer    *internalweb.Renderer
 	dictionary  DictionaryManager
+	frequency   FrequencyManager
 	authEnabled bool
 }
 
@@ -31,6 +38,9 @@ type Page struct {
 	CSRFToken               string
 	Values                  Values
 	Dictionary              DictionaryPage
+	Frequencies             []FrequencyPage
+	FrequencyRefreshResult  string
+	FrequencyRefreshing     bool
 	Error                   string
 	Saved                   bool
 	DictionaryRefreshResult string
@@ -47,14 +57,15 @@ type DictionaryPage struct {
 	RefreshRunning bool
 }
 
-func NewHandler(store *Store, renderer *internalweb.Renderer, dictionary DictionaryManager, authEnabled bool) *Handler {
-	return &Handler{store: store, renderer: renderer, dictionary: dictionary, authEnabled: authEnabled}
+func NewHandler(store *Store, renderer *internalweb.Renderer, dictionary DictionaryManager, frequency FrequencyManager, authEnabled bool) *Handler {
+	return &Handler{store: store, renderer: renderer, dictionary: dictionary, frequency: frequency, authEnabled: authEnabled}
 }
 
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/settings", h.get)
 	r.Post("/settings", h.post)
 	r.Post("/settings/jmdict/refresh", h.refreshDictionary)
+	r.Post("/settings/jiten/refresh", h.refreshFrequency)
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +116,7 @@ func (h *Handler) refreshDictionary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, values Values, message string, saved bool) {
-	h.renderer.RenderStatus(w, status, "settings.html", Page{
+	page := Page{
 		Title:                   "Settings",
 		CSRFToken:               internalweb.CSRFToken(r),
 		Values:                  values,
@@ -114,7 +125,46 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, val
 		Saved:                   saved,
 		DictionaryRefreshResult: r.URL.Query().Get("jmdict_refresh"),
 		AuthEnabled:             h.authEnabled,
-	})
+	}
+	page.FrequencyRefreshResult = r.URL.Query().Get("jiten_refresh")
+	if h.frequency != nil {
+		for _, source := range h.frequency.Status() {
+			name := "Global"
+			if source.Corpus == jiten.Novel {
+				name = "Novel"
+			}
+			page.Frequencies = append(page.Frequencies, FrequencyPage{
+				Name: name, Available: source.Available, Revision: source.Revision, RowCount: source.RowCount,
+				LastCheck: formatDictionaryTime(source.LastCheck), LastSuccess: formatDictionaryTime(source.DownloadedAt),
+				RefreshRunning: source.RefreshRunning, Error: source.Error,
+			})
+			page.FrequencyRefreshing = page.FrequencyRefreshing || source.RefreshRunning
+		}
+	}
+	h.renderer.RenderStatus(w, status, "settings.html", page)
+}
+
+type FrequencyPage struct {
+	Name           string
+	Available      bool
+	Revision       string
+	RowCount       int
+	LastCheck      string
+	LastSuccess    string
+	RefreshRunning bool
+	Error          string
+}
+
+func (h *Handler) refreshFrequency(w http.ResponseWriter, r *http.Request) {
+	result := jiten.Failed
+	if h.frequency != nil {
+		var err error
+		result, err = h.frequency.Refresh(r.Context())
+		if err != nil {
+			internalweb.LogError(r, "could not refresh Jiten frequency ranks", err)
+		}
+	}
+	http.Redirect(w, r, "/settings?jiten_refresh="+string(result), http.StatusSeeOther)
 }
 
 func newDictionaryPage(status jmdict.ManagerStatus) DictionaryPage {

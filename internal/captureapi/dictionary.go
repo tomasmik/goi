@@ -17,13 +17,13 @@ const (
 )
 
 type dictionaryCandidate struct {
-	EntrySequence   int64             `json:"entry_sequence"`
-	Written         string            `json:"written"`
-	Reading         string            `json:"reading"`
-	Commonness      int               `json:"commonness"`
-	CommonnessScore int               `json:"commonness_score"`
-	Meanings        []string          `json:"meanings"`
-	Senses          []dictionarySense `json:"senses"`
+	EntrySequence int64             `json:"entry_sequence"`
+	Written       string            `json:"written"`
+	Reading       string            `json:"reading"`
+	GlobalRank    *int              `json:"global_rank"`
+	NovelRank     *int              `json:"novel_rank"`
+	Meanings      []string          `json:"meanings"`
+	Senses        []dictionarySense `json:"senses"`
 }
 
 type dictionarySense struct {
@@ -73,15 +73,14 @@ func dictionaryResult(query string, match jmdict.Match) dictionaryResponse {
 		if len(meanings) == 0 {
 			continue
 		}
-		commonness := jmdict.CommonnessScore(candidate.Priority)
 		result.Candidates = append(result.Candidates, dictionaryCandidate{
-			EntrySequence:   candidate.EntrySequence,
-			Written:         candidate.Written,
-			Reading:         candidate.Reading,
-			Commonness:      (commonness + 9) / 10,
-			CommonnessScore: commonness,
-			Meanings:        meanings,
-			Senses:          senses,
+			EntrySequence: candidate.EntrySequence,
+			Written:       candidate.Written,
+			Reading:       candidate.Reading,
+			GlobalRank:    candidate.GlobalRank,
+			NovelRank:     candidate.NovelRank,
+			Meanings:      meanings,
+			Senses:        senses,
 		})
 	}
 	if len(result.Candidates) == 0 {

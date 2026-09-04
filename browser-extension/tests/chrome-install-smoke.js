@@ -466,9 +466,11 @@ async function exerciseLocalPlayer(devTools, extensionID, popupSessionID, goiFix
     panelHidden: true,
     term: "勉強する",
     meaning: "to study",
+    frequencies: ["G 090", "N 190"],
     knownLabel: "Mark as known",
     mineLabel: "Mine this word",
   });
+  await saveSmokeScreenshot(devTools, playerSession.sessionId, "player-popup");
   await devTools.send("Runtime.evaluate", {
     expression: `document.getElementById("word-lookup-known").click()`,
   }, playerSession.sessionId);
@@ -499,8 +501,35 @@ async function exerciseLocalPlayer(devTools, extensionID, popupSessionID, goiFix
     term: "勉強する",
     reading: "べんきょうする",
     meaning: "to study",
-    commonness: "Commonness 90/100",
+    frequencies: ["G 090", "N 190"],
   });
+  const zoomed = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      const tab = await chrome.tabs.getCurrent();
+      await chrome.tabs.setZoom(tab.id, 2);
+      return chrome.tabs.getZoom(tab.id);
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, playerSession.sessionId);
+  assert.equal(zoomed.result.value, 2);
+  const badgeLayout = await devTools.send("Runtime.evaluate", {
+    expression: `(function () {
+      document.getElementById("dictionary-lookup").scrollIntoView({block: "center"});
+      return Array.from(document.querySelectorAll("#dictionary-lookup .goi-dictionary-frequency"), (badge) => {
+        const rect = badge.getBoundingClientRect();
+        return rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth &&
+          rect.top >= 0 && rect.bottom <= innerHeight && badge.scrollWidth <= badge.clientWidth;
+      });
+    })()`,
+    returnByValue: true,
+  }, playerSession.sessionId);
+  assert.deepEqual(badgeLayout.result.value, [true, true]);
+  await saveSmokeScreenshot(devTools, playerSession.sessionId, "player-200-percent");
+  await devTools.send("Runtime.evaluate", {
+    expression: `chrome.tabs.getCurrent().then((tab) => chrome.tabs.setZoom(tab.id, 1))`,
+    awaitPromise: true,
+  }, playerSession.sessionId);
   await devTools.send("Runtime.evaluate", {
     expression: `document.getElementById("capture-form").requestSubmit()`,
   }, playerSession.sessionId);
@@ -814,6 +843,7 @@ async function exerciseYouTube(devTools, extensionID, popupSessionID, goiFixture
   const youtubeWord = await inspectAndCaptureYouTubeWord(devTools, youtubeSession.sessionId, goiFixture);
   assert.deepEqual(youtubeWord, {
     lookup: "べんきょうする · to study",
+    frequencies: ["G 090", "N 190"],
     saved: true,
     rawText: "勉強する",
     contextText: "日本語を勉強する。",
@@ -848,6 +878,16 @@ async function exerciseYouTube(devTools, extensionID, popupSessionID, goiFixture
       coversKanjiOnly: true,
     },
   });
+  await devTools.send("Runtime.evaluate", {
+    expression: `document.querySelector(".subtitle-text").click()`,
+  }, companionSession.sessionId);
+  assert.deepEqual(await waitForDictionaryLookup(devTools, companionSession.sessionId), {
+    term: "勉強する",
+    reading: "べんきょうする",
+    meaning: "to study",
+    frequencies: ["G 090", "N 190"],
+  });
+  await saveSmokeScreenshot(devTools, companionSession.sessionId, "companion");
   await devTools.send("Target.closeTarget", { targetId: companionTarget.targetId });
 }
 
@@ -861,6 +901,9 @@ async function exerciseReaderPage(devTools, extensionID, popupSessionID, goiFixt
   });
   await devTools.send("Page.enable", undefined, readerSession.sessionId);
   await devTools.send("Runtime.enable", undefined, readerSession.sessionId);
+  await devTools.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  }, readerSession.sessionId);
   await waitForDocumentReady(devTools, readerSession.sessionId);
   await devTools.send("Target.activateTarget", { targetId: readerTarget.targetId });
   const analyzed = await devTools.send("Runtime.evaluate", {
@@ -885,6 +928,7 @@ async function exerciseReaderPage(devTools, extensionID, popupSessionID, goiFixt
     reading: "べんきょうする",
     meaning: "to study",
     compact: true,
+    frequencies: ["G 090", "N 190"],
     readablePopup: true,
     rawText: "勉強する",
     contextText: "日本語を勉強する。",
@@ -908,6 +952,14 @@ function findChromeExecutable() {
   return candidates.find(function (candidate) {
     return candidate && fs.existsSync(candidate);
   });
+}
+
+async function saveSmokeScreenshot(devTools, sessionID, name) {
+  const directory = process.env.GOI_SMOKE_SCREENSHOT_DIR;
+  if (!directory) return;
+  const screenshot = await devTools.send("Page.captureScreenshot", { format: "png" }, sessionID);
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, name + ".png"), Buffer.from(screenshot.data, "base64"));
 }
 
 function startGoiFixture() {
@@ -939,8 +991,8 @@ function startGoiFixture() {
             written: "勉強する",
             entry_sequence: 12345,
             reading: "べんきょうする",
-            commonness: 9,
-            commonness_score: 90,
+            global_rank: 90,
+            novel_rank: 190,
             meanings: ["to study"],
             senses: [{ parts_of_speech: ["verb"], meanings: ["to study"] }],
           }],
@@ -1283,7 +1335,7 @@ async function waitForDictionaryLookup(devTools, sessionID) {
         term: document.querySelector("#dictionary-lookup .goi-dictionary-term")?.textContent || "",
         reading: document.querySelector("#dictionary-lookup .goi-dictionary-reading")?.textContent || "",
         meaning: document.querySelector("#dictionary-lookup .goi-dictionary-meanings li")?.textContent || "",
-        commonness: document.querySelector("#dictionary-lookup .goi-dictionary-commonness")?.textContent || ""
+        frequencies: Array.from(document.querySelectorAll("#dictionary-lookup .goi-dictionary-frequency"), (node) => node.textContent)
       })`,
       returnByValue: true,
     }, sessionID);
@@ -1306,6 +1358,7 @@ async function waitForPlayerWordLookup(devTools, sessionID) {
         panelHidden: document.getElementById("workspace-panel").hidden,
         term: document.querySelector("#word-lookup .goi-dictionary-term")?.textContent || "",
         meaning: document.querySelector("#word-lookup .goi-dictionary-meanings li")?.textContent || "",
+        frequencies: Array.from(document.querySelectorAll("#word-lookup .goi-dictionary-frequency"), (node) => node.textContent),
         knownLabel: document.getElementById("word-lookup-known").textContent,
         mineLabel: document.getElementById("word-lookup-mine").textContent
       })`,
@@ -1326,6 +1379,7 @@ async function inspectAndCaptureYouTubeWord(devTools, sessionID, fixture) {
   let clicked = false;
   let saved = false;
   let observedLookup = "";
+  let observedFrequencies = [];
   let lastValue;
   while (Date.now() < deadline) {
     try {
@@ -1335,6 +1389,7 @@ async function inspectAndCaptureYouTubeWord(devTools, sessionID, fixture) {
           term: document.querySelector(".goi-dictionary-term")?.textContent || "",
           reading: document.querySelector(".goi-dictionary-reading")?.textContent || "",
           meaning: document.querySelector(".goi-dictionary-meanings li")?.textContent || "",
+          frequencies: Array.from(document.querySelectorAll(".goi-dictionary-frequency"), (node) => node.textContent),
           select: document.querySelector(".goi-dictionary-select")?.textContent || ""
         })`,
         returnByValue: true,
@@ -1348,6 +1403,8 @@ async function inspectAndCaptureYouTubeWord(devTools, sessionID, fixture) {
           value.meaning === "to study" &&
           value.select === "Mine" && !saved) {
         observedLookup = value.reading + " · " + value.meaning;
+        observedFrequencies = value.frequencies;
+        await saveSmokeScreenshot(devTools, sessionID, "youtube-popup");
         saved = true;
         await clickPageElement(devTools, sessionID, ".goi-dictionary-select");
       }
@@ -1355,6 +1412,7 @@ async function inspectAndCaptureYouTubeWord(devTools, sessionID, fixture) {
         const capture = fixture.captures[1];
         return {
           lookup: observedLookup,
+          frequencies: observedFrequencies,
           saved: true,
           rawText: capture.raw_text,
           contextText: capture.context_text,
@@ -1400,6 +1458,7 @@ async function inspectAndCaptureAnalyzedPage(devTools, sessionID, fixture) {
         term: document.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-term")?.textContent || "",
         reading: document.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-reading")?.textContent || "",
         meaning: document.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-meanings li")?.textContent || "",
+        frequencies: Array.from(document.querySelectorAll("#goi-ext-coverage-word-menu .goi-dictionary-frequency"), (node) => node.textContent),
         select: document.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-select")?.textContent || "",
         readablePopup: (function () {
           const menu = document.getElementById("goi-ext-coverage-word-menu");
@@ -1419,6 +1478,11 @@ async function inspectAndCaptureAnalyzedPage(devTools, sessionID, fixture) {
     } else if (value && value.term === "勉強する" && value.reading === "べんきょうする" &&
         value.meaning === "to study" && value.select === "Mine" && !selected) {
       lookup = value;
+      await saveSmokeScreenshot(devTools, sessionID, "reader-popup");
+      await devTools.send("Emulation.setEmulatedMedia", {
+        features: [{ name: "prefers-color-scheme", value: "dark" }],
+      }, sessionID);
+      await saveSmokeScreenshot(devTools, sessionID, "reader-popup-dark");
       selected = true;
       await clickPageElement(devTools, sessionID, "#goi-ext-coverage-word-menu .goi-dictionary-select");
     }
@@ -1429,6 +1493,7 @@ async function inspectAndCaptureAnalyzedPage(devTools, sessionID, fixture) {
         term: lookup.term,
         reading: lookup.reading,
         meaning: lookup.meaning,
+        frequencies: lookup.frequencies,
         compact: lookup.compact,
         readablePopup: lookup.readablePopup,
         rawText: capture.raw_text,

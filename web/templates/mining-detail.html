@@ -188,7 +188,7 @@
       {{if .PartsOfSpeech}}<span class="mining-candidate-choice-parts">{{.PartsOfSpeech}}</span>{{end}}
       {{if .MeaningSummary}}<span class="mining-candidate-choice-meanings">{{.MeaningSummary}}</span>{{end}}
       <span class="mining-candidate-choice-meta">
-        <span class="match-badge" title="Estimated from JMdict priority data">{{.CommonnessScore}}/100</span>
+        {{template "mining-frequency-badges" .}}
       </span>
     </button>
   {{end}}
@@ -203,7 +203,7 @@
         <h3><span lang="ja">{{.Written}}</span> <span class="mining-reading" lang="ja">{{.Pronunciation}}</span></h3>
         {{if .PartsOfSpeech}}<p class="mining-parts">{{.PartsOfSpeech}}</p>{{end}}
       </div>
-      <span class="match-badge" title="Estimated from JMdict priority data">Commonness {{.CommonnessScore}}/100</span>
+      <span class="mining-frequency-badges">{{template "mining-frequency-badges" .}}</span>
     </div>
     <form class="mining-card-editor" method="post" action="/mining/captures/{{$.Capture.ID}}/accept" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
@@ -244,7 +244,7 @@
   </div>
   </div>
   {{if .Candidates}}
-  <p class="dictionary-score-note section-note">Estimated from JMdict priority data. This is a rough guide, not measured word frequency.</p>
+  <p class="dictionary-score-note section-note"><a href="https://jiten.moe/frequency-dictionaries" target="_blank" rel="noopener noreferrer">Jiten</a> word-form ranks: G = Global; N = Novel. Lower means more frequent; — means no rank available. Data adapted under <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">CC BY-SA 4.0</a>.</p>
   {{end}}
 </section>
 {{end}}
@@ -390,3 +390,8 @@
 </details>
 {{end}}
 {{template "footer" .}}
+
+{{define "mining-frequency-badges"}}
+<span class="match-badge frequency-badge" title="{{.GlobalRankLabel}}" aria-label="{{.GlobalRankLabel}}">G {{.GlobalRank}}</span>
+<span class="match-badge frequency-badge" title="{{.NovelRankLabel}}" aria-label="{{.NovelRankLabel}}">N {{.NovelRank}}</span>
+{{end}}

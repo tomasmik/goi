@@ -66,16 +66,18 @@
         headword.appendChild(reading);
       }
       heading.appendChild(headword);
-      if (candidate.commonness !== null) {
-        const commonness = element(
-          documentObject,
-          "span",
-          "goi-dictionary-commonness",
-          "Commonness " + candidate.commonness + "/100"
-        );
-        commonness.title = "Higher means more common; estimated from JMdict priority data";
-        heading.appendChild(commonness);
-      }
+      const frequencies = element(documentObject, "div", "goi-dictionary-frequencies");
+      [["G", "Global", candidate.globalRank], ["N", "Novel", candidate.novelRank]].forEach(function (source) {
+        const [letter, name, rank] = source;
+        const label = rank == null ? "Jiten " + name + ": no rank available"
+          : "Jiten " + name + " rank " + rank + "; lower means more frequent";
+        const badge = element(documentObject, "span", "goi-dictionary-frequency",
+          letter + " " + (rank == null ? "—" : String(rank).padStart(3, "0")));
+        badge.title = label;
+        badge.setAttribute("aria-label", label);
+        frequencies.appendChild(badge);
+      });
+      heading.appendChild(frequencies);
       entry.appendChild(heading);
       candidate.senses.forEach(function (sense) {
         const senseNode = element(documentObject, "div", "goi-dictionary-sense");

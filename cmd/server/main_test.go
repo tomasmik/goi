@@ -147,6 +147,7 @@ func TestRequestBodyLimitUsesRouteSpecificLimits(t *testing.T) {
 		{path: "/api/extension/v1/captures/42/media", want: captureapi.CaptureMediaBodyLimit},
 		{path: "/api/extension/v1/coverage", want: captureapi.CoverageBodyLimit},
 		{path: "/settings/jmdict/refresh", want: defaultRequestBodyLimit},
+		{path: "/settings/jiten/refresh", want: defaultRequestBodyLimit},
 		{path: "/settings/backups/restore/upload", want: backups.RestoreUploadRequestLimit},
 	}
 	for _, test := range tests {
@@ -179,6 +180,7 @@ func TestRequestTimeoutUsesRouteSpecificDurations(t *testing.T) {
 		{method: http.MethodPost, path: "/settings/backups/restore/upload", want: longRequestTimeout},
 		{method: http.MethodPost, path: "/settings/backups/restore/google/file1", want: longRequestTimeout},
 		{method: http.MethodPost, path: "/settings/jmdict/refresh", want: longRequestTimeout},
+		{method: http.MethodPost, path: "/settings/jiten/refresh", want: longRequestTimeout},
 		{method: http.MethodGet, path: "/settings/backups/local/goi-test.goi-backup.zip", want: 0},
 	}
 	for _, test := range tests {

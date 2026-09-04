@@ -1,6 +1,7 @@
 package mining
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/tomasmik/goi/internal/dictionary/jmdict"
@@ -29,7 +30,10 @@ type CandidateView struct {
 	ExampleTranslation   string
 	ExampleTarget        string
 	PartsOfSpeech        string
-	CommonnessScore      int
+	GlobalRank           string
+	NovelRank            string
+	GlobalRankLabel      string
+	NovelRankLabel       string
 	ExistingVocabularyID int64
 	Selected             bool
 }
@@ -83,11 +87,12 @@ func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) 
 			MeaningList:     meanings,
 			MeaningSummary:  summarizeMeanings(meanings),
 			PartsOfSpeech:   strings.Join(candidatePartsOfSpeech(candidate), " · "),
-			CommonnessScore: jmdict.CommonnessScore(candidate.Priority),
 			ExampleSentence: capture.ContextText,
 			ExampleTarget:   capture.RawText,
 			Selected:        candidateID == selectedCandidateID,
 		}
+		candidateView.GlobalRank, candidateView.GlobalRankLabel = frequencyBadge("Global", candidate.GlobalRank)
+		candidateView.NovelRank, candidateView.NovelRankLabel = frequencyBadge("Novel", candidate.NovelRank)
 		if strings.TrimSpace(candidateView.ExampleTarget) == "" {
 			candidateView.ExampleTarget = capture.Expression
 		}
@@ -108,6 +113,13 @@ func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) 
 		view.Candidates = append(view.Candidates, candidateView)
 	}
 	return view
+}
+
+func frequencyBadge(corpus string, rank *int) (string, string) {
+	if rank == nil {
+		return "—", "Jiten " + corpus + ": no rank available"
+	}
+	return fmt.Sprintf("%03d", *rank), fmt.Sprintf("Jiten %s rank %d; lower means more frequent", corpus, *rank)
 }
 
 func summarizeMeanings(meanings []string) string {

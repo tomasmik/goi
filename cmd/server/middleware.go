@@ -166,7 +166,7 @@ func timeoutForRequest(r *http.Request) time.Duration {
 	if strings.HasPrefix(r.URL.Path, "/settings/backups/restore/") {
 		return longRequestTimeout
 	}
-	if r.Method == http.MethodPost && r.URL.Path == "/settings/jmdict/refresh" {
+	if r.Method == http.MethodPost && (r.URL.Path == "/settings/jmdict/refresh" || r.URL.Path == "/settings/jiten/refresh") {
 		return longRequestTimeout
 	}
 	if r.Method == http.MethodPost && (extensionCaptureMediaPath(r.URL.Path) || miningMediaUploadPath(r.URL.Path)) {

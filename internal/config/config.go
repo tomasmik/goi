@@ -213,17 +213,19 @@ func validateStoragePaths(dataDir, databasePath, backupDir string) error {
 	if err != nil {
 		return fmt.Errorf("resolve database path: %w", err)
 	}
-	cachePath := filepath.Join(dataDir, "jmdict.sqlite")
-	cacheResolved, err := resolveStoragePath(cachePath)
-	if err != nil {
-		return fmt.Errorf("resolve JMdict cache path: %w", err)
-	}
-	if databaseResolved == cacheResolved {
-		return errors.New("database path must differ from the JMdict cache path")
-	}
-	if databaseInfo, databaseErr := os.Stat(databasePath); databaseErr == nil {
-		if cacheInfo, cacheErr := os.Stat(cachePath); cacheErr == nil && os.SameFile(databaseInfo, cacheInfo) {
-			return errors.New("database path must differ from the JMdict cache path")
+	for _, name := range []string{"jmdict.sqlite", "jiten.sqlite", "jiten.sqlite-wal", "jiten.sqlite-shm", "jiten.sqlite-journal"} {
+		cachePath := filepath.Join(dataDir, name)
+		cacheResolved, err := resolveStoragePath(cachePath)
+		if err != nil {
+			return fmt.Errorf("resolve cache path %q: %w", name, err)
+		}
+		if databaseResolved == cacheResolved {
+			return fmt.Errorf("database path must differ from cache file %q", name)
+		}
+		if databaseInfo, databaseErr := os.Stat(databasePath); databaseErr == nil {
+			if cacheInfo, cacheErr := os.Stat(cachePath); cacheErr == nil && os.SameFile(databaseInfo, cacheInfo) {
+				return fmt.Errorf("database path must differ from cache file %q", name)
+			}
 		}
 	}
 

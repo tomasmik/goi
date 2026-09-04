@@ -125,13 +125,8 @@ function convertRun(value, flush) {
         continue;
       }
       if (next === "n") {
-        if (index + 2 === lower.length) {
-          writeKana("ん");
-          index += 2;
-          continue;
-        }
         writeKana("ん");
-        index += 1;
+        index += 2;
         continue;
       }
       if (isConsonant(next) && next !== "y") {
@@ -190,7 +185,6 @@ function updateMode(input) {
 function bind(input) {
   let composing = false;
   let dispatchingInput = false;
-  let reusableN = null;
 
   const update = (flush = false) => {
     const before = input.value;
@@ -204,54 +198,6 @@ function bind(input) {
       input.setSelectionRange(nextStart, nextEnd);
     }
     updateMode(input);
-  };
-
-  const processInput = (event) => {
-    const caret = input.selectionStart ?? input.value.length;
-    let inserted = typeof event.data === "string" ? event.data : "";
-    if (!inserted && reusableN && caret > reusableN.position) {
-      inserted = input.value.slice(reusableN.position, caret);
-    }
-    const doubleN = input.value.slice(caret - 2, caret).toLowerCase() === "nn"
-      ? input.value.slice(caret - 2, caret)
-      : "";
-
-    if (reusableN) {
-      const followsCommittedN = caret === reusableN.position + inserted.length;
-      if (followsCommittedN && /^[nN]$/.test(inserted)) {
-        const kana = reusableN.letter === "N" ? "ン" : "ん";
-        const position = reusableN.position + kana.length;
-        input.value = input.value.slice(0, reusableN.position) + kana + input.value.slice(caret);
-        input.setSelectionRange(position, position);
-        reusableN = {
-          position,
-          letter: inserted,
-          withY: false
-        };
-      } else if (followsCommittedN && /^[yY]$/.test(inserted) && !reusableN.withY) {
-        input.value = input.value.slice(0, reusableN.position) + input.value.slice(caret);
-        input.setSelectionRange(reusableN.position, reusableN.position);
-        reusableN.withY = true;
-      } else if (followsCommittedN && /^[aeiouAEIOU]$/.test(inserted)) {
-        const y = reusableN.withY ? (reusableN.letter === "N" ? "Y" : "y") : "";
-        const source = reusableN.letter + y + inserted;
-        input.value = input.value.slice(0, reusableN.position) + source + input.value.slice(caret);
-        const nextCaret = reusableN.position + source.length;
-        input.setSelectionRange(nextCaret, nextCaret);
-        reusableN = null;
-      } else {
-        reusableN = null;
-      }
-    }
-
-    update();
-    if (doubleN) {
-      reusableN = {
-        position: input.selectionStart ?? input.value.length,
-        letter: doubleN === doubleN.toUpperCase() ? "N" : "n",
-        withY: false
-      };
-    }
   };
 
   input.addEventListener("compositionstart", () => {
@@ -279,7 +225,7 @@ function bind(input) {
     input.value = input.value.slice(0, start) + event.data + input.value.slice(end);
     const caret = start + event.data.length;
     input.setSelectionRange(caret, caret);
-    processInput(event);
+    update();
 
     dispatchingInput = true;
     try {
@@ -290,23 +236,20 @@ function bind(input) {
   });
   input.addEventListener("input", (event) => {
     if (!dispatchingInput && !composing && !event.isComposing) {
-      processInput(event);
+      update();
     }
   });
   input.addEventListener("blur", () => {
     if (!composing) {
-      reusableN = null;
       update(true);
     }
   });
   input.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !composing && !event.isComposing) {
-      reusableN = null;
       update(true);
     }
   });
   input.form?.addEventListener("submit", () => {
-    reusableN = null;
     update(true);
   });
   update();
