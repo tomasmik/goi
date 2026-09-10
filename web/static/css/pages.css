@@ -390,8 +390,7 @@
 
 .mining-enrichment-heading h2,
 .mining-candidate-heading h3,
-.mining-parts,
-.dictionary-attribution {
+.mining-parts {
   margin-bottom: 0;
 }
 
@@ -539,8 +538,7 @@
 }
 
 .mining-reading,
-.mining-parts,
-.dictionary-attribution {
+.mining-parts {
   color: var(--muted);
 }
 
@@ -550,14 +548,8 @@
   font-weight: 650;
 }
 
-.mining-parts,
-.dictionary-attribution {
+.mining-parts {
   font-size: .78rem;
-}
-
-.dictionary-attribution {
-  margin-top: 1rem;
-  opacity: .72;
 }
 
 .detail-heading {
@@ -969,11 +961,6 @@
   margin-bottom: .55rem;
 }
 
-.mining-candidate-grid {
-  display: grid;
-  gap: 1rem;
-}
-
 .mining-source-editor {
   margin-top: 1rem;
 }
@@ -1019,12 +1006,6 @@
 
 .management-actions {
   margin: 0;
-}
-
-.completion-undo {
-  max-width: 22rem;
-  margin: 1rem auto 0;
-  text-align: left;
 }
 
 .media-strip {

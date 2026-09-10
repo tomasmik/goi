@@ -66,19 +66,19 @@ func TestLookupEnrichmentKeepsManualEntryAvailableOnFailure(t *testing.T) {
 	}
 }
 
-func TestCandidateAcceptanceUsesCurrentResultPosition(t *testing.T) {
+func TestCandidateAcceptanceUsesStableIdentity(t *testing.T) {
 	enrichment := Enrichment{Candidates: []jmdict.Candidate{
 		{Written: "開く", Reading: "あく", Senses: []jmdict.Sense{{Glosses: []jmdict.Gloss{{Text: "to open", Language: "eng"}}}}},
 		{Written: "空く", Reading: "あく", Senses: []jmdict.Sense{{Glosses: []jmdict.Gloss{{Text: "to become empty", Language: "eng"}}}}},
 	}}
-	candidate, err := candidateAcceptanceAt(enrichment, 2)
+	candidate, err := candidateAcceptanceFor(enrichment, candidateID(enrichment.Candidates[1]))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if candidate.written != "空く" || candidate.reading != "あく" || len(candidate.meanings) != 1 || candidate.meanings[0] != "to become empty" {
 		t.Fatalf("candidate = %#v", candidate)
 	}
-	if _, err := candidateAcceptanceAt(enrichment, 3); !errors.Is(err, ErrStaleEnrichment) {
+	if _, err := candidateAcceptanceFor(enrichment, "unknown"); !errors.Is(err, ErrStaleEnrichment) {
 		t.Fatalf("stale candidate error = %v", err)
 	}
 }

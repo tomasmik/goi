@@ -33,184 +33,10 @@ function companionSender(sender) {
   return !tabURL || companionPageTargetID(tabURL) === targetTabID;
 }
 
-function normalizeCompanionTargetURL(value) {
-  if (!isYouTubeVideoURL(value)) {
-    return "";
-  }
-  const url = new URL(value);
-  const normalizedURL = url.pathname === "/watch"
-    ? url.origin + url.pathname + "?v=" + encodeURIComponent(url.searchParams.get("v"))
-    : url.origin + url.pathname;
-  return normalizedURL.length <= 2048 ? normalizedURL : "";
-}
-
-function normalizeCompanionTarget(companionTabID, targetTabID, targetURL, recovered) {
-  const normalizedURL = normalizeCompanionTargetURL(targetURL);
-  if (!Number.isSafeInteger(companionTabID) || companionTabID <= 0 ||
-      !Number.isSafeInteger(targetTabID) || targetTabID <= 0 ||
-      companionTabID === targetTabID || !normalizedURL) {
-    return null;
-  }
-  return { targetTabID, targetURL: normalizedURL, recovered: recovered === true };
-}
-
-async function loadCompanionTargets() {
-  if (companionTargetsLoaded) {
-    return;
-  }
-  if (!chrome.storage.session || !chrome.storage.session.get) {
-    throw companionPersistenceError();
-  }
-  let stored;
-  try {
-    stored = await chrome.storage.session.get(COMPANION_TARGETS_STORAGE_KEY);
-  } catch (cause) {
-    throw companionPersistenceError(cause);
-  }
-  if (!stored || typeof stored !== "object") {
-    throw companionPersistenceError();
-  }
-  const storedValue = stored[COMPANION_TARGETS_STORAGE_KEY];
-  const rawEntries = Array.isArray(storedValue) ? storedValue : [];
-  const entries = rawEntries.slice(-COMPANION_TARGET_LIMIT);
-  const loadedTargets = new Map();
-  let rewrite = (storedValue !== undefined && !Array.isArray(storedValue)) ||
-    rawEntries.length !== entries.length;
-  entries.forEach(function (entry) {
-    const normalized = normalizeCompanionTarget(
-      entry && entry.companionTabID,
-      entry && entry.targetTabID,
-      entry && entry.targetURL,
-      true
-    );
-    if (normalized) {
-      rewrite = rewrite || loadedTargets.has(entry.companionTabID);
-      loadedTargets.delete(entry.companionTabID);
-      loadedTargets.set(entry.companionTabID, normalized);
-    } else {
-      rewrite = true;
-    }
-  });
-  if (rewrite) {
-    await writeCompanionTargets(loadedTargets);
-  }
-  replaceCompanionTargets(loadedTargets);
-  companionTargetsLoaded = true;
-}
-
-async function writeCompanionTargets(targets) {
-  if (!chrome.storage.session || !chrome.storage.session.set) {
-    throw companionPersistenceError();
-  }
-  const entries = Array.from(targets || companionTargetByTab, function ([companionTabID, target]) {
-    return {
-      companionTabID,
-      targetTabID: target.targetTabID,
-      targetURL: target.targetURL
-    };
-  }).slice(-COMPANION_TARGET_LIMIT);
-  try {
-    await chrome.storage.session.set({ [COMPANION_TARGETS_STORAGE_KEY]: entries });
-  } catch (cause) {
-    throw companionPersistenceError(cause);
-  }
-}
-
-function companionPersistenceError(cause) {
-  const error = companionError("Could not save subtitle browser ownership", 503);
-  error.code = "companion_storage_unavailable";
-  error.cause = cause;
-  return error;
-}
-
-function replaceCompanionTargets(targets) {
-  companionTargetByTab.clear();
-  targets.forEach(function (target, companionTabID) {
-    companionTargetByTab.set(companionTabID, target);
-  });
-}
-
-function serializeCompanionTargets(operation) {
-  const update = companionTargetQueue.then(async function () {
-    await loadCompanionTargets();
-    return operation();
-  });
-  companionTargetQueue = recoverQueue(update);
-  return update;
-}
-
-async function associateCompanionTab(companionTabID, targetTab) {
-  const target = normalizeCompanionTarget(
-    companionTabID,
-    targetTab && targetTab.id,
-    targetTab && targetTab.url,
-    false
-  );
-  if (!target) {
-    return null;
-  }
-  await serializeCompanionTargets(async function () {
-    const nextTargets = new Map(companionTargetByTab);
-    nextTargets.delete(companionTabID);
-    nextTargets.set(companionTabID, target);
-    while (nextTargets.size > COMPANION_TARGET_LIMIT) {
-      nextTargets.delete(nextTargets.keys().next().value);
-    }
-    await writeCompanionTargets(nextTargets);
-    replaceCompanionTargets(nextTargets);
-  });
-  return target.targetTabID;
-}
-
-function associateCompanionSender(sender, targetTab) {
-  const declaredTargetTabID = companionSender(sender)
-    ? companionPageTargetID(sender.url)
-    : null;
-  if (declaredTargetTabID === null || !targetTab || targetTab.id !== declaredTargetTabID) {
-    return Promise.reject(companionError("Subtitle browser ownership is invalid", 403));
-  }
-  return associateCompanionTab(sender.tab.id, targetTab);
-}
-
-async function releaseCompanionTab(companionTabID) {
-  const target = await serializeCompanionTargets(async function () {
-    const existing = companionTargetByTab.get(companionTabID);
-    if (!existing) {
-      return null;
-    }
-    const nextTargets = new Map(companionTargetByTab);
-    nextTargets.delete(companionTabID);
-    await writeCompanionTargets(nextTargets);
-    replaceCompanionTargets(nextTargets);
-    return existing;
-  });
-  return target ? target.targetTabID : null;
-}
-
-function forgetCompanionsForTarget(targetTabID) {
-  return serializeCompanionTargets(async function () {
-    const nextTargets = new Map(companionTargetByTab);
-    for (const [companionTabID, target] of nextTargets) {
-      if (target.targetTabID === targetTabID) {
-        nextTargets.delete(companionTabID);
-      }
-    }
-    if (nextTargets.size !== companionTargetByTab.size) {
-      await writeCompanionTargets(nextTargets);
-      replaceCompanionTargets(nextTargets);
-    }
-  });
-}
-
-function companionError(message, status) {
-  const error = new Error(message);
-  error.status = status;
-  return error;
-}
-
-async function youtubeTab(tabId) {
-  if (!Number.isInteger(tabId)) {
-    throw companionError("A YouTube tab is required", 400);
+async function requireCompanionTarget(tabId, sender) {
+  if (!companionSender(sender) || companionPageTargetID(sender.url) !== tabId ||
+      sender.tab.id === tabId) {
+    throw companionError("Subtitle browser ownership is invalid", 403);
   }
   let tab;
   try {
@@ -218,10 +44,19 @@ async function youtubeTab(tabId) {
   } catch (_error) {
     throw companionError("The YouTube tab is no longer available", 404);
   }
+  if (tab.id !== tabId) {
+    throw companionError("Subtitle browser ownership is invalid", 403);
+  }
   if (!isYouTubeVideoURL(tab.url)) {
     throw companionError("Open a YouTube video to use the transcript browser", 400);
   }
   return tab;
+}
+
+function companionError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
 }
 
 async function restoreCompanionWindow(windowId) {
@@ -241,50 +76,30 @@ async function openSubtitleBrowser(sender) {
   if (!tab || !isYouTubeVideoURL(tab.url)) {
     tab = await getActiveTab();
   }
-  const context = siteContextForTab(tab);
-  if (!context || !isYouTubeVideoURL(context.url)) {
+  const context = automaticAnalysisModel.siteContextForTab(tab);
+  if (!context || !Number.isSafeInteger(context.tabId) || context.tabId <= 0 ||
+      !isYouTubeVideoURL(context.url)) {
     throw companionError("Open a YouTube video to use the transcript browser", 400);
   }
-  let associatedCompanionTabID;
+  await ensureYouTubeOverlayScript(context.tabId);
+  const baseURL = extensionPageURL("companion/companion.html");
+  const pageURL = baseURL + "?tab=" + context.tabId;
+  let existing = [];
   try {
-    await ensureYouTubeOverlayScript(context.tabId);
-
-    const baseURL = extensionPageURL("companion/companion.html");
-    const pageURL = baseURL + "?tab=" + context.tabId;
-    let existing = [];
-    try {
-      existing = await chrome.tabs.query({ url: baseURL + "*" });
-    } catch (_error) {
-      existing = [];
-    }
-    const existingTab = existing.find(function (candidate) {
-      return Number.isInteger(candidate.id);
-    });
-    if (existingTab) {
-      await chrome.tabs.update(existingTab.id, { active: true, url: pageURL });
-      const associatedTargetID = await associateCompanionTab(existingTab.id, {
-        id: context.tabId,
-        url: context.url
-      });
-      if (!Number.isSafeInteger(associatedTargetID)) {
-        throw companionError("Could not connect the transcript browser", 500);
-      }
-      associatedCompanionTabID = existingTab.id;
-      await restoreCompanionWindow(existingTab.windowId);
-      return { ok: true, tabId: context.tabId };
-    }
-    if (!chrome.windows || !chrome.windows.create) {
-      const createdTab = await chrome.tabs.create({ url: pageURL, active: true });
-      const associatedTargetID = await associateCompanionTab(createdTab && createdTab.id, {
-        id: context.tabId,
-        url: context.url
-      });
-      if (!Number.isSafeInteger(associatedTargetID)) {
-        throw companionError("Could not connect the transcript browser", 500);
-      }
-      associatedCompanionTabID = createdTab.id;
-      return { ok: true, tabId: context.tabId };
-    }
+    existing = await chrome.tabs.query({ url: baseURL + "*" });
+  } catch (_error) {}
+  const existingTab = existing.find(function (candidate) {
+    return Number.isSafeInteger(candidate.id) && candidate.id > 0;
+  });
+  if (existingTab) {
+    await chrome.tabs.update(existingTab.id, { active: true, url: pageURL });
+    await restoreCompanionWindow(existingTab.windowId);
+    return { ok: true, tabId: context.tabId };
+  }
+  let createdTab;
+  if (!chrome.windows || !chrome.windows.create) {
+    createdTab = await chrome.tabs.create({ url: pageURL, active: true });
+  } else {
     const createdWindow = await chrome.windows.create({
       url: pageURL,
       type: "popup",
@@ -292,24 +107,14 @@ async function openSubtitleBrowser(sender) {
       height: COMPANION_WINDOW_HEIGHT,
       focused: true
     });
-    const createdTab = createdWindow && Array.isArray(createdWindow.tabs)
+    createdTab = createdWindow && Array.isArray(createdWindow.tabs)
       ? createdWindow.tabs.find(function (candidate) { return Number.isSafeInteger(candidate.id); })
       : null;
-    const associatedTargetID = await associateCompanionTab(createdTab && createdTab.id, {
-      id: context.tabId,
-      url: context.url
-    });
-    if (!Number.isSafeInteger(associatedTargetID)) {
-      throw companionError("Could not connect the transcript browser", 500);
-    }
-    associatedCompanionTabID = createdTab.id;
-    return { ok: true, tabId: context.tabId };
-  } catch (error) {
-    if (Number.isSafeInteger(associatedCompanionTabID)) {
-      await releaseCompanionTab(associatedCompanionTabID).catch(ignoreCompanionReleaseFailure);
-    }
-    throw error;
   }
+  if (!createdTab || !Number.isSafeInteger(createdTab.id) || createdTab.id <= 0) {
+    throw companionError("Could not connect the transcript browser", 500);
+  }
+  return { ok: true, tabId: context.tabId };
 }
 
 async function captureCurrentYouTubeSelection(tab) {
@@ -329,11 +134,7 @@ async function captureCurrentYouTubeSelection(tab) {
 }
 
 async function getCompanionSession(tabId, sender, sinceRevision, sessionID) {
-  if (!companionSender(sender)) {
-    throw companionError("Subtitle sessions are available only to the companion window", 403);
-  }
-  const tab = await youtubeTab(tabId);
-  await associateCompanionSender(sender, tab);
+  await requireCompanionTarget(tabId, sender);
   await ensureYouTubeOverlayScript(tabId);
   const response = await chrome.tabs.sendMessage(tabId, {
     type: "goi.youtube.session.get",
@@ -348,16 +149,12 @@ async function getCompanionSession(tabId, sender, sinceRevision, sessionID) {
 }
 
 async function forwardCompanionLineAction(type, message, sender) {
-  if (!companionSender(sender)) {
-    throw companionError("Subtitle actions are available only to the companion window", 403);
-  }
   const tabId = message && message.tabId;
+  await requireCompanionTarget(tabId, sender);
   const lineID = message && message.lineID;
   if (!Number.isSafeInteger(lineID) || lineID <= 0) {
     throw companionError("The subtitle line is invalid", 400);
   }
-  const tab = await youtubeTab(tabId);
-  await associateCompanionSender(sender, tab);
   const request = { type, version: 1, lineID };
   if (type === "goi.youtube.line.capture") {
     const surface = typeof message.surface === "string" ? message.surface.trim() : "";
@@ -376,11 +173,7 @@ async function forwardCompanionLineAction(type, message, sender) {
 }
 
 async function forwardCompanionTranscriptRetry(tabId, sender) {
-  if (!companionSender(sender)) {
-    throw companionError("Transcript actions are available only to the companion window", 403);
-  }
-  const tab = await youtubeTab(tabId);
-  await associateCompanionSender(sender, tab);
+  const tab = await requireCompanionTarget(tabId, sender);
   const response = await chrome.tabs.sendMessage(tab.id, {
     type: "goi.youtube.transcript.retry",
     version: 1

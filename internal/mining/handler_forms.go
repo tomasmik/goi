@@ -45,7 +45,7 @@ type detailForm struct {
 	exampleSentence        string
 	exampleTranslation     string
 	exampleTarget          string
-	candidateID            int64
+	candidateID            string
 	submitted              bool
 	captureFieldsSubmitted bool
 }
@@ -128,15 +128,17 @@ func readAcceptForm(w http.ResponseWriter, r *http.Request) (detailForm, error) 
 	if err := parseCardForm(w, r); err != nil {
 		return detailForm{}, err
 	}
-	form := detailForm{submitted: true}
-	if candidate := strings.TrimSpace(r.FormValue("candidate_id")); candidate != "" {
-		var ok bool
-		form.candidateID, ok = positiveInt64(candidate)
-		if !ok {
-			return form, handlerValidationError("invalid dictionary candidate")
-		}
+	form, err := readVocabularyFields(r, detailForm{
+		submitted:   true,
+		candidateID: strings.TrimSpace(r.FormValue("candidate_id")),
+	})
+	if err != nil {
+		return form, err
 	}
-	return readVocabularyFields(r, form)
+	if len(form.candidateID) > 64 {
+		return form, handlerValidationError("invalid dictionary candidate")
+	}
+	return form, nil
 }
 
 func parseCardForm(w http.ResponseWriter, r *http.Request) error {

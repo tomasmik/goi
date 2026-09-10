@@ -21,37 +21,17 @@ const COVERAGE_BLOCK_LIMIT = 1000;
 const COVERAGE_BLOCK_CHARACTER_LIMIT = 20000;
 const COVERAGE_CHARACTER_LIMIT = 120000;
 const COVERAGE_REQUEST_BYTE_LIMIT = 480 * 1024;
-const SITE_AUTO_STORAGE_KEY = "siteAutoOriginsV1";
 const GLOBAL_IGNORE_STORAGE_KEY = "globalIgnoredWordsV1";
-const COMPANION_TARGETS_STORAGE_KEY = "companionTargetsV1";
-const COMPANION_TARGET_LIMIT = 16;
 const COMPANION_WINDOW_WIDTH = 900;
 const COMPANION_WINDOW_HEIGHT = 720;
-const COVERAGE_SOURCE_KEY = "__goiCoverageSourceV1";
 const PLAYER_DOCUMENT_PATH = "player/player.html";
 const DICTIONARY_CACHE_TTL_MS = 10 * 60 * 1000;
 const DICTIONARY_CACHE_LIMIT = 200;
-const POPUP_ONLY_MESSAGES = new Set([
-  "goi.player.open",
-  "goi.connection.get",
-  "goi.connection.verify",
-  "goi.connection.save",
-  "goi.connection.disconnect",
-  "goi.connection.test",
-  "goi.site-auto.get",
-  "goi.site-auto.set",
-  "goi.site-auto.list",
-  "goi.site-auto.remove",
-  "goi.companion.open",
-  "goi.capture.outbox-status",
-  "goi.capture.outbox.retry",
-  "goi.capture.outbox.discard",
-  "goi.coverage.analyze-page"
-]);
 const captureModel = globalThis.GoiExtension.captureModel;
 const settingsModel = globalThis.GoiExtension.settingsModel;
 const runtimeRouter = globalThis.GoiExtension.runtimeRouter;
 const apiClient = globalThis.GoiExtension.apiClient;
+const automaticAnalysisModel = globalThis.GoiExtension.automaticAnalysis;
 const connectionManagerModel = globalThis.GoiExtension.connectionManager;
 const captureOutbox = globalThis.GoiExtension.captureOutbox;
 const captureDeliveryModel = globalThis.GoiExtension.captureDelivery;
@@ -62,23 +42,14 @@ const youtubeTranscriptLoader = globalThis.GoiExtension.youtubeTranscriptLoader.
   youtubeTranscriptModel
 );
 const isYouTubeVideoURL = youtubeTranscriptModel.isVideoURL;
-const selectYouTubePlayerData = youtubeTranscriptModel.selectPlayerData;
 const pendingCaptureTabs = new Set();
 const pendingCoverageTabs = new Set();
-const automaticAnalysisQueues = new Map();
-const automaticAttemptsByTab = new Map();
-const automaticCoverageByTab = new Map();
-const tabNavigationStates = new Map();
 let settingsUpdateQueue = Promise.resolve();
-let siteAutoUpdateQueue = Promise.resolve();
-let companionTargetQueue = Promise.resolve();
 let playerOpenQueue = Promise.resolve();
-const companionTargetByTab = new Map();
 const dictionaryCache = dictionaryCacheModel.create({
   ttlMs: DICTIONARY_CACHE_TTL_MS,
   limit: DICTIONARY_CACHE_LIMIT
 });
-let companionTargetsLoaded = false;
 
 const connectionManager = connectionManagerModel.create({
   chrome,
@@ -86,7 +57,7 @@ const connectionManager = connectionManagerModel.create({
   apiClient,
   fetch,
   storageKey: CONNECTION_KEY,
-  getSiteOrigins: getSiteAutoOrigins,
+  getSiteOrigins: function () { return automaticAnalysis.getOrigins(); },
   cancelRetry: cancelCaptureOutboxRetry,
   wakeOutbox: function (baseUrl) {
     return wakeCaptureOutbox(baseUrl);
@@ -97,11 +68,9 @@ const connectionManager = connectionManagerModel.create({
 });
 const protectLocalStorage = connectionManager.protectStorage;
 const getConnection = connectionManager.get;
-const getStoredConnection = connectionManager.getStored;
 const verifyConnection = connectionManager.verify;
 const saveConnection = connectionManager.save;
 const disconnectConnection = connectionManager.disconnect;
-const removePermissionSafely = connectionManager.removePermission;
 const testConnection = connectionManager.test;
 
 const captureDelivery = captureDeliveryModel.create({
@@ -116,13 +85,24 @@ const captureDelivery = captureDeliveryModel.create({
   alarmName: CAPTURE_OUTBOX_ALARM
 });
 
+const automaticAnalysis = automaticAnalysisModel.create({
+  chrome,
+  captureModel,
+  connection: connectionManager,
+  getSettings,
+  updateSettings,
+  isVideoURL: isYouTubeVideoURL,
+  isCoveragePending: function (tabId) { return pendingCoverageTabs.has(tabId); },
+  analyzeTab,
+  ensureYouTubeOverlay: ensureYouTubeOverlayScript,
+  clearBadge: clearCoverageBadge
+});
+
 function recoverQueue(operation) {
   return operation.catch(function () {
     return undefined;
   });
 }
-
-function ignoreCompanionReleaseFailure() {}
 
 function ignorePlayerNotificationFailure() {}
 
@@ -137,13 +117,13 @@ chrome.runtime.onInstalled.addListener(async function () {
     });
   });
   await runCaptureOutboxRetry(true);
-  await analyzeActiveAutomaticSite();
+  await automaticAnalysis.analyzeActive();
 });
 
 chrome.runtime.onStartup.addListener(async function () {
   await protectLocalStorage();
   await runCaptureOutboxRetry(true);
-  await analyzeActiveAutomaticSite();
+  await automaticAnalysis.analyzeActive();
 });
 
 chrome.alarms.onAlarm.addListener(function (alarm) {
@@ -194,13 +174,13 @@ chrome.commands.onCommand.addListener(async function (command) {
     }
     await captureFromTab(tab.id, { allFrames: true, fallbackSelection: "" });
   } else if (command === "toggle-youtube-overlay") {
-    const context = siteContextForTab(tab);
+    const context = automaticAnalysisModel.siteContextForTab(tab);
     if (!context || context.kind !== "youtube") {
       return;
     }
     try {
       const current = await getSettings();
-      await updateYouTubeOverlay(context, !current.overlayEnabled);
+      await automaticAnalysis.updateYouTubeOverlay(context, !current.overlayEnabled);
     } catch {}
   }
 });
@@ -211,165 +191,264 @@ if (chrome.tabs.onUpdated) {
         chrome.action && chrome.action.setBadgeText) {
       clearCoverageBadgeBestEffort(tabId);
     }
-    if (changeInfo.url && companionPageTargetID(changeInfo.url) === null) {
-      releaseCompanionTab(tabId).catch(ignoreCompanionReleaseFailure);
-    }
-    return handleAutomaticTabUpdate(tabId, changeInfo, tab);
+    return automaticAnalysis.tabUpdated(tabId, changeInfo, tab);
   });
 }
 
 if (chrome.tabs.onActivated) {
   chrome.tabs.onActivated.addListener(function (activeInfo) {
-    return scheduleAutomaticAnalysis(activeInfo.tabId);
+    return automaticAnalysis.schedule(activeInfo.tabId);
   });
 }
 
 if (chrome.tabs.onRemoved) {
   chrome.tabs.onRemoved.addListener(async function (tabId) {
-    try {
-      await releaseCompanionTab(tabId);
-    } catch {}
-    try {
-      await forgetCompanionsForTarget(tabId);
-    } catch {}
-    automaticAnalysisQueues.delete(tabId);
-    automaticAttemptsByTab.delete(tabId);
-    automaticCoverageByTab.delete(tabId);
-    tabNavigationStates.delete(tabId);
+    automaticAnalysis.tabRemoved(tabId);
   });
 }
 
-const TOP_FRAME_MESSAGES = new Set([
-  "goi.coverage.refresh",
-  "goi.coverage.closed",
-  "goi.youtube.transcript.get"
-]);
-
-const MESSAGE_HANDLERS = {
-  "goi.player.open": function () {
-    return openLocalPlayer();
-  },
-  "goi.player.connection.get": function (_message, sender) {
-    return getPlayerConnection(sender);
-  },
-  "goi.player.coverage": async function (message, sender) {
-    return { ok: true, result: await requestPlayerCoverage(message.blocks, sender) };
-  },
-  "goi.player.capture": async function (message, sender) {
-    return { ok: true, ...await captureFromPlayer(message, sender) };
-  },
-  "goi.connection.get": async function () {
-    const connection = await getConnection();
-    return {
-      ok: true,
-      connection: connection
-        ? { baseUrl: connection.baseUrl, connected: Boolean(connection.token) }
-        : { baseUrl: "", connected: false }
-    };
-  },
-  "goi.connection.verify": async function (message) {
-    const connection = await verifyConnection(message.baseUrl, message.token);
-    return { ok: true, baseUrl: connection.baseUrl };
-  },
-  "goi.connection.save": async function (message) {
-    const connection = await saveConnection(message.baseUrl, message.token);
-    return { ok: true, baseUrl: connection.baseUrl };
-  },
-  "goi.connection.disconnect": async function () {
-    await disconnectConnection();
-    return { ok: true };
-  },
-  "goi.connection.test": async function () {
-    await testConnection();
-    return { ok: true };
-  },
-  "goi.settings.get": async function () {
-    return { ok: true, settings: await getSettings() };
-  },
-  "goi.settings.patch": async function (message) {
-    return { ok: true, settings: await updateSettings(message.patch) };
-  },
-  "goi.site-auto.get": function () {
-    return getSiteAutoStatus();
-  },
-  "goi.site-auto.set": function (message) {
-    return setSiteAutoEnabled(message.enabled);
-  },
-  "goi.site-auto.list": function () {
-    return listSiteAutoOrigins();
-  },
-  "goi.site-auto.remove": function (message) {
-    return removeSiteAutoOrigin(message.origin, message.revokePermission);
-  },
-  "goi.companion.open": function (_message, sender) {
-    return openSubtitleBrowser(sender);
-  },
-  "goi.companion.session.get": function (message, sender) {
-    return getCompanionSession(message.tabId, sender, message.sinceRevision, message.sessionID);
-  },
-  "goi.companion.transcript.retry": function (message, sender) {
-    return forwardCompanionTranscriptRetry(message.tabId, sender);
-  },
-  "goi.companion.line.seek": function (message, sender) {
-    return forwardCompanionLineAction("goi.youtube.line.seek", message, sender);
-  },
-  "goi.companion.line.capture": function (message, sender) {
-    return forwardCompanionLineAction("goi.youtube.line.capture", message, sender);
-  },
-  "goi.youtube.transcript.get": function (_message, sender) {
-    return getYouTubeTranscript(sender);
-  },
-  "goi.capture.direct": async function (message, sender) {
-    return { ok: true, ...await captureDirect(message.capture, sender) };
-  },
-  "goi.capture.outbox-status": async function () {
-    return { ok: true, ...await captureOutboxStatus() };
-  },
-  "goi.capture.outbox.retry": async function () {
-    await runCaptureOutboxRetry(true);
-    return { ok: true, ...await captureOutboxStatus() };
-  },
-  "goi.capture.outbox.discard": async function () {
-    await discardCaptureOutbox();
-    return { ok: true, ...await captureOutboxStatus() };
-  },
-  "goi.coverage.analyze-page": async function () {
-    const result = await analyzeActivePage();
-    return { ok: true, summary: result.summary };
-  },
-  "goi.coverage.refresh": async function (message, sender) {
-    if (message.automatic !== true) {
-      automaticCoverageByTab.delete(sender.tab.id);
-      await markManualCoverageBestEffort(sender.tab.id);
+const MESSAGE_ROUTES = {
+  "goi.player.open": {
+    allow: popupSender,
+    handle() {
+      return openLocalPlayer();
     }
-    const result = await analyzeTab(sender.tab.id);
-    return { ok: true, summary: result.summary };
   },
-  "goi.coverage.classify": async function (message, sender) {
-    return { ok: true, result: await classifyCoverage(message.blocks, sender) };
+  "goi.player.connection.get": {
+    allow: playerSender,
+    handle(_message, sender) {
+      return getPlayerConnection(sender);
+    }
   },
-  "goi.dictionary.lookup": async function (message) {
-    return { ok: true, result: await lookupDictionary(message.expression) };
+  "goi.player.coverage": {
+    allow: playerSender,
+    async handle(message, sender) {
+      return { ok: true, result: await requestPlayerCoverage(message.blocks, sender) };
+    }
   },
-  "goi.vocabulary.known": async function (message) {
-    return { ok: true, result: await markVocabularyKnown(message.expression) };
+  "goi.player.capture": {
+    allow: playerSender,
+    async handle(message, sender) {
+      return { ok: true, ...await captureFromPlayer(message, sender) };
+    }
   },
-  "goi.translation.remote": async function (message) {
-    return { ok: true, result: await translateRemotely(message.text) };
+  "goi.connection.get": {
+    allow: popupSender,
+    async handle() {
+      const connection = await getConnection();
+      return {
+        ok: true,
+        connection: connection
+          ? { baseUrl: connection.baseUrl, connected: Boolean(connection.token) }
+          : { baseUrl: "", connected: false }
+      };
+    }
   },
-  "goi.coverage.ignore.list": async function () {
-    return { ok: true, words: Array.from(await getGlobalIgnoredWords()).sort() };
+  "goi.connection.verify": {
+    allow: popupSender,
+    async handle(message) {
+      const connection = await verifyConnection(message.baseUrl, message.token);
+      return { ok: true, baseUrl: connection.baseUrl };
+    }
   },
-  "goi.coverage.ignore.add": async function (message) {
-    return { ok: true, words: await addGlobalIgnoredWord(message.word) };
+  "goi.connection.save": {
+    allow: popupSender,
+    async handle(message) {
+      const connection = await saveConnection(message.baseUrl, message.token);
+      return { ok: true, baseUrl: connection.baseUrl };
+    }
   },
-  "goi.coverage.ignore.remove": async function (message) {
-    return { ok: true, words: await removeGlobalIgnoredWord(message.word) };
+  "goi.connection.disconnect": {
+    allow: popupSender,
+    async handle() {
+      await disconnectConnection();
+      return { ok: true };
+    }
   },
-  "goi.coverage.closed": async function (_message, sender) {
-    automaticCoverageByTab.delete(sender.tab.id);
-    await clearCoverageBadge(sender.tab.id);
-    return { ok: true };
+  "goi.connection.test": {
+    allow: popupSender,
+    async handle() {
+      await testConnection();
+      return { ok: true };
+    }
+  },
+  "goi.settings.get": {
+    async handle() {
+      return { ok: true, settings: await getSettings() };
+    }
+  },
+  "goi.settings.patch": {
+    async handle(message) {
+      return { ok: true, settings: await updateSettings(message.patch) };
+    }
+  },
+  "goi.site-auto.get": {
+    allow: popupSender,
+    handle() {
+      return automaticAnalysis.getStatus();
+    }
+  },
+  "goi.site-auto.set": {
+    allow: popupSender,
+    handle(message) {
+      return automaticAnalysis.setEnabled(message.enabled);
+    }
+  },
+  "goi.site-auto.list": {
+    allow: popupSender,
+    handle() {
+      return automaticAnalysis.listOrigins();
+    }
+  },
+  "goi.site-auto.remove": {
+    allow: popupSender,
+    handle(message) {
+      return automaticAnalysis.removeOrigin(message.origin, message.revokePermission);
+    }
+  },
+  "goi.companion.open": {
+    allow: companionOpenSender,
+    handle(_message, sender) {
+      return openSubtitleBrowser(sender);
+    }
+  },
+  "goi.companion.session.get": {
+    allow: companionSender,
+    handle(message, sender) {
+      return getCompanionSession(message.tabId, sender, message.sinceRevision, message.sessionID);
+    }
+  },
+  "goi.companion.transcript.retry": {
+    allow: companionSender,
+    handle(message, sender) {
+      return forwardCompanionTranscriptRetry(message.tabId, sender);
+    }
+  },
+  "goi.companion.line.seek": {
+    allow: companionSender,
+    handle(message, sender) {
+      return forwardCompanionLineAction("goi.youtube.line.seek", message, sender);
+    }
+  },
+  "goi.companion.line.capture": {
+    allow: companionSender,
+    handle(message, sender) {
+      return forwardCompanionLineAction("goi.youtube.line.capture", message, sender);
+    }
+  },
+  "goi.youtube.transcript.get": {
+    allow: topFrameSender,
+    handle(_message, sender) {
+      return getYouTubeTranscript(sender);
+    }
+  },
+  "goi.capture.direct": {
+    async handle(message, sender) {
+      return { ok: true, ...await captureDirect(message.capture, sender) };
+    }
+  },
+  "goi.capture.outbox-status": {
+    allow: popupSender,
+    async handle() {
+      return { ok: true, ...await captureOutboxStatus() };
+    }
+  },
+  "goi.capture.outbox.retry": {
+    allow: popupSender,
+    async handle() {
+      await runCaptureOutboxRetry(true);
+      return { ok: true, ...await captureOutboxStatus() };
+    }
+  },
+  "goi.capture.outbox.discard": {
+    allow: popupSender,
+    async handle() {
+      await discardCaptureOutbox();
+      return { ok: true, ...await captureOutboxStatus() };
+    }
+  },
+  "goi.coverage.analyze-page": {
+    allow: popupSender,
+    async handle() {
+      const result = await analyzeActivePage();
+      return { ok: true, summary: result.summary };
+    }
+  },
+  "goi.coverage.refresh": {
+    allow: topFrameSender,
+    async handle(message, sender) {
+      if (message.automatic !== true) {
+        await automaticAnalysis.markManualCoverage(sender.tab.id);
+      }
+      const result = await analyzeTab(sender.tab.id);
+      return { ok: true, summary: result.summary };
+    }
+  },
+  "goi.coverage.panel.get": {
+    allow: webPageSender,
+    async handle(message, sender) {
+      const key = panelPreferenceKey(message, sender);
+      const stored = await chrome.storage.local.get(key);
+      return { ok: true, preference: panelPreference(stored[key]) };
+    }
+  },
+  "goi.coverage.panel.update": {
+    allow: webPageSender,
+    async handle(message, sender) {
+      const preference = message.preference;
+      if (!preference || typeof preference.collapsed !== "boolean" ||
+          !["bottom-right", "bottom-left", "top-left", "top-right"].includes(preference.corner) ||
+          Object.keys(preference).some(function (key) { return key !== "collapsed" && key !== "corner"; })) {
+        const error = new Error("Invalid reading panel preferences");
+        error.status = 422;
+        throw error;
+      }
+      const key = panelPreferenceKey(message, sender);
+      await chrome.storage.local.set({ [key]: panelPreference(preference) });
+      return { ok: true };
+    }
+  },
+  "goi.coverage.classify": {
+    async handle(message, sender) {
+      return { ok: true, result: await classifyCoverage(message.blocks, sender) };
+    }
+  },
+  "goi.dictionary.lookup": {
+    async handle(message) {
+      return { ok: true, result: await lookupDictionary(message.expression) };
+    }
+  },
+  "goi.vocabulary.known": {
+    async handle(message) {
+      return { ok: true, result: await markVocabularyKnown(message.expression) };
+    }
+  },
+  "goi.translation.remote": {
+    async handle(message) {
+      return { ok: true, result: await translateRemotely(message.text) };
+    }
+  },
+  "goi.coverage.ignore.list": {
+    async handle() {
+      return { ok: true, words: Array.from(await getGlobalIgnoredWords()).sort() };
+    }
+  },
+  "goi.coverage.ignore.add": {
+    async handle(message) {
+      return { ok: true, words: await addGlobalIgnoredWord(message.word) };
+    }
+  },
+  "goi.coverage.ignore.remove": {
+    async handle(message) {
+      return { ok: true, words: await removeGlobalIgnoredWord(message.word) };
+    }
+  },
+  "goi.coverage.closed": {
+    allow: topFrameSender,
+    async handle(_message, sender) {
+      await automaticAnalysis.coverageClosed(sender.tab.id);
+      return { ok: true };
+    }
   }
 };
 
@@ -394,10 +473,7 @@ function runtimeMessageError(type, error) {
 
 const handleRuntimeMessage = runtimeRouter.create({
   runtimeID: chrome.runtime.id,
-  handlers: MESSAGE_HANDLERS,
-  popupOnly: POPUP_ONLY_MESSAGES,
-  topFrameOnly: TOP_FRAME_MESSAGES,
-  popupSender,
+  routes: MESSAGE_ROUTES,
   errorResponse: runtimeMessageError
 });
 
@@ -406,24 +482,6 @@ chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 function cancelCaptureOutboxRetry() {
   captureDelivery.cancel();
   dictionaryCache.clear();
-}
-
-async function removeSitePermissionSafely(pattern) {
-  try {
-    const origins = await getSiteAutoOrigins();
-    for (const origin of origins) {
-      if (captureModel.permissionPattern(origin) === pattern) {
-        return;
-      }
-    }
-    const connection = await getStoredConnection();
-    if (connection && captureModel.permissionPattern(connection.baseUrl) === pattern) {
-      return;
-    }
-  } catch (_error) {
-    return;
-  }
-  await removePermissionSafely(pattern);
 }
 
 async function getSettings() {
@@ -442,70 +500,15 @@ function updateSettings(patch) {
   return update;
 }
 
-function unavailableSiteStatus(ok, errorCode) {
-  const status = {
-    ok,
-    available: false,
-    enabled: false,
-    kind: "unavailable",
-    origin: "",
-    permissionPattern: ""
-  };
-  if (errorCode) {
-    status.errorCode = errorCode;
-  }
-  return status;
-}
-
 function siteAutoErrorResponse(error) {
   const errorCode = error && error.code === "permission_required"
     ? "permission_required"
     : captureModel.classifyAPIError(error);
-  return unavailableSiteStatus(false, errorCode);
-}
-
-function siteContextForTab(tab) {
-  if (!tab || !Number.isInteger(tab.id) || typeof tab.url !== "string") {
-    return null;
-  }
-  let pageURL;
-  try {
-    pageURL = new URL(tab.url);
-  } catch (_error) {
-    return null;
-  }
-  if (pageURL.protocol !== "https:" && pageURL.protocol !== "http:") {
-    return null;
-  }
-  const permissionPattern = pageURL.protocol + "//" + pageURL.hostname + "/*";
-  return {
-    tabId: tab.id,
-    url: pageURL.href,
-    origin: pageURL.origin,
-    permissionPattern,
-    kind: pageURL.protocol === "https:" && pageURL.hostname === "www.youtube.com"
-      ? "youtube"
-      : "web"
-  };
+  return automaticAnalysisModel.unavailableSiteStatus(false, errorCode);
 }
 
 async function getYouTubeTranscript(sender) {
   return youtubeTranscriptLoader.get(sender);
-}
-
-function publicSiteStatus(context, enabled) {
-  const status = {
-    ok: true,
-    available: true,
-    enabled: Boolean(enabled),
-    kind: context.kind,
-    origin: context.origin,
-    permissionPattern: context.permissionPattern
-  };
-  if (context.kind === "youtube") {
-    status.videoAvailable = isYouTubeVideoURL(context.url);
-  }
-  return status;
 }
 
 async function getActiveTab() {
@@ -517,6 +520,43 @@ function extensionPageURL(path) {
   return chrome.runtime.getURL
     ? chrome.runtime.getURL(path)
     : "chrome-extension://" + chrome.runtime.id + "/" + path;
+}
+
+function panelPreferenceKey(message, sender) {
+  const fields = message.type === "goi.coverage.panel.update"
+    ? ["type", "version", "preference"] : ["type", "version"];
+  if (Object.keys(message).some(function (key) { return !fields.includes(key); })) {
+    const error = new Error("Invalid reading panel request");
+    error.status = 422;
+    throw error;
+  }
+  return "goiCoveragePanel:" + new URL(sender.url).origin;
+}
+
+function panelPreference(value) {
+  const preference = value && typeof value === "object" ? value : {};
+  return {
+    collapsed: preference.collapsed !== false,
+    corner: ["bottom-right", "bottom-left", "top-left", "top-right"].includes(preference.corner)
+      ? preference.corner : "bottom-right"
+  };
+}
+
+function topFrameSender(sender) {
+  return Boolean(sender && sender.tab && sender.frameId === 0);
+}
+
+function webPageSender(sender) {
+  if (!topFrameSender(sender) || !Number.isSafeInteger(sender.tab.id) || sender.tab.id <= 0) {
+    return false;
+  }
+  const origin = automaticAnalysisModel.normalizeSiteOrigin(sender.url);
+  return Boolean(origin) && origin === automaticAnalysisModel.normalizeSiteOrigin(sender.tab.url);
+}
+
+function companionOpenSender(sender) {
+  return popupSender(sender) || (webPageSender(sender) &&
+    isYouTubeVideoURL(sender.url) && isYouTubeVideoURL(sender.tab.url));
 }
 
 function popupSender(sender) {
@@ -912,14 +952,11 @@ function validateCoverageBlocks(blocks) {
   return safeBlocks;
 }
 
-const isRetryableCaptureError = captureOutbox.isRetryableError;
 const deliverCapture = captureDelivery.deliver;
 const runCaptureOutboxRetry = captureDelivery.runRetry;
 const scheduleFallbackCaptureRetry = captureDelivery.scheduleFallbackRetry;
 const captureOutboxStatus = captureDelivery.status;
 const discardCaptureOutbox = captureDelivery.discard;
-const enqueueCapture = captureDelivery.enqueue;
-const retryCaptureOutbox = captureDelivery.retry;
 const wakeCaptureOutbox = captureDelivery.wake;
 
 function makeNonce() {
@@ -996,23 +1033,11 @@ async function ensureYouTubeOverlayScript(tabId) {
   if (states[0] && states[0].result) {
     return;
   }
-  await chrome.scripting.insertCSS({
-    target,
-    files: ["content/capture-content.css", "shared/dictionary-view.css", "youtube/overlay.css"]
+  const bundle = chrome.runtime.getManifest().content_scripts.find(function (entry) {
+    return entry.js && entry.js.includes("youtube/overlay.js");
   });
-  await chrome.scripting.executeScript({
-    target,
-    files: [
-      "shared/capture-model.js",
-      "shared/settings-model.js",
-      "shared/caption-model.js",
-      "shared/subtitle-model.js",
-      "shared/dictionary-view.js",
-      "shared/subtitle-file-model.js",
-      "content/capture-content.js",
-      "youtube/overlay.js"
-    ]
-  });
+  await chrome.scripting.insertCSS({ target, files: bundle.css });
+  await chrome.scripting.executeScript({ target, files: bundle.js });
 }
 
 async function analyzeActivePage() {
@@ -1023,8 +1048,7 @@ async function analyzeActivePage() {
     error.status = 400;
     throw error;
   }
-  automaticCoverageByTab.delete(tab.id);
-  await markManualCoverageBestEffort(tab.id);
+  await automaticAnalysis.markManualCoverage(tab.id);
   return analyzeTab(tab.id);
 }
 

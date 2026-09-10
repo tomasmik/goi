@@ -129,6 +129,7 @@ func TestRequestBodyLimitUsesRouteSpecificLimits(t *testing.T) {
 		want int64
 	}{
 		{path: "/imports/anki/upload", want: appimports.MaxArchiveBytes + 10<<20},
+		{path: "/imports/text", want: appimports.TextImportBodyLimit},
 		{path: "/vocabulary", want: vocabularyRequestBodyLimit},
 		{path: "/vocabulary/known", want: vocabulary.KnownWordsBodyLimit},
 		{path: "/vocabulary/42", want: vocabularyRequestBodyLimit},
@@ -160,6 +161,25 @@ func TestRequestBodyLimitUsesRouteSpecificLimits(t *testing.T) {
 	}
 }
 
+func TestTextImportBodyLimitAllowsLargeForm(t *testing.T) {
+	data := strings.Repeat("x", 1536<<10)
+	request := httptest.NewRequest(http.MethodPost, "/imports/text", strings.NewReader("data="+data))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	limitRequestBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("parse text import below its body limit: %v", err)
+		}
+		if r.FormValue("data") != data {
+			t.Fatal("text import data was truncated")
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("response status = %d", response.Code)
+	}
+}
+
 func TestRequestTimeoutUsesRouteSpecificDurations(t *testing.T) {
 	tests := []struct {
 		method string
@@ -167,7 +187,12 @@ func TestRequestTimeoutUsesRouteSpecificDurations(t *testing.T) {
 		want   time.Duration
 	}{
 		{method: http.MethodGet, path: "/dashboard", want: defaultRequestTimeout},
-		{method: http.MethodPost, path: "/api/extension/v1/translate", want: translationRequestTimeout},
+		{method: http.MethodPost, path: "/api/extension/v1/translate", want: providerRequestTimeout},
+		{method: http.MethodPost, path: "/mining/captures/42/generate", want: providerRequestTimeout},
+		{method: http.MethodPost, path: "/mining/captures/42/translate", want: providerRequestTimeout},
+		{method: http.MethodPost, path: "/settings/examples/test", want: providerTestRequestTimeout},
+		{method: http.MethodGet, path: "/settings/examples/test", want: defaultRequestTimeout},
+		{method: http.MethodPost, path: "/mining/captures/42/extra/translate", want: defaultRequestTimeout},
 		{method: http.MethodPost, path: "/vocabulary", want: mediaRequestTimeout},
 		{method: http.MethodPost, path: "/vocabulary/42", want: mediaRequestTimeout},
 		{method: http.MethodPost, path: "/api/extension/v1/captures/42/media", want: mediaRequestTimeout},

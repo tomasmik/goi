@@ -11,30 +11,25 @@
   "use strict";
 
   function create(options) {
-    const handlers = options.handlers;
-    const popupOnly = options.popupOnly || new Set();
-    const topFrameOnly = options.topFrameOnly || new Set();
+    const routes = options.routes;
 
     return function handleRuntimeMessage(message, sender, sendResponse) {
       if (!message || message.version !== 1 || !sender || sender.id !== options.runtimeID) {
         return false;
       }
       if (typeof message.type !== "string" ||
-          !Object.prototype.hasOwnProperty.call(handlers, message.type)) {
+          !Object.prototype.hasOwnProperty.call(routes, message.type)) {
         return false;
       }
-      if (popupOnly.has(message.type) && !options.popupSender(sender)) {
-        sendResponse({ ok: false, errorCode: "unavailable_page" });
-        return false;
-      }
-      if (topFrameOnly.has(message.type) && (!sender.tab || sender.frameId !== 0)) {
+      const route = routes[message.type];
+      if (route.allow && !route.allow(sender)) {
         sendResponse({ ok: false, errorCode: "unavailable_page" });
         return false;
       }
 
       Promise.resolve()
         .then(function () {
-          return handlers[message.type](message, sender);
+          return route.handle(message, sender);
         })
         .then(sendResponse)
         .catch(function (error) {

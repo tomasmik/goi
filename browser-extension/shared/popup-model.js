@@ -70,18 +70,6 @@
     }
   }
 
-  async function updateSetting(key, previousValue, nextValue, save) {
-    const response = await callSafely(function () {
-      return save({ [key]: nextValue });
-    });
-    if (!response.ok) {
-      return { ok: false, value: previousValue, response };
-    }
-    const value = response.settings && Object.prototype.hasOwnProperty.call(response.settings, key)
-      ? response.settings[key]
-      : nextValue;
-    return { ok: true, value, response };
-  }
 
   function connectionTestStatus(response) {
     const result = response && typeof response === "object" ? response : {};
@@ -123,6 +111,5 @@
     callSafely,
     connectionTestStatus,
     saveConnection,
-    updateSetting,
   };
 });

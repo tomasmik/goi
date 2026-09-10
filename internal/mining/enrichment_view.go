@@ -8,16 +8,17 @@ import (
 )
 
 type EnrichmentView struct {
-	State         EnrichmentState
-	Heading       string
-	Message       string
-	SourceCreated string
-	SourceVersion string
-	Candidates    []CandidateView
+	State          EnrichmentState
+	Heading        string
+	Message        string
+	SourceCreated  string
+	SourceVersion  string
+	Candidates     []CandidateView
+	StaleCandidate bool
 }
 
 type CandidateView struct {
-	ID                   int64
+	ID                   string
 	Revision             int64
 	Written              string
 	Pronunciation        string
@@ -62,24 +63,31 @@ func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) 
 		view.Heading = "Dictionary unavailable"
 		view.Message = "Enter the reading and meaning below."
 	}
-	selectedCandidateID := int64(0)
-	for index, candidate := range enrichment.Candidates {
+	selectedCandidateID := ""
+	for _, candidate := range enrichment.Candidates {
 		if capture.SuggestedEntrySequence != nil && candidate.EntrySequence == *capture.SuggestedEntrySequence {
-			selectedCandidateID = int64(index + 1)
+			selectedCandidateID = candidateID(candidate)
 			break
 		}
 	}
-	if selectedCandidateID == 0 && len(enrichment.Candidates) > 0 {
-		selectedCandidateID = 1
+	if selectedCandidateID == "" && len(enrichment.Candidates) > 0 {
+		selectedCandidateID = candidateID(enrichment.Candidates[0])
 	}
-	if form.submitted && form.candidateID != 0 {
-		selectedCandidateID = form.candidateID
+	if form.submitted && form.candidateID != "" {
+		view.StaleCandidate = true
+		for _, candidate := range enrichment.Candidates {
+			if candidateID(candidate) == form.candidateID {
+				selectedCandidateID = form.candidateID
+				view.StaleCandidate = false
+				break
+			}
+		}
 	}
-	for index, candidate := range enrichment.Candidates {
-		candidateID := int64(index + 1)
+	for _, candidate := range enrichment.Candidates {
+		id := candidateID(candidate)
 		meanings := candidateMeanings(candidate)
 		candidateView := CandidateView{
-			ID:              candidateID,
+			ID:              id,
 			Revision:        capture.Revision,
 			Written:         candidate.Written,
 			Pronunciation:   candidate.Reading,
@@ -89,7 +97,7 @@ func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) 
 			PartsOfSpeech:   strings.Join(candidatePartsOfSpeech(candidate), " · "),
 			ExampleSentence: capture.ContextText,
 			ExampleTarget:   capture.RawText,
-			Selected:        candidateID == selectedCandidateID,
+			Selected:        id == selectedCandidateID,
 		}
 		candidateView.GlobalRank, candidateView.GlobalRankLabel = frequencyBadge("Global", candidate.GlobalRank)
 		candidateView.NovelRank, candidateView.NovelRankLabel = frequencyBadge("Novel", candidate.NovelRank)
@@ -99,7 +107,7 @@ func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) 
 		if candidateView.Written == "" {
 			candidateView.Written = capture.Expression
 		}
-		if form.submitted && form.candidateID == candidateID {
+		if form.submitted && form.candidateID == id {
 			candidateView.Revision = form.revision
 			candidateView.Pronunciation = form.pronunciation
 			candidateView.Meanings = form.meanings

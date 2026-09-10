@@ -270,26 +270,23 @@
     const start = format === "webvtt" ? webVTTContentStart(lines) : 0;
     const blocks = splitBlocks(lines, start);
     const timestampParser = format === "webvtt" ? webVTTCue : srtCue;
-    const seen = new Set();
+    return finishCues(blocks.filter(function (block) {
+      return format !== "webvtt" || !reservedWebVTTBlock(block);
+    }).map(timestampParser));
+  }
+
+  function finishCues(source) {
     const cues = [];
+    const seen = new Set();
     let duplicateCueCount = 0;
     let skippedCueCount = 0;
-    let sourceCueCount = 0;
     let validCueCount = 0;
     let totalCharacters = 0;
-
-    blocks.forEach(function (block) {
-      if (format === "webvtt" && reservedWebVTTBlock(block)) {
-        return;
-      }
-      const sourceOrder = sourceCueCount;
-      sourceCueCount += 1;
-      const cue = timestampParser(block);
+    source.forEach(function (cue, sourceOrder) {
       if (!cue) {
         skippedCueCount += 1;
         return;
       }
-
       validCueCount += 1;
       if (validCueCount > LIMITS.validCues) {
         throw subtitleError("too_many_cues", "Subtitle files may contain at most 5,000 valid cues.");
@@ -304,26 +301,19 @@
       if (totalCharacters > LIMITS.totalCharacters) {
         throw subtitleError("transcript_too_large", "Subtitle dialogue may contain at most 500,000 characters.");
       }
-
       const duplicateKey = cue.startMs + "\u0000" + cue.endMs + "\u0000" + cue.text;
       if (seen.has(duplicateKey)) {
         duplicateCueCount += 1;
         return;
       }
       seen.add(duplicateKey);
-      cues.push({
-        sourceOrder: sourceOrder,
-        startMs: cue.startMs,
-        endMs: cue.endMs,
-        text: cue.text,
-      });
+      cues.push({ ...cue, sourceOrder: sourceOrder });
     });
-
     return {
       cues: cues,
       duplicateCueCount: duplicateCueCount,
       skippedCueCount: skippedCueCount,
-      sourceCueCount: sourceCueCount,
+      sourceCueCount: source.length,
       validCueCount: validCueCount,
       totalCharacters: totalCharacters,
     };
@@ -382,47 +372,7 @@
         }
       }
     });
-    const cues = [];
-    const seen = new Set();
-    let duplicateCueCount = 0;
-    let skippedCueCount = 0;
-    let validCueCount = 0;
-    let totalCharacters = 0;
-    source.forEach(function (cue, sourceOrder) {
-      if (!cue) {
-        skippedCueCount += 1;
-        return;
-      }
-      validCueCount += 1;
-      if (validCueCount > LIMITS.validCues) {
-        throw subtitleError("too_many_cues", "Subtitle files may contain at most 5,000 valid cues.");
-      }
-      const cueCharacters = unicodeLength(cue.text);
-      if (cueCharacters > LIMITS.cueCharacters) {
-        throw subtitleError("cue_too_long", "Each subtitle cue may contain at most 2,000 characters.", {
-          sourceOrder: sourceOrder,
-        });
-      }
-      totalCharacters += cueCharacters;
-      if (totalCharacters > LIMITS.totalCharacters) {
-        throw subtitleError("transcript_too_large", "Subtitle dialogue may contain at most 500,000 characters.");
-      }
-      const duplicateKey = cue.startMs + "\u0000" + cue.endMs + "\u0000" + cue.text;
-      if (seen.has(duplicateKey)) {
-        duplicateCueCount += 1;
-        return;
-      }
-      seen.add(duplicateKey);
-      cues.push({ ...cue, sourceOrder: sourceOrder });
-    });
-    return {
-      cues: cues,
-      duplicateCueCount: duplicateCueCount,
-      skippedCueCount: skippedCueCount,
-      sourceCueCount: source.length,
-      validCueCount: validCueCount,
-      totalCharacters: totalCharacters,
-    };
+    return finishCues(source);
   }
 
   function nonnegativeSafeInteger(value, fallback, name) {

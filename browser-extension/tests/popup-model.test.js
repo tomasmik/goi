@@ -6,7 +6,6 @@ const {
   callSafely,
   connectionTestStatus,
   saveConnection,
-  updateSetting,
 } = require("../shared/popup-model.js");
 
 function fakeOperations(overrides) {
@@ -212,28 +211,6 @@ test("turns rejected and malformed extension actions into recoverable results", 
   assert.deepEqual(await callSafely(async function () {
     return { ok: false, error: "Rejected" };
   }), { ok: false, error: "Rejected" });
-});
-
-test("restores the previous setting when persistence rejects", async function () {
-  const result = await updateSetting("fontSizePx", 34, 48, async function () {
-    throw new Error("Message port closed");
-  });
-
-  assert.equal(result.ok, false);
-  assert.equal(result.value, 34);
-  assert.equal(result.response.unavailable, true);
-});
-
-test("uses the stored setting value returned by the worker", async function () {
-  let savedPatch;
-  const result = await updateSetting("fontSizePx", 34, 100, async function (patch) {
-    savedPatch = patch;
-    return { ok: true, settings: { fontSizePx: 96 } };
-  });
-
-  assert.deepEqual(savedPatch, { fontSizePx: 100 });
-  assert.equal(result.ok, true);
-  assert.equal(result.value, 96);
 });
 
 test("reports connection-test failures by their worker error code", () => {

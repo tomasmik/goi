@@ -1291,6 +1291,7 @@ func TestReviewUndoDoesNotReopenAlongsideAnotherStandaloneSession(t *testing.T) 
 func TestLessonReviewUndoRequiresCurrentLessonLink(t *testing.T) {
 	ctx, db := openReviewTestDatabase(t)
 	vocabularyID := insertUnlearnedReviewVocabulary(t, db, "食べる")
+	secondID := insertUnlearnedReviewVocabulary(t, db, "食べ物")
 	now := time.Now().UTC().Unix()
 	lessonResult, err := db.Exec(`
 		INSERT INTO lesson_sessions (status, phase)
@@ -1309,12 +1310,27 @@ func TestLessonReviewUndoRequiresCurrentLessonLink(t *testing.T) {
 		VALUES (?, ?, 0, 0, ?)`, lessonID, vocabularyID, now); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`INSERT INTO lesson_session_items (session_id, vocabulary_id, position, batch_number, study_viewed_at)
+		VALUES (?, ?, 1, 0, ?)`, lessonID, secondID, now); err != nil {
+		t.Fatal(err)
+	}
 	store := NewStore(db)
-	reviewID, err := store.StartLesson(ctx, lessonID, []int64{vocabularyID})
+	reviewID, err := store.StartLesson(ctx, lessonID, []int64{vocabularyID, secondID})
 	if err != nil {
 		t.Fatal(err)
 	}
-	completeCurrentItem(t, ctx, store, reviewID)
+	for {
+		state, err := store.State(ctx, reviewID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if state.UndoAvailable {
+			break
+		}
+		if _, err := store.Answer(ctx, reviewID, state.PromptID, answerForState(state)); err != nil {
+			t.Fatal(err)
+		}
+	}
 	state, err := store.State(ctx, reviewID)
 	if err != nil {
 		t.Fatal(err)
@@ -1327,15 +1343,6 @@ func TestLessonReviewUndoRequiresCurrentLessonLink(t *testing.T) {
 	}
 	completeCurrentItem(t, ctx, store, reviewID)
 
-	if _, err := db.Exec(`
-		UPDATE lesson_sessions
-		SET status = 'completed'
-		WHERE id = ?`, lessonID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("UPDATE vocabulary SET status = 'active' WHERE id = ?", vocabularyID); err != nil {
-		t.Fatal(err)
-	}
 	state, err = store.State(ctx, reviewID)
 	if err != nil {
 		t.Fatal(err)

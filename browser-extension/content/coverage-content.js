@@ -10,7 +10,6 @@
   const MAX_BLOCKS = 1000;
   const MAX_BLOCK_CHARACTERS = 18000;
   const MAX_CHARACTERS = 120000;
-  const PANEL_STORAGE_PREFIX = "goiCoveragePanel:";
   const PANEL_CORNERS = ["bottom-right", "bottom-left", "top-left", "top-right"];
   const JAPANESE = /[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff]/u;
   const EXCLUDED = [
@@ -66,10 +65,6 @@
 
   function ignorePanelPreferenceWriteFailure() {}
 
-  function panelStorageKey() {
-    return PANEL_STORAGE_PREFIX + String(location.origin || location.href);
-  }
-
   function applyPanelPreference(collapseButton, preference) {
     const corner = PANEL_CORNERS.includes(preference.corner) ? preference.corner : PANEL_CORNERS[0];
     const collapsed = preference.collapsed !== false;
@@ -79,38 +74,26 @@
     collapseButton.setAttribute("aria-label", collapsed ? "Show reading controls" : "Hide reading controls");
   }
 
-  async function storedPanelPreference(key) {
-    try {
-      return await chrome.storage.local.get(key);
-    } catch (_error) {
-      return {};
-    }
-  }
-
   async function loadPanelPreference(collapseButton) {
-    if (!chrome.storage || !chrome.storage.local) {
-      return;
-    }
     const revision = panelPreferenceRevision;
-    const key = panelStorageKey();
-    const stored = await storedPanelPreference(key);
-    if (revision === panelPreferenceRevision && stored[key]) {
-      applyPanelPreference(collapseButton, stored[key]);
-    }
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "goi.coverage.panel.get", version: 1 });
+      if (revision === panelPreferenceRevision && response && response.ok && response.preference) {
+        applyPanelPreference(collapseButton, response.preference);
+      }
+    } catch (_error) {}
   }
 
   function savePanelPreference(collapseButton) {
-    if (!chrome.storage || !chrome.storage.local) {
-      return;
-    }
     panelPreferenceRevision += 1;
-    const key = panelStorageKey();
-    const value = {
+    const preference = {
       collapsed: panel.classList.contains("goi-ext-coverage--collapsed"),
       corner: panel.dataset.goiCorner || PANEL_CORNERS[0]
     };
-    chrome.storage.local.set({ [key]: value }).catch(ignorePanelPreferenceWriteFailure);
-    applyPanelPreference(collapseButton, value);
+    applyPanelPreference(collapseButton, preference);
+    chrome.runtime.sendMessage({
+      type: "goi.coverage.panel.update", version: 1, preference
+    }).catch(ignorePanelPreferenceWriteFailure);
   }
 
   function rootForPage() {

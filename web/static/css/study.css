@@ -460,13 +460,6 @@
   text-transform: uppercase;
 }
 
-.viewed-badge {
-  padding: .2rem .5rem;
-  border-radius: 999px;
-  color: #d7f3e2;
-  background: rgba(80, 195, 140, .18);
-}
-
 .lesson-expression {
   display: grid;
   min-height: clamp(220px, 34vh, 300px);
@@ -705,11 +698,6 @@
 
 .lesson-nav-button {
   min-width: 130px;
-}
-
-.lesson-hint {
-  color: var(--muted);
-  font-size: .82rem;
 }
 
 .review-subject {
@@ -1046,11 +1034,6 @@
 
 .review-answer-options form {
   margin: 0;
-}
-
-.review-correct-answer-title {
-  margin: .25rem 0 .7rem;
-  font-size: 1rem;
 }
 
 .correction-sections {

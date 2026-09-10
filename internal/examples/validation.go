@@ -30,6 +30,11 @@ type validatedInput struct {
 	model            string
 }
 
+func Validate(input Input) error {
+	_, err := validateInput(input)
+	return err
+}
+
 func validateInput(input Input) (validatedInput, error) {
 	origin := input.Origin
 	if origin == "" {

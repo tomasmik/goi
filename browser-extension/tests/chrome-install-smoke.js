@@ -72,6 +72,9 @@ test("Chrome installs the extension and runs local video and YouTube flows", {
     }
   });
 
+  // This tab exists before installation, so only worker recovery can inject it.
+  const youtubeFixture = await prepareYouTube(devTools);
+  await devTools.send("Target.createTarget", { url: "about:blank" });
   const installed = await devTools.send("Extensions.loadUnpacked", {
     path: extensionDirectory,
   });
@@ -120,7 +123,7 @@ test("Chrome installs the extension and runs local video and YouTube flows", {
   }), true, `Goi service worker was not running. Chrome output:\n${chromeErrors}`);
 
   await exerciseLocalPlayer(devTools, installed.id, attached.sessionId, goiFixture);
-  await exerciseYouTube(devTools, installed.id, attached.sessionId, goiFixture);
+  await exerciseYouTube(devTools, installed.id, attached.sessionId, goiFixture, youtubeFixture);
   await exerciseReaderPage(devTools, installed.id, attached.sessionId, goiFixture);
 });
 
@@ -700,7 +703,7 @@ async function exerciseLocalPlayer(devTools, extensionID, popupSessionID, goiFix
   assert.equal(enabledYouTubeFurigana.result.value.settings.furiganaEnabled, true);
 }
 
-async function exerciseYouTube(devTools, extensionID, popupSessionID, goiFixture) {
+async function prepareYouTube(devTools) {
   const youtubeTarget = await devTools.send("Target.createTarget", { url: "about:blank" });
   const youtubeSession = await devTools.send("Target.attachToTarget", {
     targetId: youtubeTarget.targetId,
@@ -821,6 +824,30 @@ async function exerciseYouTube(devTools, extensionID, popupSessionID, goiFixture
   await devTools.send("Page.navigate", {
     url: "https://www.youtube.com/watch?v=goi-extension-smoke",
   }, youtubeSession.sessionId);
+  await waitForDocumentReady(devTools, youtubeSession.sessionId);
+  return {
+    youtubeTarget, youtubeSession, removeFixtureHandler,
+    get transcriptPanelRequests() { return transcriptPanelRequests; },
+    get timedTextRequests() { return timedTextRequests; },
+  };
+}
+
+async function exerciseYouTube(devTools, extensionID, popupSessionID, goiFixture, fixture) {
+  const { youtubeTarget, youtubeSession, removeFixtureHandler } = fixture;
+  const beforeRecovery = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      const tabs = await chrome.tabs.query({url: "https://www.youtube.com/watch?v=goi-extension-smoke"});
+      const results = await chrome.scripting.executeScript({
+        target: {tabId: tabs[0].id, frameIds: [0]},
+        func: function () { return Boolean(globalThis.GoiYouTubeOverlay); }
+      });
+      return results[0].result;
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, popupSessionID);
+  assert.equal(beforeRecovery.result.value, false, "The pre-install tab must exercise recovery injection");
+  await devTools.send("Target.activateTarget", { targetId: youtubeTarget.targetId });
   const youtubeOverlay = await waitForYouTubeOverlay(devTools, youtubeSession.sessionId);
   removeFixtureHandler();
   assert.deepEqual(youtubeOverlay, {
@@ -837,8 +864,8 @@ async function exerciseYouTube(devTools, extensionID, popupSessionID, goiFixture
       coversKanjiOnly: true,
     },
   });
-  assert.equal(transcriptPanelRequests, 2);
-  assert.equal(timedTextRequests, 0);
+  assert.equal(fixture.transcriptPanelRequests, 2);
+  assert.equal(fixture.timedTextRequests, 0);
 
   const youtubeWord = await inspectAndCaptureYouTubeWord(devTools, youtubeSession.sessionId, goiFixture);
   assert.deepEqual(youtubeWord, {
@@ -850,12 +877,9 @@ async function exerciseYouTube(devTools, extensionID, popupSessionID, goiFixture
   });
 
   await devTools.send("Target.activateTarget", { targetId: youtubeTarget.targetId });
-  const openedCompanion = await devTools.send("Runtime.evaluate", {
-    expression: `chrome.runtime.sendMessage({type: "goi.companion.open", version: 1})`,
-    awaitPromise: true,
-    returnByValue: true,
-  }, popupSessionID);
-  assert.equal(openedCompanion.result.value.ok, true);
+  await devTools.send("Runtime.evaluate", {
+    expression: `document.querySelector('[aria-label="Open transcript browser"]').click()`,
+  }, youtubeSession.sessionId);
   const companionTarget = await waitForCompanionTarget(devTools, extensionID);
   const companionSession = await devTools.send("Target.attachToTarget", {
     targetId: companionTarget.targetId,
@@ -935,6 +959,49 @@ async function exerciseReaderPage(devTools, extensionID, popupSessionID, goiFixt
     sourceKind: "web",
     entrySequence: 12345,
   });
+  const moved = await devTools.send("Runtime.evaluate", {
+    expression: `(function () {
+      document.querySelector('[aria-label="Move Goi coverage panel"]').click();
+      return document.querySelector('[data-goi-corner]').dataset.goiCorner;
+    })()`,
+    returnByValue: true,
+  }, readerSession.sessionId);
+  assert.equal(moved.result.value, "bottom-left");
+  const storedPreference = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      const key = "goiCoveragePanel:" + ${JSON.stringify(goiFixture.baseURL)};
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const value = (await chrome.storage.local.get(key))[key];
+        if (value?.corner === "bottom-left") return value;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, popupSessionID);
+  assert.equal(storedPreference.result.value.corner, "bottom-left");
+  await devTools.send("Page.reload", undefined, readerSession.sessionId);
+  await waitForDocumentReady(devTools, readerSession.sessionId);
+  const reopened = await devTools.send("Runtime.evaluate", {
+    expression: `chrome.runtime.sendMessage({type: "goi.coverage.analyze-page", version: 1})`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, popupSessionID);
+  assert.equal(reopened.result.value.ok, true);
+  const restored = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const panel = document.querySelector('[data-goi-corner]');
+        if (panel?.dataset.goiCorner === "bottom-left") return true;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      return false;
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, readerSession.sessionId);
+  assert.equal(restored.result.value, true, "Reader placement must survive page reload with trusted storage");
+
 }
 
 function findChromeExecutable() {

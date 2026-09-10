@@ -257,7 +257,7 @@ func (h *Handler) renderGeneratedExampleDraft(w http.ResponseWriter, r *http.Req
 		Translation:   generated.Translation,
 		TargetSurface: generated.TargetSurface,
 	}
-	h.renderer.Render(w, "vocabulary-new.html", page)
+	h.renderer.Render(w, "vocabulary-edit.html", page)
 }
 
 func (h *Handler) loadExampleItem(w http.ResponseWriter, r *http.Request, id int64) (Item, bool) {
@@ -309,7 +309,7 @@ func (h *Handler) renderExampleError(w http.ResponseWriter, r *http.Request, ite
 				Translation:   r.FormValue("translation"),
 				TargetSurface: r.FormValue("target_surface"),
 			}
-			h.renderer.RenderStatus(w, vocabularyFormErrorStatus(err), "vocabulary-new.html", page)
+			h.renderer.RenderStatus(w, vocabularyFormErrorStatus(err), "vocabulary-edit.html", page)
 			return
 		}
 		page := h.detailPage(r, item, "", message)
@@ -331,7 +331,7 @@ func (h *Handler) renderDetailStatus(w http.ResponseWriter, r *http.Request, ite
 
 func (h *Handler) renderExampleStatus(w http.ResponseWriter, r *http.Request, item Item, status int, notice, message string) {
 	if returnToEdit(r) {
-		h.renderer.RenderStatus(w, status, "vocabulary-new.html", h.editPage(r, item, notice, message))
+		h.renderer.RenderStatus(w, status, "vocabulary-edit.html", h.editPage(r, item, notice, message))
 		return
 	}
 	h.renderDetailStatus(w, r, item, status, notice, message)

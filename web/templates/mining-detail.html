@@ -127,6 +127,21 @@
   {{end}}
 </section>
 
+{{if and .Enrichment .Enrichment.StaleCandidate}}
+<section class="panel" aria-labelledby="unsaved-candidate-title">
+  <h2 id="unsaved-candidate-title">Your unsaved edits</h2>
+  <p>The previous dictionary choice is no longer available. Your edits are preserved here. Review the current suggestions or manual entry below before saving.</p>
+  <div class="form-grid">
+    <label>Reading<input lang="ja" value="{{.Pronunciation}}" readonly></label>
+    <label>Meanings<textarea readonly>{{.Meanings}}</textarea></label>
+  </div>
+  <label>Notes<textarea readonly>{{.Notes}}</textarea></label>
+  <label>Japanese sentence<textarea lang="ja" readonly>{{.ExampleSentence}}</textarea></label>
+  <label>English translation<textarea readonly>{{.ExampleTranslation}}</textarea></label>
+  <label>Word in sentence<input lang="ja" value="{{.ExampleTarget}}" readonly></label>
+</section>
+{{end}}
+
 {{with .ExistingVocabulary}}
 <section class="panel mining-existing-card" aria-labelledby="existing-card-title">
   <div class="section-heading-row">
@@ -197,7 +212,7 @@
   {{end}}
   <div class="mining-candidate-editors">
   {{range .Candidates}}
-  <article id="candidate-{{.ID}}" class="mining-candidate" data-mining-candidate-editor data-mining-dirty-form {{if not .Selected}}hidden{{end}}>
+  <article id="candidate-{{.ID}}" class="mining-candidate" data-mining-candidate-editor {{if not .Selected}}hidden{{end}}>
     <div class="mining-candidate-heading">
       <div>
         <h3><span lang="ja">{{.Written}}</span> <span class="mining-reading" lang="ja">{{.Pronunciation}}</span></h3>
@@ -251,7 +266,7 @@
 {{end}}
 
 {{if and (not .HasCandidates) (not .ExistingVocabulary)}}
-<section class="panel mining-manual-entry" data-mining-dirty-form aria-labelledby="manual-entry-title">
+<section class="panel mining-manual-entry" aria-labelledby="manual-entry-title">
   <h2 id="manual-entry-title">Enter the reading and meanings</h2>
   <form class="mining-card-editor" method="post" action="/mining/captures/{{.Capture.ID}}/accept" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -287,7 +302,7 @@
 <details class="panel form-details mining-source-editor" {{if .Error}}open{{end}}>
   <summary id="capture-source-title">Edit captured text and source</summary>
   <div class="details-body">
-  <form class="inline-form" method="post" action="/mining/captures/{{.Capture.ID}}" data-mining-dirty-form>
+  <form class="inline-form" method="post" action="/mining/captures/{{.Capture.ID}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="revision" value="{{.EditRevision}}">
     <input type="hidden" name="capture_nonce" value="{{.Capture.CaptureNonce}}">

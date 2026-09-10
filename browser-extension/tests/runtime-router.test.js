@@ -6,17 +6,14 @@ const runtimeRouter = require("../background/runtime-router.js");
 function route(options = {}) {
   return runtimeRouter.create({
     runtimeID: "goi-test",
-    handlers: {
-      allowed(message) {
+    routes: {
+      allowed: { allow: options.allow, handle(message) {
         return { ok: true, value: message.value };
-      },
-      failed() {
+      } },
+      failed: { handle() {
         throw new Error("failed");
-      },
+      } },
     },
-    popupOnly: new Set(options.popupOnly || []),
-    topFrameOnly: new Set(options.topFrameOnly || []),
-    popupSender: options.popupSender || function () { return false; },
     errorResponse(type) {
       return { ok: false, type };
     },
@@ -37,8 +34,8 @@ test("ignores unknown protocols and foreign extensions", function () {
   assert.equal(handler({ type: "unknown", version: 1 }, { id: "goi-test" }, function () {}), false);
 });
 
-test("enforces popup and top-frame policies before dispatch", function () {
-  const handler = route({ popupOnly: ["allowed"], topFrameOnly: ["allowed"] });
+test("enforces each route's sender predicate before dispatch", function () {
+  const handler = route({ allow: function () { return false; } });
   const responses = [];
   assert.equal(handler(
     { type: "allowed", version: 1 },
@@ -49,7 +46,7 @@ test("enforces popup and top-frame policies before dispatch", function () {
 });
 
 test("rejects an allowed page message from a child frame", function () {
-  const handler = route({ topFrameOnly: ["allowed"] });
+  const handler = route({ allow: function (sender) { return sender.frameId === 0; } });
   const responses = [];
   assert.equal(handler(
     { type: "allowed", version: 1 },

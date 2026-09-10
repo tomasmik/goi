@@ -2,8 +2,6 @@ package reviews
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,18 +18,14 @@ import (
 	internalweb "github.com/tomasmik/goi/internal/web"
 )
 
-func reviewTestRouter(t *testing.T, store *Store, completers ...LessonBatchCompleter) http.Handler {
+func reviewTestRouter(t *testing.T, store *Store) http.Handler {
 	t.Helper()
 	renderer, err := internalweb.NewRenderer()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var completer LessonBatchCompleter
-	if len(completers) > 0 {
-		completer = completers[0]
-	}
 	router := chi.NewRouter()
-	NewHandler(store, completer, renderer).Routes(router)
+	NewHandler(store, renderer).Routes(router)
 	return router
 }
 
@@ -1062,40 +1056,6 @@ func TestFinalStandaloneReviewAnswerReturnsToItsStartingArea(t *testing.T) {
 	}
 }
 
-func TestLessonCompletionFailureCanBeRetried(t *testing.T) {
-	completer := &retryLessonBatchCompleter{err: errors.New("temporary failure")}
-	handler := &Handler{lessonCompleter: completer}
-	state := State{Status: "completed", LessonSessionID: 42}
-
-	response := httptest.NewRecorder()
-	if !handler.finishCompletedReview(response, httptest.NewRequest(http.MethodGet, "/", nil), state) {
-		t.Fatal("completed review was not handled")
-	}
-	if response.Code != http.StatusInternalServerError || completer.calls != 1 {
-		t.Fatalf("failed completion response = %d, calls %d", response.Code, completer.calls)
-	}
-
-	completer.err = nil
-	response = httptest.NewRecorder()
-	handler.finishCompletedReview(response, httptest.NewRequest(http.MethodGet, "/", nil), state)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/lessons" {
-		t.Fatalf("retried completion response = %d, location %q", response.Code, response.Header().Get("Location"))
-	}
-	if completer.calls != 2 {
-		t.Fatalf("completion calls after retry = %d", completer.calls)
-	}
-}
-
-type retryLessonBatchCompleter struct {
-	calls int
-	err   error
-}
-
-func (c *retryLessonBatchCompleter) CompleteReviewedBatch(context.Context, int64) error {
-	c.calls++
-	return c.err
-}
-
 func TestCompletedLessonReviewFinishesLessonAndReturnsToLessons(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "lesson-review-handler.sqlite"))
@@ -1140,24 +1100,40 @@ func TestCompletedLessonReviewFinishesLessonAndReturnsToLessons(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lessonCompleter := &lessonBatchCompleter{db: db}
-	router := reviewTestRouter(t, store, lessonCompleter)
+	router := reviewTestRouter(t, store)
 
 	form := url.Values{
 		"prompt_id": {fmt.Sprint(last.PromptID)},
 		"answer":    {answerForState(last)},
 	}
-	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/reviews/session/%d/confirm", reviewID), strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	request.Header.Set("X-Goi-Fragment", "review")
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
+	if _, err := db.Exec(`CREATE TRIGGER reject_handler_schedule BEFORE INSERT ON srs_states BEGIN SELECT RAISE(FAIL, 'schedule write failed'); END`); err != nil {
+		t.Fatal(err)
+	}
+	submit := func() *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/reviews/session/%d/confirm", reviewID), strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		request.Header.Set("X-Goi-Fragment", "review")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		return response
+	}
+	if response := submit(); response.Code != http.StatusInternalServerError {
+		t.Fatalf("failed activation status = %d, body = %s", response.Code, response.Body.String())
+	}
+	retry, err := store.State(ctx, reviewID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if retry.Status != "active" || retry.PromptID != last.PromptID {
+		t.Fatalf("failed activation advanced the review: %+v", retry)
+	}
+	if _, err := db.Exec("DROP TRIGGER reject_handler_schedule"); err != nil {
+		t.Fatal(err)
+	}
+	response := submit()
 
 	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/lessons" {
 		t.Fatalf("final answer response = %d, location %q", response.Code, response.Header().Get("Location"))
-	}
-	if lessonCompleter.calls != 1 || lessonCompleter.sessionID != lessonID {
-		t.Fatalf("lesson completer calls = %d for session %d", lessonCompleter.calls, lessonCompleter.sessionID)
 	}
 	var lessonStatus string
 	if err := db.QueryRow("SELECT status FROM lesson_sessions WHERE id = ?", lessonID).Scan(&lessonStatus); err != nil {
@@ -1167,25 +1143,15 @@ func TestCompletedLessonReviewFinishesLessonAndReturnsToLessons(t *testing.T) {
 		t.Fatalf("lesson status = %q, want completed", lessonStatus)
 	}
 
-	request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/reviews/session/%d", reviewID), nil)
+	if _, err := db.Exec("PRAGMA query_only = ON"); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/reviews/session/%d", reviewID), nil)
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/lessons" {
 		t.Fatalf("completed review response = %d, location %q", response.Code, response.Header().Get("Location"))
 	}
-}
-
-type lessonBatchCompleter struct {
-	db        *sql.DB
-	calls     int
-	sessionID int64
-}
-
-func (c *lessonBatchCompleter) CompleteReviewedBatch(ctx context.Context, sessionID int64) error {
-	c.calls++
-	c.sessionID = sessionID
-	_, err := c.db.ExecContext(ctx, "UPDATE lesson_sessions SET status = 'completed' WHERE id = ?", sessionID)
-	return err
 }
 
 func TestStartHidesStoreFailures(t *testing.T) {

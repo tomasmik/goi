@@ -1,7 +1,6 @@
 package reviews
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -14,13 +13,8 @@ import (
 )
 
 type Handler struct {
-	store           *Store
-	lessonCompleter LessonBatchCompleter
-	renderer        *internalweb.Renderer
-}
-
-type LessonBatchCompleter interface {
-	CompleteReviewedBatch(context.Context, int64) error
+	store    *Store
+	renderer *internalweb.Renderer
 }
 
 type LaunchPage struct {
@@ -61,8 +55,8 @@ type LeechesPage struct {
 	Items     []LeechItem
 }
 
-func NewHandler(store *Store, lessonCompleter LessonBatchCompleter, renderer *internalweb.Renderer) *Handler {
-	return &Handler{store: store, lessonCompleter: lessonCompleter, renderer: renderer}
+func NewHandler(store *Store, renderer *internalweb.Renderer) *Handler {
+	return &Handler{store: store, renderer: renderer}
 }
 
 func (h *Handler) Routes(r chi.Router) {
@@ -576,14 +570,6 @@ func (h *Handler) finishCompletedReview(w http.ResponseWriter, r *http.Request, 
 	}
 	destination := "/dashboard"
 	if state.LessonSessionID > 0 {
-		if h.lessonCompleter == nil {
-			internalweb.InternalError(w, r, "could not finish lesson", errors.New("lesson completion is unavailable"))
-			return true
-		}
-		if err := h.lessonCompleter.CompleteReviewedBatch(r.Context(), state.LessonSessionID); err != nil {
-			internalweb.InternalError(w, r, "could not finish lesson", err)
-			return true
-		}
 		destination = "/lessons"
 	} else if state.Kind == "extra" {
 		destination = "/practice"

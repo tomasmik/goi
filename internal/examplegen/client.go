@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	defaultTimeout           = 60 * time.Second
+	DefaultTimeout           = 60 * time.Second
 	maxResponseBytes         = 256 << 10
 	maxExpressionRunes       = 256
 	maxPronunciationRunes    = 256
@@ -146,7 +146,7 @@ func New(config Config) (*Client, error) {
 	}
 	timeout := config.Timeout
 	if timeout == 0 {
-		timeout = defaultTimeout
+		timeout = DefaultTimeout
 	}
 	baseHTTPClient := config.HTTPClient
 	if baseHTTPClient == nil {

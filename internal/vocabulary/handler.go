@@ -1,9 +1,7 @@
 package vocabulary
 
 import (
-	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"mime/multipart"
@@ -30,44 +28,7 @@ type Handler struct {
 	renderer   *internalweb.Renderer
 }
 
-type pronunciationProvider interface {
-	Search(context.Context, string, string) ([]pronunciation.Recording, error)
-	Download(context.Context, int64, string, string) (media.Upload, error)
-}
-
-const (
-	KnownWordsBodyLimit    int64 = 2 << 20
-	ExampleFormBodyLimit   int64 = 64 << 10
-	vocabularyListPageSize       = 40
-)
-
-type ListPage struct {
-	Title               string
-	CSRFToken           string
-	Search              string
-	Filter              ListFilter
-	Sort                ListSort
-	Filters             []ListFilterLink
-	Items               []ListItem
-	TotalCount          int
-	KnownCount          int
-	LearningCount       int
-	KnownElsewhereCount int
-	KnownWords          string
-	Page                int
-	PageCount           int
-	PreviousURL         string
-	NextURL             string
-	Notice              string
-	Error               string
-}
-
-type ListFilterLink struct {
-	Label  string
-	URL    string
-	Active bool
-	Count  int
-}
+const ExampleFormBodyLimit int64 = 64 << 10
 
 type EditPage struct {
 	CSRFToken             string
@@ -159,158 +120,6 @@ func (h *Handler) Routes(r chi.Router) {
 	r.Get("/vocabulary/{id}", h.detail)
 }
 
-func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	h.renderList(w, r, http.StatusOK, "", "")
-}
-
-func (h *Handler) exportKnown(w http.ResponseWriter, r *http.Request) {
-	expressions, err := h.store.KnownExpressions(r.Context())
-	if err != nil {
-		internalweb.InternalError(w, r, "could not export known vocabulary", err)
-		return
-	}
-
-	var contentType, filename string
-	var body []byte
-	switch r.URL.Query().Get("format") {
-	case "json":
-		body, err = json.Marshal(expressions)
-		contentType = "application/json; charset=utf-8"
-		filename = "goi-known-words.json"
-	case "comma":
-		body = []byte(strings.Join(expressions, ", "))
-		contentType = "text/plain; charset=utf-8"
-		filename = "goi-known-words.txt"
-	default:
-		http.Error(w, "Choose JSON or comma-separated format.", http.StatusBadRequest)
-		return
-	}
-	if err != nil {
-		internalweb.InternalError(w, r, "could not encode known vocabulary", err)
-		return
-	}
-	body = append(body, '\n')
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
-	w.Header().Set("Cache-Control", "private, no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
-}
-
-func (h *Handler) addKnown(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, KnownWordsBodyLimit)
-	if err := r.ParseForm(); err != nil {
-		h.renderList(w, r, http.StatusBadRequest, "", "The list is too large or invalid.")
-		return
-	}
-	words := r.FormValue("known_words")
-	result, err := h.store.AddKnown(r.Context(), words)
-	if err != nil {
-		if message, ok := internalweb.UserErrorMessage(err); ok {
-			h.renderList(w, r, http.StatusUnprocessableEntity, words, message)
-			return
-		}
-		internalweb.InternalError(w, r, "could not add known vocabulary", err)
-		return
-	}
-	location := fmt.Sprintf(
-		"/vocabulary?known_added=%d&known_existing=%d&known_reserved=%d",
-		result.Added(), result.AlreadyKnown, result.SkippedActiveLesson,
-	)
-	http.Redirect(w, r, location, http.StatusSeeOther)
-}
-
-func (h *Handler) previewKnown(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, KnownWordsBodyLimit)
-	if err := r.ParseForm(); err != nil {
-		h.writeKnownPreviewError(w, http.StatusBadRequest, "The list is too large or invalid.")
-		return
-	}
-	result, err := h.store.PreviewKnown(r.Context(), r.FormValue("known_words"))
-	if err != nil {
-		if message, ok := internalweb.UserErrorMessage(err); ok {
-			h.writeKnownPreviewError(w, http.StatusUnprocessableEntity, message)
-			return
-		}
-		internalweb.InternalError(w, r, "could not preview known vocabulary", err)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_ = json.NewEncoder(w).Encode(struct {
-		Created             int `json:"created"`
-		MarkedKnown         int `json:"markedKnown"`
-		AlreadyKnown        int `json:"alreadyKnown"`
-		SkippedActiveLesson int `json:"skippedActiveLesson"`
-	}{result.Created, result.MarkedKnown, result.AlreadyKnown, result.SkippedActiveLesson})
-}
-
-func (h *Handler) writeKnownPreviewError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(struct {
-		Error string `json:"error"`
-	}{message})
-}
-
-func (h *Handler) renderList(w http.ResponseWriter, r *http.Request, status int, knownWords, message string) {
-	search := r.URL.Query().Get("q")
-	filter := normalizeListFilter(r.URL.Query().Get("status"))
-	sort := normalizeListSort(r.URL.Query().Get("sort"))
-	totalCount, err := h.store.ListCountFiltered(r.Context(), search, filter)
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load vocabulary", err)
-		return
-	}
-	page, pageCount := vocabularyPage(r.URL.Query().Get("page"), totalCount)
-	items, err := h.store.ListPageSorted(r.Context(), search, filter, sort, vocabularyListPageSize, (page-1)*vocabularyListPageSize)
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load vocabulary", err)
-		return
-	}
-	knownCount, err := h.store.KnownCount(r.Context())
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load known vocabulary count", err)
-		return
-	}
-	learningCount, err := h.store.StatusCount(r.Context(), ListFilterLearning)
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load learning vocabulary count", err)
-		return
-	}
-	knownElsewhereCount, err := h.store.StatusCount(r.Context(), ListFilterKnown)
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load known-elsewhere count", err)
-		return
-	}
-	var previousURL, nextURL string
-	if page > 1 {
-		previousURL = vocabularyListURLSorted(search, filter, sort, page-1)
-	}
-	if page < pageCount {
-		nextURL = vocabularyListURLSorted(search, filter, sort, page+1)
-	}
-	h.renderer.RenderStatus(w, status, "vocabulary.html", ListPage{
-		Title:               "Vocabulary",
-		CSRFToken:           internalweb.CSRFToken(r),
-		Search:              search,
-		Filter:              filter,
-		Sort:                sort,
-		Filters:             h.vocabularyFilterLinks(r.Context(), search, filter, sort),
-		Items:               items,
-		TotalCount:          totalCount,
-		KnownCount:          knownCount,
-		LearningCount:       learningCount,
-		KnownElsewhereCount: knownElsewhereCount,
-		KnownWords:          knownWords,
-		Page:                page,
-		PageCount:           pageCount,
-		PreviousURL:         previousURL,
-		NextURL:             nextURL,
-		Notice:              knownVocabularyNotice(r),
-		Error:               message,
-	})
-}
-
 func (h *Handler) redirectToCapture(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/mining/capture", http.StatusSeeOther)
 }
@@ -330,7 +139,7 @@ func (h *Handler) edit(w http.ResponseWriter, r *http.Request) {
 		internalweb.InternalError(w, r, "could not load vocabulary", err)
 		return
 	}
-	h.renderer.Render(w, "vocabulary-new.html", h.editPage(r, item, "", ""))
+	h.renderer.Render(w, "vocabulary-edit.html", h.editPage(r, item, "", ""))
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
@@ -361,167 +170,6 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/vocabulary/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
-}
-
-func (h *Handler) previewPronunciation(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
-	recordingID, recordingOK := pronunciationRecordingID(r)
-	if !ok || !recordingOK || h.recordings == nil {
-		h.notFound(w)
-		return
-	}
-	item, err := h.store.Get(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) {
-		h.notFound(w)
-		return
-	}
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load vocabulary", err)
-		return
-	}
-	upload, err := h.recordings.Download(r.Context(), recordingID, item.Expression, item.Pronunciation)
-	if err != nil {
-		internalweb.LogError(r, "could not preview pronunciation audio", err)
-		http.Error(w, "Pronunciation audio is unavailable.", http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("Content-Type", upload.MimeType)
-	w.Header().Set("Cache-Control", "private, max-age=3600")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	_, _ = w.Write(upload.Content)
-}
-
-func (h *Handler) searchPronunciations(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
-	if !ok || h.recordings == nil {
-		h.notFound(w)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, ExampleFormBodyLimit)
-	if err := r.ParseForm(); err != nil {
-		h.renderPronunciationError(w, r, id, http.StatusBadRequest, "The pronunciation form is too large or invalid.")
-		return
-	}
-	item, err := h.store.Get(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) {
-		h.notFound(w)
-		return
-	}
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load vocabulary", err)
-		return
-	}
-	expression := strings.TrimSpace(r.FormValue("expression"))
-	if expression == "" {
-		expression = item.Expression
-	}
-	reading := strings.TrimSpace(r.FormValue("pronunciation"))
-	recordings, searchErr := h.recordings.Search(r.Context(), expression, reading)
-	if searchErr == nil && len(recordings) == 1 {
-		revision, err := parseContentRevision(r.FormValue("content_revision"))
-		if err != nil {
-			h.renderPronunciationError(w, r, id, http.StatusConflict, err.Error())
-			return
-		}
-		err = h.setPronunciationAudio(r.Context(), id, recordings[0].ID, revision, expression, reading)
-		if errors.Is(err, ErrRevisionConflict) {
-			h.renderPronunciationError(w, r, id, http.StatusConflict, "This card changed in another tab. Reload it and find the recording again.")
-			return
-		}
-		if err != nil {
-			internalweb.LogError(r, "could not attach pronunciation audio", err)
-			h.renderPronunciationError(w, r, id, http.StatusOK, "Could not attach that recording. Try again later or upload an audio file.")
-			return
-		}
-		item, err = h.store.Get(r.Context(), id)
-		if err != nil {
-			internalweb.InternalError(w, r, "could not reload vocabulary", err)
-			return
-		}
-		h.renderer.Render(w, "vocabulary-new.html", h.editPageFromForm(r, item, "Pronunciation audio added.", ""))
-		return
-	}
-	page := h.editPageFromForm(r, item, "", "")
-	if revision, err := parseContentRevision(r.FormValue("content_revision")); err == nil {
-		page.ContentRevision = revision
-	}
-	page.PronunciationSearched = true
-	page.PronunciationResults = recordings
-	if searchErr != nil {
-		internalweb.LogError(r, "could not search pronunciation audio", searchErr)
-		page.PronunciationError = "The open pronunciation library could not be reached. Try again or use the external search."
-	}
-	h.renderer.Render(w, "vocabulary-new.html", page)
-}
-
-func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
-	recordingID, recordingOK := pronunciationRecordingID(r)
-	if !ok || !recordingOK || h.recordings == nil {
-		h.notFound(w)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, ExampleFormBodyLimit)
-	if err := r.ParseForm(); err != nil {
-		h.renderPronunciationError(w, r, id, http.StatusBadRequest, "The pronunciation form is too large or invalid.")
-		return
-	}
-	revision, err := parseContentRevision(r.FormValue("content_revision"))
-	if err != nil {
-		h.renderPronunciationError(w, r, id, http.StatusConflict, err.Error())
-		return
-	}
-	item, err := h.store.Get(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) {
-		h.notFound(w)
-		return
-	}
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load vocabulary", err)
-		return
-	}
-	expression := strings.TrimSpace(r.FormValue("expression"))
-	if expression == "" {
-		expression = item.Expression
-	}
-	reading := strings.TrimSpace(r.FormValue("pronunciation"))
-	err = h.setPronunciationAudio(r.Context(), id, recordingID, revision, expression, reading)
-	if errors.Is(err, ErrRevisionConflict) {
-		h.renderPronunciationError(w, r, id, http.StatusConflict, "This card changed in another tab. Reload it and choose the recording again.")
-		return
-	}
-	if err != nil {
-		internalweb.LogError(r, "could not attach pronunciation audio", err)
-		h.renderPronunciationError(w, r, id, http.StatusOK, "Could not attach that recording. Try again later or upload an audio file.")
-		return
-	}
-	item, err = h.store.Get(r.Context(), id)
-	if err != nil {
-		internalweb.InternalError(w, r, "could not reload vocabulary", err)
-		return
-	}
-	h.renderer.Render(w, "vocabulary-new.html", h.editPageFromForm(r, item, "Pronunciation audio added.", ""))
-}
-
-func (h *Handler) setPronunciationAudio(ctx context.Context, id, recordingID, revision int64, expression, reading string) error {
-	upload, err := h.recordings.Download(ctx, recordingID, expression, reading)
-	if err != nil {
-		return err
-	}
-	return h.store.SetPronunciationAudio(ctx, id, revision, upload)
-}
-
-func (h *Handler) renderPronunciationError(w http.ResponseWriter, r *http.Request, id int64, status int, message string) {
-	item, err := h.store.Get(r.Context(), id)
-	if errors.Is(err, sql.ErrNoRows) {
-		h.notFound(w)
-		return
-	}
-	if err != nil {
-		internalweb.InternalError(w, r, "could not reload vocabulary", err)
-		return
-	}
-	h.renderer.RenderStatus(w, status, "vocabulary-new.html", h.editPageFromForm(r, item, "", message))
 }
 
 func (h *Handler) action(w http.ResponseWriter, r *http.Request) {
@@ -598,7 +246,7 @@ func (h *Handler) notFound(w http.ResponseWriter) {
 func (h *Handler) renderEditForm(w http.ResponseWriter, r *http.Request, status int, message string, item Item, revision int64) {
 	page := h.editPageFromForm(r, item, "", message)
 	page.ContentRevision = revision
-	h.renderer.RenderStatus(w, status, "vocabulary-new.html", page)
+	h.renderer.RenderStatus(w, status, "vocabulary-edit.html", page)
 }
 
 func (h *Handler) editPageFromForm(r *http.Request, item Item, notice, message string) EditPage {
@@ -794,11 +442,6 @@ func vocabularyID(r *http.Request) (int64, bool) {
 
 func exampleID(r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "exampleID"), 10, 64)
-	return id, err == nil && id > 0
-}
-
-func pronunciationRecordingID(r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "recordingID"), 10, 64)
 	return id, err == nil && id > 0
 }
 

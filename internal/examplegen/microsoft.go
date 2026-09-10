@@ -58,7 +58,7 @@ func NewMicrosoftTranslator(config MicrosoftTranslatorConfig) (*MicrosoftTransla
 	}
 	timeout := config.Timeout
 	if timeout == 0 {
-		timeout = defaultTimeout
+		timeout = DefaultTimeout
 	}
 	baseHTTPClient := config.HTTPClient
 	if baseHTTPClient == nil {

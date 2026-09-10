@@ -9,14 +9,13 @@ import { initConfirmations } from "./confirmation.js";
 import { initLessonPicker } from "./lesson-picker.js";
 import { initVocabularyTools } from "./vocabulary-tools.js";
 import { initFilePickers } from "./file-picker.js";
+import { initBackupSettings } from "./backup-settings.js";
+import { initLocalTimes, initTimeZoneControls } from "./local-time.js";
 import {
-  initBackupSettings,
   initCurrentOrigins,
   initExampleProviderPresets,
-  initLocalTimes,
   initCurrentTabs,
   initSettingsSaveBars,
-  initTimeZoneControls,
   initTranslationProviderPanels,
 } from "./settings-controls.js";
 

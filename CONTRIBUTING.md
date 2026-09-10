@@ -60,7 +60,7 @@ smallest change that completes the user-visible path.
 - Prefer the standard library and existing project code over a new dependency.
 - Remove temporary logging, dead code, stale comments, and debug fixtures.
 
-For a database change, leave `internal/database/migrations/00001_init.sql`
+For a database change, leave existing files in `internal/database/migrations`
 alone. Add the next numbered migration and update `schemaVersion` in
 `internal/database/migrations.go`. Open test databases through
 `internal/database` and assert the durable result.

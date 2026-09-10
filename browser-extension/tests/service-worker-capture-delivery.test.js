@@ -122,7 +122,7 @@ test("drops a queued capture after a permanent retry failure", async function ()
     frameId: 0,
     url: "https://www.youtube.com/watch?v=example",
   });
-  await harness.operations.retryCaptureOutbox(true);
+  await harness.delivery.retry(true);
 
   assert.equal(attempts, 2);
   assert.equal(harness.storage.captureOutboxV2, undefined);
@@ -146,13 +146,13 @@ test("retains and backs off queued captures after unknown 4xx responses", async 
       undefined,
       client,
     );
-    await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+    await harness.delivery.enqueue(captureModel.buildCapturePayload({
       expression: "保留" + status,
       contextText: "保留する。",
     }, String(status).padStart(32, "0")), 1, "https://goi.example");
     const before = Date.now();
 
-    await harness.operations.retryCaptureOutbox(true);
+    await harness.delivery.retry(true);
 
     assert.equal(harness.storage.captureOutboxV2.length, 1, "status " + status);
     assert.equal(harness.storage.captureOutboxV2[0].attempts, 2, "status " + status);
@@ -178,12 +178,12 @@ test("deletes queued captures for explicit capture-specific permanent responses"
       undefined,
       client,
     );
-    await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+    await harness.delivery.enqueue(captureModel.buildCapturePayload({
       expression: "削除" + status,
       contextText: "削除する。",
     }, String(status).padStart(32, "0")), 1, "https://goi.example");
 
-    await harness.operations.retryCaptureOutbox(true);
+    await harness.delivery.retry(true);
 
     assert.equal(harness.storage.captureOutboxV2, undefined, "status " + status);
   }
@@ -205,19 +205,19 @@ test("keeps queued captures bound to their original Goi server", async function 
     undefined,
     client,
   );
-  await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+  await harness.delivery.enqueue(captureModel.buildCapturePayload({
     expression: "古い語",
     contextText: "古い文脈。",
   }, "b".repeat(32)), 1, "https://old.example");
 
   await harness.operations.saveConnection("https://new.example", "new-token");
-  await harness.operations.retryCaptureOutbox(true);
+  await harness.delivery.retry(true);
 
   assert.deepEqual(sends, []);
   assert.equal(harness.storage.captureOutboxV2[0].baseUrl, "https://old.example");
 
   await harness.operations.saveConnection("https://old.example", "replacement-token");
-  await harness.operations.retryCaptureOutbox(false);
+  await harness.delivery.retry(false);
 
   assert.deepEqual(sends, [{ baseUrl: "https://old.example", expression: "古い語" }]);
   assert.equal(harness.storage.captureOutboxV2, undefined);
@@ -236,7 +236,7 @@ test("removes malformed current outbox entries instead of retrying them", async 
     nextAttemptAt: Date.now(),
   }];
 
-  await harness.operations.retryCaptureOutbox(true);
+  await harness.delivery.retry(true);
 
   assert.equal(harness.storage.captureOutboxV2, undefined);
   assert.deepEqual(
@@ -247,7 +247,7 @@ test("removes malformed current outbox entries instead of retrying them", async 
 
 test("lets the user discard the durable capture outbox", async function () {
   const harness = workerHarness({ baseUrl: "https://goi.example", token: "token" });
-  await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+  await harness.delivery.enqueue(captureModel.buildCapturePayload({
     expression: "保留",
     contextText: "保留した文脈。",
   }, "4".repeat(32)), 1, "https://goi.example");
@@ -288,16 +288,16 @@ test("disconnect stops an in-progress outbox batch before the next capture", asy
     undefined,
     client,
   );
-  await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+  await harness.delivery.enqueue(captureModel.buildCapturePayload({
     expression: "一",
     contextText: "一つ目。",
   }, "f".repeat(32)), 1, "https://goi.example");
-  await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+  await harness.delivery.enqueue(captureModel.buildCapturePayload({
     expression: "二",
     contextText: "二つ目。",
   }, "1".repeat(32)), 1, "https://goi.example");
 
-  const retry = harness.operations.retryCaptureOutbox(true);
+  const retry = harness.delivery.retry(true);
   await started;
   await harness.operations.disconnectConnection();
 
@@ -345,12 +345,12 @@ test("suspends queued captures on authentication failure and resumes after recon
   });
 
   mode = "auth";
-  await harness.operations.retryCaptureOutbox(true);
+  await harness.delivery.retry(true);
   assert.equal(harness.storage.captureOutboxV2.length, 1);
 
   mode = "success";
   await harness.operations.saveConnection("https://goi.example", "fresh-token");
-  await harness.operations.retryCaptureOutbox(false);
+  await harness.delivery.retry(false);
   assert.equal(harness.storage.captureOutboxV2, undefined);
   assert.equal(attempts, 3);
 });
@@ -376,16 +376,16 @@ test("a payload-specific server failure does not block later captures", async fu
     undefined,
     client,
   );
-  await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+  await harness.delivery.enqueue(captureModel.buildCapturePayload({
     expression: "失敗",
     contextText: "失敗する。",
   }, "c".repeat(32)), 1, "https://goi.example");
-  await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+  await harness.delivery.enqueue(captureModel.buildCapturePayload({
     expression: "成功",
     contextText: "成功する。",
   }, "d".repeat(32)), 1, "https://goi.example");
 
-  await harness.operations.retryCaptureOutbox(true);
+  await harness.delivery.retry(true);
 
   assert.deepEqual(attempted, ["失敗", "成功"]);
   assert.equal(harness.storage.captureOutboxV2.length, 1);
@@ -411,13 +411,13 @@ test("refuses a new capture when the durable outbox is full", async function () 
   const harness = workerHarness({ baseUrl: "https://goi.example", token: "token" });
 
   for (let index = 0; index < 100; index += 1) {
-    await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+    await harness.delivery.enqueue(captureModel.buildCapturePayload({
       expression: "語" + index,
       contextText: "文" + index,
     }, String(index).padStart(32, "0")), 1, "https://goi.example");
   }
   await assert.rejects(
-    harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+    harness.delivery.enqueue(captureModel.buildCapturePayload({
       expression: "語100",
       contextText: "文100",
     }, "100".padStart(32, "0")), 1, "https://goi.example"),
@@ -445,13 +445,13 @@ test("retries accepted captures even after a prolonged outage", async function (
     undefined,
     client,
   );
-  await harness.operations.enqueueCapture(captureModel.buildCapturePayload({
+  await harness.delivery.enqueue(captureModel.buildCapturePayload({
     expression: "古い",
     contextText: "古い文。",
   }, "a".repeat(32)), 1, "https://goi.example");
   harness.storage.captureOutboxV2[0].createdAt = Date.now() - (8 * 24 * 60 * 60 * 1000);
 
-  await harness.operations.retryCaptureOutbox(true);
+  await harness.delivery.retry(true);
 
   assert.equal(sends, 1);
   assert.equal(harness.storage.captureOutboxV2, undefined);

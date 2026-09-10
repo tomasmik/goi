@@ -15,14 +15,6 @@ import (
 	"github.com/tomasmik/goi/internal/contextio"
 )
 
-func testBackup(ctx context.Context, sourcePath, outputPath string) (string, error) {
-	return createBackup(ctx, sourcePath, outputPath, false)
-}
-
-func testRestore(ctx context.Context, backupPath, databasePath string) error {
-	return restore(ctx, backupPath, databasePath, "", false, nil, false)
-}
-
 func TestOpenAndMigrate(t *testing.T) {
 	db, _ := openTestDatabase(t)
 	var tableCount int
@@ -54,7 +46,7 @@ func TestBackupRejectsNonGoiDatabase(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(directory, "backup.sqlite")
-	if _, err := testBackup(ctx, sourcePath, outputPath); err == nil || !strings.Contains(err.Error(), "validate source database") {
+	if _, err := BackupWithImports(ctx, sourcePath, outputPath); err == nil || !strings.Contains(err.Error(), "validate source database") {
 		t.Fatalf("Backup error = %v, want source validation error", err)
 	}
 	if _, err := os.Stat(outputPath); !errors.Is(err, os.ErrNotExist) {
@@ -200,7 +192,7 @@ func TestBackupProducesVerifiedSnapshot(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "backup.sqlite")
-	checksum, err := testBackup(context.Background(), sourcePath, outputPath)
+	checksum, err := BackupWithImports(context.Background(), sourcePath, outputPath)
 	if err != nil {
 		t.Fatalf("create backup: %v", err)
 	}
@@ -244,7 +236,7 @@ func TestBackupRejectsArtifactAliases(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if _, err := testBackup(context.Background(), sourcePath, outputPath); err == nil {
+		if _, err := BackupWithImports(context.Background(), sourcePath, outputPath); err == nil {
 			t.Fatal("backup with the live database at its checksum output succeeded")
 		}
 		afterChecksum, err := fileChecksum(t.Context(), sourcePath)
@@ -297,7 +289,7 @@ func TestBackupRejectsSQLiteArtifactOutputs(t *testing.T) {
 
 	for _, suffix := range []string{"-wal", "-shm", ".lock"} {
 		t.Run(suffix, func(t *testing.T) {
-			if _, err := testBackup(context.Background(), sourcePath, sourcePath+suffix); err == nil {
+			if _, err := BackupWithImports(context.Background(), sourcePath, sourcePath+suffix); err == nil {
 				t.Fatalf("backup to live database artifact %q succeeded", suffix)
 			}
 			afterChecksum, err := fileChecksum(t.Context(), sourcePath)
@@ -358,7 +350,7 @@ func TestBackupOutputLockRejectsConcurrentPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testBackup(context.Background(), sourcePath, outputPath); err == nil {
+	if _, err := BackupWithImports(context.Background(), sourcePath, outputPath); err == nil {
 		lock.Close()
 		t.Fatal("backup succeeded while its output lock was held")
 	} else if !strings.Contains(err.Error(), "backup output is in use") {
@@ -368,7 +360,7 @@ func TestBackupOutputLockRejectsConcurrentPublication(t *testing.T) {
 	if err := lock.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testBackup(context.Background(), sourcePath, outputPath); err != nil {
+	if _, err := BackupWithImports(context.Background(), sourcePath, outputPath); err != nil {
 		t.Fatalf("backup failed after output lock was released: %v", err)
 	}
 }
@@ -393,7 +385,7 @@ func TestBackupRejectsDatabaseAliases(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := testBackup(ctx, sourcePath, relativePath); err == nil {
+		if _, err := BackupWithImports(ctx, sourcePath, relativePath); err == nil {
 			t.Fatal("backup to a relative alias of the source succeeded")
 		}
 	})
@@ -404,7 +396,7 @@ func TestBackupRejectsDatabaseAliases(t *testing.T) {
 		if err := os.Symlink(filepath.Dir(sourcePath), aliasDirectory); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := testBackup(ctx, sourcePath, filepath.Join(aliasDirectory, filepath.Base(sourcePath))); err == nil {
+		if _, err := BackupWithImports(ctx, sourcePath, filepath.Join(aliasDirectory, filepath.Base(sourcePath))); err == nil {
 			t.Fatal("backup through a symlinked parent of the source succeeded")
 		}
 	})
@@ -414,7 +406,7 @@ func TestBackupRejectsDatabaseAliases(t *testing.T) {
 		if err := os.Link(sourcePath, outputPath); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := testBackup(ctx, sourcePath, outputPath); err == nil {
+		if _, err := BackupWithImports(ctx, sourcePath, outputPath); err == nil {
 			t.Fatal("backup to a hard link of the source succeeded")
 		}
 	})
@@ -445,7 +437,7 @@ func TestBackupRejectsNonRegularOutputArtifacts(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if _, err := testBackup(context.Background(), sourcePath, outputPath); err == nil {
+			if _, err := BackupWithImports(context.Background(), sourcePath, outputPath); err == nil {
 				t.Fatalf("backup with a directory at the %s path succeeded", test.name)
 			}
 			assertTestFileContents(t, sentinelPath, []byte("keep"))
@@ -469,7 +461,7 @@ func TestBackupOutputNameCannotCollideWithRecoveryFiles(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "previous.sqlite")
-	if _, err := testBackup(ctx, sourcePath, outputPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, outputPath); err != nil {
 		t.Fatal(err)
 	}
 	db, err := Open(ctx, sourcePath)
@@ -483,7 +475,7 @@ func TestBackupOutputNameCannotCollideWithRecoveryFiles(t *testing.T) {
 	if err := db.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := testBackup(ctx, sourcePath, outputPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, outputPath); err != nil {
 		t.Fatal(err)
 	}
 	assertVocabularyExpression(t, outputPath, "次")
@@ -500,7 +492,7 @@ func TestRestoreReplacesDatabaseAndPreservesCurrentFile(t *testing.T) {
 	}
 
 	backupPath := filepath.Join(t.TempDir(), "backup.sqlite")
-	if _, err := testBackup(ctx, sourcePath, backupPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, backupPath); err != nil {
 		t.Fatalf("create restore backup: %v", err)
 	}
 	current, err := Open(ctx, sourcePath)
@@ -514,7 +506,7 @@ func TestRestoreReplacesDatabaseAndPreservesCurrentFile(t *testing.T) {
 	if err := current.Close(); err != nil {
 		t.Fatalf("close changed database: %v", err)
 	}
-	if err := testRestore(ctx, backupPath, sourcePath); err != nil {
+	if err := RestoreWithImports(ctx, backupPath, sourcePath, t.TempDir()); err != nil {
 		t.Fatalf("restore database: %v", err)
 	}
 	restored, err := Open(ctx, sourcePath)
@@ -584,9 +576,9 @@ func TestRestoreRejectsRetiredSchemaWithoutReplacingDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = testRestore(ctx, backupPath, currentPath)
+	err = RestoreWithImports(ctx, backupPath, currentPath, t.TempDir())
 	if err == nil || !errors.Is(err, ErrInvalidRestoreSource) || !strings.Contains(err.Error(), "is not empty") {
-		t.Fatalf("testRestore() error = %v, want unidentified schema error", err)
+		t.Fatalf("RestoreWithImports() error = %v, want unidentified schema error", err)
 	}
 	assertVocabularyExpression(t, currentPath, "現在")
 	if _, err := os.Stat(currentPath + ".before-restore"); !errors.Is(err, os.ErrNotExist) {
@@ -630,11 +622,11 @@ func TestBackupAndRestorePreserveMiningCaptures(t *testing.T) {
 	}
 
 	backupPath := filepath.Join(t.TempDir(), "backup.sqlite")
-	if _, err := testBackup(ctx, sourcePath, backupPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, backupPath); err != nil {
 		t.Fatal(err)
 	}
 	restoredPath := filepath.Join(t.TempDir(), "restored.sqlite")
-	if err := testRestore(ctx, backupPath, restoredPath); err != nil {
+	if err := RestoreWithImports(ctx, backupPath, restoredPath, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	restored, err := Open(ctx, restoredPath)
@@ -689,7 +681,7 @@ func TestRestoreDoesNotModifySourceBackup(t *testing.T) {
 	}
 
 	backupPath := filepath.Join(t.TempDir(), "backup.sqlite")
-	if _, err := testBackup(ctx, sourcePath, backupPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, backupPath); err != nil {
 		t.Fatal(err)
 	}
 	rawDB, err := sql.Open("sqlite3", backupPath)
@@ -719,7 +711,7 @@ func TestRestoreDoesNotModifySourceBackup(t *testing.T) {
 	}
 
 	restoredPath := filepath.Join(t.TempDir(), "restored.sqlite")
-	if err := testRestore(ctx, backupPath, restoredPath); err != nil {
+	if err := RestoreWithImports(ctx, backupPath, restoredPath, t.TempDir()); err != nil {
 		t.Fatal(err)
 	}
 	afterChecksum, err := fileChecksum(t.Context(), backupPath)
@@ -744,7 +736,7 @@ func TestRestoreRequiresChecksum(t *testing.T) {
 		t.Fatal(err)
 	}
 	backupPath := filepath.Join(t.TempDir(), "backup.sqlite")
-	if _, err := testBackup(ctx, sourcePath, backupPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, backupPath); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(backupPath + ".sha256"); err != nil {
@@ -752,8 +744,8 @@ func TestRestoreRequiresChecksum(t *testing.T) {
 	}
 
 	restoredPath := filepath.Join(t.TempDir(), "restored.sqlite")
-	if err := testRestore(ctx, backupPath, restoredPath); err == nil || !strings.Contains(err.Error(), "checksum is missing") {
-		t.Fatalf("testRestore() error = %v, want missing checksum", err)
+	if err := RestoreWithImports(ctx, backupPath, restoredPath, t.TempDir()); err == nil || !strings.Contains(err.Error(), "checksum is missing") {
+		t.Fatalf("RestoreWithImports() error = %v, want missing checksum", err)
 	}
 	if _, err := os.Stat(restoredPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("restore destination exists after checksum failure: %v", err)
@@ -820,14 +812,14 @@ func TestRestoreRejectsDatabaseAlias(t *testing.T) {
 		t.Fatal(err)
 	}
 	backupPath := filepath.Join(t.TempDir(), "backup.sqlite")
-	if _, err := testBackup(ctx, sourcePath, backupPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, backupPath); err != nil {
 		t.Fatal(err)
 	}
 	databasePath := filepath.Join(t.TempDir(), "vocab.sqlite")
 	if err := os.Link(backupPath, databasePath); err != nil {
 		t.Fatal(err)
 	}
-	if err := testRestore(ctx, backupPath, databasePath); err == nil {
+	if err := RestoreWithImports(ctx, backupPath, databasePath, t.TempDir()); err == nil {
 		t.Fatal("restore to a hard link of the source succeeded")
 	}
 }
@@ -839,7 +831,7 @@ func TestRestoreRejectsBackupArtifactDestinations(t *testing.T) {
 		t.Fatal(err)
 	}
 	backupPath := filepath.Join(t.TempDir(), "backup.sqlite")
-	if _, err := testBackup(ctx, sourcePath, backupPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, backupPath); err != nil {
 		t.Fatal(err)
 	}
 	beforeDatabase := mustReadTestFile(t, backupPath)
@@ -855,7 +847,7 @@ func TestRestoreRejectsBackupArtifactDestinations(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if err := testRestore(ctx, backupPath, test.destination); err == nil {
+			if err := RestoreWithImports(ctx, backupPath, test.destination, t.TempDir()); err == nil {
 				t.Fatal("restore to a backup artifact succeeded")
 			}
 			assertTestFileContents(t, backupPath, beforeDatabase)
@@ -874,7 +866,7 @@ func TestRestoreRejectsOrphanDestinationSidecars(t *testing.T) {
 		t.Fatal(err)
 	}
 	backupPath := filepath.Join(t.TempDir(), "backup.sqlite")
-	if _, err := testBackup(ctx, sourcePath, backupPath); err != nil {
+	if _, err := BackupWithImports(ctx, sourcePath, backupPath); err != nil {
 		t.Fatal(err)
 	}
 
@@ -885,7 +877,7 @@ func TestRestoreRejectsOrphanDestinationSidecars(t *testing.T) {
 			if err := os.WriteFile(sidecarPath, []byte("orphan"), 0o640); err != nil {
 				t.Fatal(err)
 			}
-			if err := testRestore(ctx, backupPath, databasePath); err == nil {
+			if err := RestoreWithImports(ctx, backupPath, databasePath, t.TempDir()); err == nil {
 				t.Fatal("restore with an orphan destination sidecar succeeded")
 			}
 			if _, err := os.Stat(databasePath); !errors.Is(err, os.ErrNotExist) {
@@ -929,7 +921,7 @@ func TestRestoreRejectsSourceAtRecoveryPath(t *testing.T) {
 			directory := t.TempDir()
 			databasePath := filepath.Join(directory, "vocab.sqlite")
 			backupPath := databasePath + suffix
-			if _, err := testBackup(ctx, sourcePath, backupPath); err != nil {
+			if _, err := BackupWithImports(ctx, sourcePath, backupPath); err != nil {
 				t.Fatal(err)
 			}
 			beforeChecksum, err := fileChecksum(t.Context(), backupPath)
@@ -937,7 +929,7 @@ func TestRestoreRejectsSourceAtRecoveryPath(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if err := testRestore(ctx, backupPath, databasePath); err == nil {
+			if err := RestoreWithImports(ctx, backupPath, databasePath, t.TempDir()); err == nil {
 				t.Fatal("restore from a recovery artifact path succeeded")
 			}
 			afterChecksum, err := fileChecksum(t.Context(), backupPath)
@@ -1086,7 +1078,7 @@ func TestPublishBackupKeepsPreviousSetWhenChecksumIsMissing(t *testing.T) {
 	if err := os.WriteFile(stagedPath, []byte("new database"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	if err := publishBackup(stagedPath, outputPath, true); err == nil {
+	if err := publishBackup(stagedPath, outputPath); err == nil {
 		t.Fatal("published backup without a staged checksum")
 	}
 	assertTestFileContents(t, outputPath, []byte("old database"))

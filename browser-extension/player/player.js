@@ -10,12 +10,7 @@
   const playerStateModel = globalThis.GoiExtension.playerState;
   const dictionaryClient = globalThis.GoiExtension.dictionaryClient;
   const dictionaryRenderer = globalThis.GoiExtension.dictionaryView;
-  const translationModel = globalThis.GoiExtension.translation || {
-    create: function () {
-      return { translate: function () { return Promise.reject(new Error("Translation is unavailable.")); } };
-    },
-    selectedText: function (selection) { return selection.toString().trim(); }
-  };
+  const translationModel = globalThis.GoiExtension.translation;
   const HOVER_LOOKUP_DELAY_MS = 120;
   const displayModeInputs = Array.from(document.querySelectorAll('input[name="display-mode"]'));
   const pauseBehaviorInputs = Array.from(document.querySelectorAll('input[name="pause-behavior"]'));

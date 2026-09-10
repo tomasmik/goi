@@ -2,7 +2,9 @@ package mining
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 
 	"github.com/tomasmik/goi/internal/dictionary/jmdict"
 )
@@ -57,14 +59,22 @@ func lookupEnrichment(ctx context.Context, dictionary DictionaryLookup, capture 
 	return result
 }
 
-func candidateAcceptanceAt(enrichment Enrichment, candidateID int64) (candidateAcceptance, error) {
-	if candidateID <= 0 || candidateID > int64(len(enrichment.Candidates)) {
-		return candidateAcceptance{}, ErrStaleEnrichment
+// Identity excludes meanings and frequency: dictionary updates may change defaults,
+// but must never change which written/reading pair a submitted form selects.
+func candidateID(candidate jmdict.Candidate) string {
+	identity := fmt.Sprintf("%d:%q:%q", candidate.EntrySequence, candidate.Written, candidate.Reading)
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))
+}
+
+func candidateAcceptanceFor(enrichment Enrichment, id string) (candidateAcceptance, error) {
+	for _, candidate := range enrichment.Candidates {
+		if candidateID(candidate) == id {
+			return candidateAcceptance{
+				written:  candidate.Written,
+				reading:  candidate.Reading,
+				meanings: candidateMeanings(candidate),
+			}, nil
+		}
 	}
-	candidate := enrichment.Candidates[candidateID-1]
-	return candidateAcceptance{
-		written:  candidate.Written,
-		reading:  candidate.Reading,
-		meanings: candidateMeanings(candidate),
-	}, nil
+	return candidateAcceptance{}, ErrStaleEnrichment
 }

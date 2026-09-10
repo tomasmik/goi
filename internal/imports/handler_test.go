@@ -352,6 +352,59 @@ func TestTextImportDoesNotOfferAnEmptyImport(t *testing.T) {
 	}
 }
 
+func TestTextImportRejectsInvalidExamplesWithoutSavingRows(t *testing.T) {
+	for _, test := range []struct{ name, sentence string }{
+		{name: "missing sentence"},
+		{name: "oversized sentence", sentence: strings.Repeat("あ", 2001)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store, _, _ := newImportHandlerTest(t)
+			data := "expression,reading,meaning,example,translation\n" +
+				"猫,ねこ,cat," + test.sentence + ",A cat\n" +
+				"犬,いぬ,dog,犬です。,It is a dog."
+			result, err := store.ImportText(context.Background(), data, TextImportOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Created != 1 || result.Failed != 1 || result.Skipped != 0 {
+				t.Fatalf("import result = %+v, want one created and one failed", result)
+			}
+			var expression string
+			if err := store.db.QueryRow("SELECT expression FROM vocabulary").Scan(&expression); err != nil {
+				t.Fatal(err)
+			}
+			if expression != "犬" {
+				t.Fatalf("saved expression = %q, want 犬", expression)
+			}
+			for _, table := range []string{"vocabulary", "meanings", "vocabulary_examples"} {
+				var count int
+				if err := store.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
+					t.Fatal(err)
+				}
+				if count != 1 {
+					t.Fatalf("%s count = %d, want only the valid row's data", table, count)
+				}
+			}
+		})
+	}
+}
+
+func TestTextImportSkipsDuplicatesBeforeValidatingTheirExamples(t *testing.T) {
+	store, _, _ := newImportHandlerTest(t)
+	ctx := context.Background()
+	if _, err := store.ImportText(ctx, "猫,ねこ,cat", TextImportOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.ImportText(ctx,
+		"expression,reading,meaning,example,translation\n猫,ねこ,cat,,A cat", TextImportOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Skipped != 1 || result.Created != 0 || result.Failed != 0 {
+		t.Fatalf("duplicate result = %+v, want one skipped", result)
+	}
+}
+
 func TestStructuredTextRejectsDuplicateHeaders(t *testing.T) {
 	_, err := parseStructuredTextRows("expression\texpression\n猫\tcat")
 	if err == nil || !strings.Contains(err.Error(), "duplicate column") {

@@ -72,6 +72,35 @@ its page closes are failures even when the screen looks right.
 - Create a backup and restore it into a fresh data directory. Compare study
   state, captures, context, and media.
 
+When changing study templates or form enhancement, run this browser gate with
+disposable data. Keep the Network panel and console open:
+
+- In typed mode, answer two consecutive prompts with automatic advancement
+  enabled. Each answer must replace the study stage and leave the next answer
+  input focused, ready to type without clicking. Hold Enter or send repeated
+  Enter presses; an empty next prompt must not be committed.
+- With automatic advancement off in a new session, check the confirmation
+  stage and deliberately continue. Also check an incorrect answer, correction,
+  pause/resume, and exactly one word/reading-or-meaning subject in each active
+  stage. A paused stage has no subject.
+- In self-grade mode in a new session, reveal the answer, then deliberately
+  choose Good or Again. Revealing or holding a key must not grade the answer.
+  After grading, the next Show answer control must have focus.
+- Fail one fragment request with the browser's request-blocking tools, then
+  unblock it. The page must recover to the persisted prompt, with usable
+  controls. Verify a successful retry; do not assume a failed response means
+  the server made no change.
+- With at least 41 lesson-ready words, select one on each picker page. Navigate
+  back and confirm both selections remain, including the off-page count. Start
+  the lesson and verify both words are present; navigate to the next card and
+  check focus. Also check the normal form path with JavaScript disabled.
+- At desktop and narrow widths, check Preferences and Translation/examples
+  choice groups, disabled provider fields, and keyboard order. Check the last
+  Vocabulary/Mining filter and Settings tab is visible without horizontal page
+  overflow or unwanted vertical scrolling. Check real audio playback after a
+  deliberate action separately; headless or fake-audio checks do not prove
+  interactive autoplay behavior.
+
 ### Browser extension
 
 - Connect the downloaded extension, restart Chrome, and make sure it recovers.

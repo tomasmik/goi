@@ -2,6 +2,7 @@ package mining
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -103,17 +104,6 @@ func (s *Store) AddMedia(ctx context.Context, id, expectedRevision int64, audio 
 	if len(audio) == 0 && frame == nil && pronunciation == nil {
 		return validationError("choose at least one audio or image file")
 	}
-	for _, upload := range audio {
-		if upload.Kind != media.KindAudio {
-			return validationError("sentence audio has the wrong media kind")
-		}
-	}
-	if frame != nil && frame.Kind != media.KindImage {
-		return validationError("video frame has the wrong media kind")
-	}
-	if pronunciation != nil && pronunciation.Kind != media.KindAudio {
-		return validationError("pronunciation audio has the wrong media kind")
-	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -127,6 +117,90 @@ func (s *Store) AddMedia(ctx context.Context, id, expectedRevision int64, audio 
 	if err := requirePendingRevision(state, expectedRevision); err != nil {
 		return err
 	}
+	if err := addMediaInTx(ctx, tx, id, state, audio, frame, pronunciation); err != nil {
+		return err
+	}
+	if err := media.CollectUnusedInTx(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit mining media upload: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) SetPronunciationAudio(ctx context.Context, id, expectedRevision int64, upload media.Upload) error {
+	return s.AddMedia(ctx, id, expectedRevision, nil, nil, &upload)
+}
+
+func (s *Store) RemoveMedia(ctx context.Context, id, expectedRevision, mediaID int64) error {
+	if id <= 0 || expectedRevision <= 0 || mediaID <= 0 {
+		return validationError("capture media is invalid")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin mining media removal: %w", err)
+	}
+	defer tx.Rollback()
+	state, err := loadTransitionState(ctx, tx, id)
+	if err != nil {
+		return err
+	}
+	if err := requirePendingRevision(state, expectedRevision); err != nil {
+		return err
+	}
+	if err := removeMediaInTx(ctx, tx, id, mediaID); err != nil {
+		return err
+	}
+	if err := media.CollectUnusedInTx(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit mining media removal: %w", err)
+	}
+	return nil
+}
+
+type cardMediaChanges struct {
+	removeIDs     []int64
+	audio         []media.Upload
+	frame         *media.Upload
+	pronunciation *media.Upload
+}
+
+func applyCardMediaInTx(ctx context.Context, tx *sql.Tx, id int64, state transitionState, changes cardMediaChanges) error {
+	if len(changes.removeIDs) == 0 && len(changes.audio) == 0 && changes.frame == nil && changes.pronunciation == nil {
+		return nil
+	}
+	for _, mediaID := range changes.removeIDs {
+		if mediaID <= 0 {
+			return validationError("capture media is invalid")
+		}
+		if err := removeMediaInTx(ctx, tx, id, mediaID); err != nil {
+			return err
+		}
+	}
+	if len(changes.audio) > 0 || changes.frame != nil || changes.pronunciation != nil {
+		if err := addMediaInTx(ctx, tx, id, state, changes.audio, changes.frame, changes.pronunciation); err != nil {
+			return err
+		}
+	}
+	return media.CollectUnusedInTx(ctx, tx)
+}
+
+func addMediaInTx(ctx context.Context, tx *sql.Tx, id int64, state transitionState, audio []media.Upload, frame, pronunciation *media.Upload) error {
+	for _, upload := range audio {
+		if upload.Kind != media.KindAudio {
+			return validationError("sentence audio has the wrong media kind")
+		}
+	}
+	if frame != nil && frame.Kind != media.KindImage {
+		return validationError("video frame has the wrong media kind")
+	}
+	if pronunciation != nil && pronunciation.Kind != media.KindAudio {
+		return validationError("pronunciation audio has the wrong media kind")
+	}
+
 	if (len(audio) > 0 || frame != nil) && strings.TrimSpace(state.contextText) == "" {
 		return validationError("add a sentence before attaching sentence media")
 	}
@@ -180,35 +254,10 @@ func (s *Store) AddMedia(ctx context.Context, id, expectedRevision int64, audio 
 			return fmt.Errorf("associate pronunciation audio: %w", err)
 		}
 	}
-	if err := media.CollectUnusedInTx(ctx, tx); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit mining media upload: %w", err)
-	}
 	return nil
 }
 
-func (s *Store) SetPronunciationAudio(ctx context.Context, id, expectedRevision int64, upload media.Upload) error {
-	return s.AddMedia(ctx, id, expectedRevision, nil, nil, &upload)
-}
-
-func (s *Store) RemoveMedia(ctx context.Context, id, expectedRevision, mediaID int64) error {
-	if id <= 0 || expectedRevision <= 0 || mediaID <= 0 {
-		return validationError("capture media is invalid")
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("begin mining media removal: %w", err)
-	}
-	defer tx.Rollback()
-	state, err := loadTransitionState(ctx, tx, id)
-	if err != nil {
-		return err
-	}
-	if err := requirePendingRevision(state, expectedRevision); err != nil {
-		return err
-	}
+func removeMediaInTx(ctx context.Context, tx *sql.Tx, id, mediaID int64) error {
 	result, err := tx.ExecContext(ctx, `
 		DELETE FROM mining_capture_media
 		WHERE capture_id = ? AND media_id = ?`, id, mediaID)
@@ -217,12 +266,6 @@ func (s *Store) RemoveMedia(ctx context.Context, id, expectedRevision, mediaID i
 	}
 	if err := requireOneRow(result, "remove mining media"); err != nil {
 		return err
-	}
-	if err := media.CollectUnusedInTx(ctx, tx); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit mining media removal: %w", err)
 	}
 	return nil
 }

@@ -11,6 +11,10 @@ function control(properties = {}) {
   const listeners = new Map();
   return {
     checked: false,
+    children: [],
+    append(...nodes) { this.children.push(...nodes); },
+    appendChild(node) { this.children.push(node); },
+    replaceChildren(...nodes) { this.children = nodes; },
     classList: {
       toggle() {},
     },
@@ -33,45 +37,10 @@ function control(properties = {}) {
 }
 
 function createHarness(options = {}) {
-  const pauseChoices = [
-    control({ type: "radio", value: "never", checked: true }),
-    control({ type: "radio", value: "on_selection" }),
-    control({ type: "radio", value: "after_capture" }),
-  ];
-  const displayChoices = [
-    control({ type: "radio", value: "always", checked: true }),
-    control({ type: "radio", value: "hidden" }),
-    control({ type: "radio", value: "unknown_only" }),
-    control({ type: "radio", value: "pause_reveal" }),
-  ];
-  const elements = {
-    "base-url": control({ type: "url" }),
-    token: control({ type: "password" }),
-    "overlay-enabled-control": control({ hidden: false }),
-    "overlay-enabled": control({ type: "checkbox" }),
-    "hide-native": control({ type: "checkbox" }),
-    "hide-native-detail": control({ hidden: true }),
-    "open-local-player": control({ type: "button" }),
-    "open-subtitle-browser": control({ type: "button", hidden: true }),
-    "youtube-hover-lookup": control({ type: "checkbox" }),
-    "analyze-section": control({ hidden: false, appendChild() {} }),
-    "youtube-settings": control({ hidden: true, appendChild() {} }),
-    "font-size": control({ type: "range", value: "34" }),
-    "font-size-value": control(),
-    "vertical-position": control({ type: "range", value: "78" }),
-    "vertical-position-value": control(),
-    "background-opacity": control({ type: "range", value: "0.65" }),
-    "background-opacity-value": control(),
-    "coverage-display": control({ type: "select-one", value: "full" }),
-    "site-auto-control": control({ hidden: true }),
-    "site-auto": control({ type: "checkbox", disabled: true }),
-    "site-auto-label": control(),
-    "site-auto-detail": control(),
-    "outbox-status": control({ hidden: true }),
-    status: control(),
-    "open-connection-settings": control({ type: "button" }),
-    "analyze-page": control({ type: "button" }),
-  };
+  const html = fs.readFileSync(path.join(__dirname, "../popup/popup.html"), "utf8");
+  const elements = Object.fromEntries(Array.from(html.matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/gu), (match) => [
+    match[1], control({ hidden: /\bhidden\b/u.test(match[0]) }),
+  ]));
   const messages = [];
   let settings = {
     overlayEnabled: true,
@@ -102,13 +71,7 @@ function createHarness(options = {}) {
       getElementById(id) {
         return elements[id];
       },
-      querySelectorAll(selector) {
-        if (selector === 'input[name="pause-behavior"]') {
-          return pauseChoices;
-        }
-        assert.equal(selector, 'input[name="display-mode"]');
-        return displayChoices;
-      },
+      createElement() { return control(); },
     },
     chrome: {
       permissions: {
@@ -182,7 +145,10 @@ function createHarness(options = {}) {
           if (message.type === "goi.player.open" && options.playerOpenFailure) {
             return Promise.resolve({ ok: false, errorCode: "server" });
           }
-          return Promise.resolve({ ok: true });
+          if (message.type === "goi.site-auto.list") return Promise.resolve({ ok: true, origins: [] });
+          if (message.type === "goi.coverage.ignore.list") return Promise.resolve({ ok: true, words: [] });
+          if (message.type === "goi.player.open" || message.type === "goi.companion.open") return Promise.resolve({ ok: true });
+          return Promise.reject(new Error("Unexpected popup message: " + message.type));
         },
       },
     },
@@ -192,8 +158,6 @@ function createHarness(options = {}) {
   return {
     elements,
     messages,
-    displayChoices,
-    pauseChoices,
     permissionCalls,
     get optionsOpenCount() { return optionsOpenCount; },
     finishPermissionCheck(value) {

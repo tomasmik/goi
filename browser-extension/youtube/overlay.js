@@ -13,18 +13,13 @@
   const dictionaryClient = globalThis.GoiExtension.dictionaryClient;
   const dictionaryRenderer = globalThis.GoiExtension.dictionaryView;
   const subtitleFileModel = globalThis.GoiExtension.subtitleFileModel;
-  const translationModel = globalThis.GoiExtension.translation || {
-    create: function () {
-      return { translate: function () { return Promise.reject(new Error("Translation is unavailable.")); } };
-    }
-  };
+  const translationModel = globalThis.GoiExtension.translation;
+  const captionHistory = globalThis.GoiExtension.captionHistory.create(subtitleModel);
   const COVERAGE_DELAY_MS = 80;
   const COVERAGE_RETRY_MS = 30000;
   const MAX_COVERAGE_TEXT = 18000;
   const MAX_PENDING_COVERAGE = 100;
   const MAX_RETAINED_CAPTIONS = 100;
-  const MAX_OBSERVED_SUBTITLE_LINES = 300;
-  const MAX_OBSERVED_SUBTITLE_CHARACTERS = 120000;
   const FULL_TRANSCRIPT_FIRST_ID = 1000000;
   const TRANSCRIPT_RETRY_DELAYS = [500, 1500, 3000, 5000, 10000, 15000, 30000];
   const HOVER_LOOKUP_DELAY_MS = 120;
@@ -94,8 +89,6 @@
     workerGeneration: -1
   };
   const transcriptRuntime = {
-    observedLines: [],
-    observedCharacters: 0,
     observedRevision: 0,
     generation: 0,
     retryTimer: undefined,
@@ -1145,7 +1138,7 @@
   }
 
   function activeCaptureSentence(fallback) {
-    const line = coverageRuntime.activeOccurrence && subtitleLine(coverageRuntime.activeOccurrence);
+    const line = coverageRuntime.activeOccurrence && captionHistory.line(coverageRuntime.activeOccurrence);
     return line ? line.text : String(fallback || "");
   }
 
@@ -1978,52 +1971,10 @@
     return Number.isSafeInteger(active) ? active : undefined;
   }
 
-  function subtitleLine(occurrence) {
-    const text = String(occurrence && occurrence.analysisText || "").trim();
-    if (!text) {
-      return null;
-    }
-    return {
-      id: occurrence.id,
-      text,
-      sourcePositionMs: Number.isSafeInteger(occurrence.sourcePositionMs)
-        ? occurrence.sourcePositionMs
-        : null,
-      sourceTitle: String(occurrence.sourceTitle || "").slice(0, 500),
-      sourceURL: String(occurrence.sourceURL || "").slice(0, 4096),
-      classification: occurrence.coverageState === "ready"
-        ? "ready"
-        : occurrence.coverageState === "unavailable"
-          ? "unavailable"
-          : "pending",
-      unknowns: subtitleModel.unknownWords(text, occurrence.coverageBlock),
-      words: subtitleModel.words(text, occurrence.coverageBlock)
-    };
-  }
-
   function publishSubtitleLine(occurrence) {
-    if (occurrence.historyReplay) {
-      return;
+    if (captionHistory.publish(occurrence)) {
+      touchObservedSubtitleRevision();
     }
-    const line = subtitleLine(occurrence);
-    if (!line) {
-      return;
-    }
-    const existingIndex = transcriptRuntime.observedLines.findIndex(function (candidate) {
-      return candidate.id === line.id;
-    });
-    if (existingIndex >= 0) {
-      transcriptRuntime.observedCharacters -= transcriptRuntime.observedLines[existingIndex].text.length;
-      transcriptRuntime.observedLines[existingIndex] = line;
-    } else {
-      transcriptRuntime.observedLines.push(line);
-    }
-    transcriptRuntime.observedCharacters += line.text.length;
-    while (transcriptRuntime.observedLines.length > MAX_OBSERVED_SUBTITLE_LINES ||
-        transcriptRuntime.observedCharacters > MAX_OBSERVED_SUBTITLE_CHARACTERS) {
-      transcriptRuntime.observedCharacters -= transcriptRuntime.observedLines.shift().text.length;
-    }
-    touchObservedSubtitleRevision();
   }
 
   function touchObservedSubtitleRevision() {
@@ -2033,8 +1984,7 @@
   }
 
   function resetSubtitleHistory() {
-    transcriptRuntime.observedLines = [];
-    transcriptRuntime.observedCharacters = 0;
+    captionHistory.clear();
     transcriptRuntime.observedRevision += 1;
     lastObservedCaption = undefined;
   }
@@ -2057,23 +2007,7 @@
         lines: transcriptRuntime.lines.map(publicTranscriptLine)
       };
     }
-    const active = coverageRuntime.activeOccurrence && !coverageRuntime.activeOccurrence.historyReplay
-      ? subtitleLine(coverageRuntime.activeOccurrence)
-      : null;
-    const lines = [];
-    let characters = active ? active.text.length : 0;
-    for (let index = transcriptRuntime.observedLines.length - 1; index >= 0; index -= 1) {
-      const line = transcriptRuntime.observedLines[index];
-      if (lines.length >= MAX_OBSERVED_SUBTITLE_LINES - Number(Boolean(active)) ||
-          characters + line.text.length > MAX_OBSERVED_SUBTITLE_CHARACTERS) {
-        break;
-      }
-      lines.unshift(line);
-      characters += line.text.length;
-    }
-    if (active) {
-      lines.push(active);
-    }
+    const lines = captionHistory.snapshot(coverageRuntime.activeOccurrence);
     return {
       sessionID: subtitleSessionID,
       revision: transcriptRuntime.observedRevision,
@@ -2095,13 +2029,13 @@
       return null;
     }
     if (coverageRuntime.activeOccurrence && coverageRuntime.activeOccurrence.id === lineID) {
-      return subtitleLine(coverageRuntime.activeOccurrence);
+      return captionHistory.line(coverageRuntime.activeOccurrence);
     }
     const transcriptLine = transcriptRuntime.lines.find(function (line) { return line.id === lineID; });
     if (transcriptLine) {
       return transcriptLine;
     }
-    return transcriptRuntime.observedLines.find(function (line) { return line.id === lineID; }) || null;
+    return captionHistory.get(lineID);
   }
 
   function belongsToCurrentVideo(sourceURL) {
@@ -2836,7 +2770,7 @@
       return false;
     }
     if (message.type === "goi.youtube.capture.current") {
-      const line = coverageRuntime.activeOccurrence && subtitleLine(coverageRuntime.activeOccurrence);
+      const line = coverageRuntime.activeOccurrence && captionHistory.line(coverageRuntime.activeOccurrence);
       const target = selectedCapture && line && selectedCapture.lineID === line.id
         ? subtitleModel.captureTarget(line, selectedCapture.surface)
         : null;

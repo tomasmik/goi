@@ -2,13 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  initBackupSettings,
   initCurrentOrigins,
   initExampleProviderPresets,
-  initLocalTimes,
   initCurrentTabs,
   initSettingsSaveBars,
-  initTimeZoneControls,
   initTranslationProviderPanels,
 } from "../static/js/settings-controls.js";
 
@@ -35,117 +32,32 @@ test("settings save bars appear only after a form value changes", () => {
   assert.equal(bar.hidden, true);
 });
 
-test("current tabs are scrolled into view", () => {
+test("settings navigation only scrolls a clipped current tab into view", () => {
   let options;
   const current = { offsetLeft: 500, offsetWidth: 100, scrollIntoView(next) { options = next; } };
-  const navigation = { scrollLeft: 0, clientWidth: 390, querySelector() { return current; } };
+  const navigation = { scrollLeft: 0, clientWidth: 390, matches() { return false; }, querySelector() { return current; } };
   initCurrentTabs({ querySelectorAll() { return [navigation]; } });
   assert.deepEqual(options, { block: "nearest", inline: "center" });
+
+  options = undefined;
+  current.offsetLeft = 100;
+  initCurrentTabs({ querySelectorAll() { return [navigation]; } });
+  assert.equal(options, undefined);
 });
 
-test("connected-browser times use Goi's configured timezone", () => {
-  let options;
-  const time = {
-    dateTime: "2026-08-06T12:00:00Z",
-    dataset: { timeZone: "Europe/Vilnius" },
-    textContent: "",
+test("filter tabs center the current tab without scrolling the page", () => {
+  const current = {
+    offsetLeft: 200,
+    offsetWidth: 100,
+    scrollIntoView() { assert.fail("filter centering must only scroll its tab list"); },
   };
-  const intl = {
-    DateTimeFormat: function (_locale, nextOptions) {
-      options = nextOptions;
-      return { format() { return "Aug 6, 2026, 3:00 PM"; } };
-    },
-  };
-  initLocalTimes({ querySelectorAll() { return [time]; } }, intl);
-  assert.equal(options.timeZone, "Europe/Vilnius");
-  assert.equal(time.textContent, "Aug 6, 2026, 3:00 PM");
-});
+  const filters = { scrollLeft: 0, clientWidth: 390, matches() { return true; }, querySelector() { return current; } };
+  initCurrentTabs({ querySelectorAll() { return [filters]; } });
+  assert.equal(filters.scrollLeft, 55);
 
-test("backup controls follow the daily backup toggle", () => {
-  const listeners = {};
-  const toggle = {
-    checked: false,
-    addEventListener(type, listener) { listeners[`toggle:${type}`] = listener; },
-  };
-  const controls = [{ disabled: false }, { disabled: false }];
-  const form = {
-    querySelector() { return toggle; },
-    querySelectorAll() { return controls; },
-    addEventListener(type, listener) { listeners[`form:${type}`] = listener; },
-  };
-  initBackupSettings({ querySelectorAll() { return [form]; } });
-  assert.deepEqual(controls.map((control) => control.disabled), [true, true]);
-
-  toggle.checked = true;
-  listeners["toggle:change"]();
-  assert.deepEqual(controls.map((control) => control.disabled), [false, false]);
-
-  toggle.checked = false;
-  listeners["toggle:change"]();
-  listeners["form:submit"]();
-  assert.deepEqual(controls.map((control) => control.disabled), [false, false]);
-});
-
-test("a completed backup refreshes the available backup list", async () => {
-  let poll;
-  let reloads = 0;
-  const status = { textContent: "A backup is queued." };
-  const button = { disabled: true };
-  const panel = {
-    dataset: { backupStateUrl: "/settings/backups/state" },
-    querySelector(selector) { return selector.includes("status") ? status : button; },
-  };
-  const root = {
-    querySelectorAll(selector) { return selector === "[data-backup-live]" ? [panel] : []; },
-  };
-  const environment = {
-    async fetch() {
-      return {
-        ok: true,
-        async json() { return { busy: false, state: { status: "success" } }; },
-      };
-    },
-    setTimeout(callback) { poll = callback; return 1; },
-    clearTimeout() {},
-    addEventListener() {},
-    location: { reload() { reloads++; } },
-  };
-
-  initBackupSettings(root, environment);
-  await poll();
-  assert.equal(reloads, 1);
-});
-
-test("timezone detection fills the browser timezone", () => {
-  let click;
-  let inputListener;
-  const input = {
-    id: "time-zone",
-    value: "UTC",
-    getAttribute() { return null; },
-    addEventListener(type, listener) { if (type === "input") inputListener = listener; },
-  };
-  const current = { textContent: "UTC" };
-  const button = {
-    addEventListener(type, listener) { if (type === "click") click = listener; },
-  };
-  const root = {
-    querySelectorAll() { return [input]; },
-    querySelector(selector) { return selector.includes("current") ? current : button; },
-  };
-  const intl = {
-    DateTimeFormat() {
-      return { resolvedOptions() { return { timeZone: "Europe/Vilnius" }; } };
-    },
-  };
-  initTimeZoneControls(root, intl);
-  click();
-  assert.equal(input.value, "Europe/Vilnius");
-  assert.equal(current.textContent, "Europe/Vilnius");
-
-  input.value = "Asia/Tokyo";
-  inputListener();
-  assert.equal(current.textContent, "Asia/Tokyo");
+  current.offsetLeft = 10;
+  initCurrentTabs({ querySelectorAll() { return [filters]; } });
+  assert.equal(filters.scrollLeft, 0);
 });
 
 test("provider presets fill editable connection fields", () => {

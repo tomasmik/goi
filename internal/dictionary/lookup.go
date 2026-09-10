@@ -36,7 +36,6 @@ func (s *LookupService) Lookup(ctx context.Context, expression, reading string) 
 		}
 		return match, nil
 	}
-	// Mining identifies candidates by position, so frequency updates must not reorder them.
 	for index, rank := range ranks {
 		match.Candidates[index].GlobalRank = rank.Global
 		match.Candidates[index].NovelRank = rank.Novel

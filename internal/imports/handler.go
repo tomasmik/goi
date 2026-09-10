@@ -43,6 +43,7 @@ type PreviewNote struct {
 }
 
 const (
+	TextImportBodyLimit        = 2 << 20
 	previewNoteLimit           = 25
 	previewFieldCharacterLimit = 240
 )
@@ -66,7 +67,7 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) importText(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, TextImportBodyLimit)
 	if err := r.ParseForm(); err != nil {
 		h.renderError(w, r, "the pasted data is too large or invalid", http.StatusUnprocessableEntity)
 		return

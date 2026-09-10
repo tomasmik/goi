@@ -109,6 +109,22 @@
 </div>
 {{end}}
 
+{{define "review-subject"}}
+<section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
+  <div class="review-prompt-label">
+    {{if not .Confirmation}}
+    {{if .State.Feedback}}
+    <span>Correction</span>
+    {{else if and (eq .State.AnswerMode "self_grade") .Revealed}}
+    <span>Answer</span>
+    {{end}}
+    {{end}}
+    <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
+  </div>
+  {{template "review-expression" .State}}
+</section>
+{{end}}
+
 {{define "review-session-body"}}
 <div
   id="study-stage"
@@ -130,12 +146,7 @@
     </form>
   </section>
   {{else if .Confirmation}}
-  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
-    <div class="review-prompt-label">
-      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
-    </div>
-    {{template "review-expression" .State}}
-  </section>
+  {{template "review-subject" .}}
 
   <section class="correction-panel review-confirmation" data-review-confirmation>
     <div class="review-result-row {{if .Confirmation.Correct}}is-correct{{else}}is-incorrect{{end}}" role="status">
@@ -202,13 +213,7 @@
     {{end}}
   </section>
   {{else if .State.Feedback}}
-  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
-    <div class="review-prompt-label">
-      <span>Correction</span>
-      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
-    </div>
-    {{template "review-expression" .State}}
-  </section>
+  {{template "review-subject" .}}
 
   <section class="correction-panel">
     <div class="correction-heading" role="status">
@@ -249,13 +254,7 @@
     </div>
   </section>
   {{else if and (eq .State.AnswerMode "self_grade") .Revealed}}
-  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
-    <div class="review-prompt-label">
-      <span>Answer</span>
-      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
-    </div>
-    {{template "review-expression" .State}}
-  </section>
+  {{template "review-subject" .}}
 
   <section class="correction-panel review-self-grade" data-review-self-grade>
     <div class="correction-heading" role="status">
@@ -293,12 +292,7 @@
     </div>
   </section>
   {{else if eq .State.AnswerMode "self_grade"}}
-  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
-    <div class="review-prompt-label">
-      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
-    </div>
-    {{template "review-expression" .State}}
-  </section>
+  {{template "review-subject" .}}
   <form class="review-reveal-form" method="post" action="/reviews/session/{{.State.ID}}/reveal" data-review-action data-review-reveal data-prime-feedback-audio>
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="prompt_id" value="{{.State.PromptID}}">
@@ -306,12 +300,7 @@
   </form>
   <p class="review-keyboard-hint review-keyboard-hint-centered"><kbd>Space</kbd> show answer</p>
   {{else}}
-  <section class="review-subject {{if eq .State.PromptType "pronunciation"}}is-reading{{else}}is-meaning{{end}}">
-    <div class="review-prompt-label">
-      <strong>{{if eq .State.PromptType "pronunciation"}}Reading{{else}}Meaning{{end}}</strong>
-    </div>
-    {{template "review-expression" .State}}
-  </section>
+  {{template "review-subject" .}}
 
   <form
     class="review-answer-form"

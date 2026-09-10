@@ -130,7 +130,14 @@ func (s *Store) recordAnswer(ctx context.Context, sessionID, promptID int64, ans
 	if prompt.answerMode != reviewModeTyped {
 		return AnswerOutcome{}, stateError("this review uses self grading")
 	}
-	return s.recordPromptResultTx(ctx, tx, sessionID, promptID, prompt, result, answer, false)
+	outcome, err := s.recordPromptResultTx(ctx, tx, sessionID, promptID, prompt, result, answer, false)
+	if err != nil {
+		return AnswerOutcome{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return AnswerOutcome{}, fmt.Errorf("commit answer: %w", err)
+	}
+	return outcome, nil
 }
 
 func (s *Store) Grade(ctx context.Context, sessionID, promptID int64, correct bool) (AnswerOutcome, error) {
@@ -151,7 +158,14 @@ func (s *Store) Grade(ctx context.Context, sessionID, promptID int64, correct bo
 	if correct {
 		result = Correct
 	}
-	return s.recordPromptResultTx(ctx, tx, sessionID, promptID, prompt, result, "", !correct)
+	outcome, err := s.recordPromptResultTx(ctx, tx, sessionID, promptID, prompt, result, "", !correct)
+	if err != nil {
+		return AnswerOutcome{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return AnswerOutcome{}, fmt.Errorf("commit self grade: %w", err)
+	}
+	return outcome, nil
 }
 
 func (s *Store) GiveUp(ctx context.Context, sessionID, promptID int64) (AnswerOutcome, error) {
@@ -171,9 +185,16 @@ func (s *Store) GiveUp(ctx context.Context, sessionID, promptID int64) (AnswerOu
 	if prompt.attempts == 0 {
 		return AnswerOutcome{}, stateError("submit an answer before revealing the result")
 	}
-	return s.recordPromptResultTx(
+	outcome, err := s.recordPromptResultTx(
 		ctx, tx, sessionID, promptID, prompt, Incorrect, prompt.rejectedAnswer, true,
 	)
+	if err != nil {
+		return AnswerOutcome{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return AnswerOutcome{}, fmt.Errorf("commit answer reveal: %w", err)
+	}
+	return outcome, nil
 }
 
 func (s *Store) recordPromptResultTx(
@@ -246,9 +267,6 @@ func (s *Store) recordPromptResultTx(
 			WHERE id = ?`, attemptNumber, rejectedAnswer, rejectedContentRevision, promptID); err != nil {
 			return AnswerOutcome{}, fmt.Errorf("record retry count: %w", err)
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return AnswerOutcome{}, fmt.Errorf("commit answer: %w", err)
 	}
 	return AnswerOutcome{Value: result, FinalFailure: result == Incorrect && attemptNumber >= prompt.maxAttempts}, nil
 }
@@ -868,7 +886,7 @@ func (s *Store) promoteNextTx(ctx context.Context, tx *sql.Tx, sessionID int64, 
 			if _, updateErr := tx.ExecContext(ctx, `UPDATE review_sessions SET status = 'completed', completed_at = ? WHERE id = ?`, now.Unix(), sessionID); updateErr != nil {
 				return fmt.Errorf("complete review session: %w", updateErr)
 			}
-			return nil
+			return completeLessonReviewTx(ctx, tx, sessionID)
 		}
 		return fmt.Errorf("find next review item: %w", err)
 	}

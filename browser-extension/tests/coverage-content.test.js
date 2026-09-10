@@ -9,6 +9,8 @@ const dictionaryClient = require("../shared/dictionary-client.js");
 const dictionaryView = require("../shared/dictionary-view.js");
 const subtitleModel = require("../shared/subtitle-model.js");
 
+const { workerHarness } = require("./helpers/service-worker-harness.js");
+
 const excludedTags = new Set([
   "SCRIPT", "STYLE", "NOSCRIPT", "TEMPLATE", "TEXTAREA", "INPUT", "SELECT",
   "OPTION", "BUTTON", "CODE", "PRE", "KBD", "SAMP", "RT", "RP", "SVG",
@@ -268,10 +270,20 @@ function createHarness(content, options = {}) {
   const messages = [];
   const storageData = options.storageData || {};
   let messageResponse = { ok: true, queued: false };
+  const worker = workerHarness(null, null, null, null, { localStorage: storageData });
   const context = {
     chrome: {
       runtime: {
         sendMessage(message) {
+          if (message.type.startsWith("goi.coverage.panel.")) {
+            return new Promise(function (resolve) {
+              worker.handleRuntimeMessage(message, {
+                id: "goi-test", frameId: 0,
+                url: "https://reader.example/chapter",
+                tab: { id: 1, url: "https://reader.example/chapter" },
+              }, resolve);
+            });
+          }
           messages.push(message);
           return Promise.resolve(
             typeof messageResponse === "function" ? messageResponse(message) : messageResponse,
@@ -281,11 +293,10 @@ function createHarness(content, options = {}) {
       storage: {
         local: {
           get(key) {
-            return Promise.resolve({ [key]: storageData[key] });
+            throw new Error("Content scripts cannot access trusted local storage");
           },
           set(values) {
-            Object.assign(storageData, values);
-            return Promise.resolve();
+            throw new Error("Content scripts cannot access trusted local storage");
           },
         },
       },

@@ -2,6 +2,7 @@ package imports
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -27,6 +28,19 @@ const (
 	maxNoteTextBytes      int64 = 64 << 20
 	maxNoteFieldCount           = 256
 )
+
+type Note struct {
+	ID      int64
+	ModelID int64
+	Fields  []string
+}
+
+type Preview struct {
+	Fields     []string
+	Notes      []Note
+	MediaCount int
+	ModelCount int
+}
 
 func Inspect(ctx context.Context, path string) (Preview, error) {
 	if err := ctx.Err(); err != nil {
@@ -173,6 +187,17 @@ func copyZipEntry(ctx context.Context, entry *zip.File, destination io.Writer, l
 		return fmt.Errorf("%w: %d bytes", errArchiveEntryTooLarge, limit)
 	}
 	return nil
+}
+
+func readZipEntryContext(ctx context.Context, entry *zip.File, limit int64) ([]byte, error) {
+	var content bytes.Buffer
+	if err := copyZipEntry(ctx, entry, &content, limit); err != nil {
+		if errors.Is(err, errArchiveEntryTooLarge) {
+			return nil, fmt.Errorf("archive entry exceeds the %d byte limit", limit)
+		}
+		return nil, err
+	}
+	return content.Bytes(), nil
 }
 
 func safeArchivePath(name string) bool {
@@ -344,7 +369,7 @@ func scanNote(
 		return Note{}, err
 	}
 	for i := range parts {
-		parts[i] = cleanField(parts[i])
+		parts[i] = strings.TrimSpace(parts[i])
 	}
 	if hasModelID {
 		unified := make([]string, len(selectedFields))
@@ -355,11 +380,6 @@ func scanNote(
 	}
 	note.Fields = parts
 	return note, nil
-}
-
-func combinedModelFields(models map[string][]string) []string {
-	fields, _ := combinedModelLayout(models)
-	return fields
 }
 
 func combinedModelLayout(models map[string][]string) ([]string, map[string][]int) {

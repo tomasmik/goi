@@ -23,7 +23,7 @@ var (
 )
 
 func RestoreWithImports(ctx context.Context, backupPath, databasePath, stagingPath string) error {
-	return restore(ctx, backupPath, databasePath, stagingPath, true, nil, false)
+	return restore(ctx, backupPath, databasePath, stagingPath, nil, false)
 }
 
 func RestoreWithImportsUnderLock(
@@ -35,7 +35,7 @@ func RestoreWithImportsUnderLock(
 	if !lock.holdsExclusive(databasePath + ".lock") {
 		return errors.New("restore requires a held exclusive database lock")
 	}
-	return restore(ctx, backupPath, databasePath, stagingPath, true, lock, preservePrevious)
+	return restore(ctx, backupPath, databasePath, stagingPath, lock, preservePrevious)
 }
 
 type stagedImport struct {
@@ -48,7 +48,6 @@ type stagedImport struct {
 func restore(
 	ctx context.Context,
 	backupPath, databasePath, stagingPath string,
-	includeImports bool,
 	heldLock *Lock,
 	preservePrevious bool,
 ) error {
@@ -96,16 +95,12 @@ func restore(
 		return classifyRestoreSourceError(err)
 	}
 
-	var imports []stagedImport
-	var importWorkspace string
-	if includeImports {
-		imports, importWorkspace, err = stagePendingImports(ctx, backupPath, stagedDatabasePath, stagingPath)
-		if err != nil {
-			return classifyRestoreSourceError(err)
-		}
-		if importWorkspace != "" {
-			defer os.RemoveAll(importWorkspace)
-		}
+	imports, importWorkspace, err := stagePendingImports(ctx, backupPath, stagedDatabasePath, stagingPath)
+	if err != nil {
+		return classifyRestoreSourceError(err)
+	}
+	if importWorkspace != "" {
+		defer os.RemoveAll(importWorkspace)
 	}
 	if err := ctx.Err(); err != nil {
 		return err

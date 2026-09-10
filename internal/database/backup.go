@@ -15,10 +15,6 @@ type pendingImport struct {
 	SHA256 string `json:"sha256"`
 }
 
-func BackupWithImports(ctx context.Context, sourcePath, outputPath string) (string, error) {
-	return createBackup(ctx, sourcePath, outputPath, true)
-}
-
 func exportPendingImports(ctx context.Context, snapshotPath, outputPath string) error {
 	if err := os.RemoveAll(outputPath); err != nil {
 		return fmt.Errorf("replace pending import backup directory: %w", err)
@@ -89,11 +85,11 @@ func exportPendingImports(ctx context.Context, snapshotPath, outputPath string) 
 	return nil
 }
 
-func createBackup(ctx context.Context, sourcePath, outputPath string, includeImports bool) (string, error) {
+func BackupWithImports(ctx context.Context, sourcePath, outputPath string) (string, error) {
 	if err := requireRegularFile(sourcePath); err != nil {
 		return "", fmt.Errorf("inspect source database: %w", err)
 	}
-	if err := validateBackupPaths(sourcePath, outputPath, includeImports); err != nil {
+	if err := validateBackupPaths(sourcePath, outputPath); err != nil {
 		return "", fmt.Errorf("validate backup output: %w", err)
 	}
 	outputDirectory := filepath.Dir(outputPath)
@@ -125,15 +121,13 @@ func createBackup(ctx context.Context, sourcePath, outputPath string, includeImp
 	if err != nil {
 		return "", err
 	}
-	if includeImports {
-		if err := exportPendingImports(ctx, stagedPath, stagedPath+".imports"); err != nil {
-			return "", err
-		}
+	if err := exportPendingImports(ctx, stagedPath, stagedPath+".imports"); err != nil {
+		return "", err
 	}
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if err := publishBackup(stagedPath, outputPath, includeImports); err != nil {
+	if err := publishBackup(stagedPath, outputPath); err != nil {
 		removeWorkspace = false
 		return "", fmt.Errorf("%w; recovery files remain in %s", err, workspace)
 	}
@@ -199,7 +193,7 @@ func createSnapshot(ctx context.Context, sourcePath, stagedPath string) (string,
 	return checksum, nil
 }
 
-func publishBackup(stagedPath, outputPath string, includeImports bool) error {
+func publishBackup(stagedPath, outputPath string) error {
 	type artifact struct {
 		name      string
 		staged    string
@@ -215,16 +209,9 @@ func publishBackup(stagedPath, outputPath string, includeImports bool) error {
 		return fmt.Errorf("create previous backup workspace: %w", err)
 	}
 	artifacts := []artifact{
+		{name: "pending imports", staged: stagedPath + ".imports", output: outputPath + ".imports", previous: filepath.Join(previousDirectory, "imports")},
 		{name: "checksum", staged: stagedPath + ".sha256", output: outputPath + ".sha256", required: true, previous: filepath.Join(previousDirectory, "checksum")},
 		{name: "database", staged: stagedPath, output: outputPath, required: true, previous: filepath.Join(previousDirectory, "database")},
-	}
-	if includeImports {
-		artifacts = append([]artifact{{
-			name:     "pending imports",
-			staged:   stagedPath + ".imports",
-			output:   outputPath + ".imports",
-			previous: filepath.Join(previousDirectory, "imports"),
-		}}, artifacts...)
 	}
 
 	for _, item := range artifacts {

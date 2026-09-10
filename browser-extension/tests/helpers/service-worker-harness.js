@@ -3,14 +3,6 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const captureModel = require("../../shared/capture-model.js");
-const settingsModel = require("../../shared/settings-model.js");
-const runtimeRouter = require("../../background/runtime-router.js");
-const connectionManager = require("../../background/connection-manager.js");
-const captureOutbox = require("../../background/capture-outbox.js");
-const captureDelivery = require("../../background/capture-delivery.js");
-const dictionaryCache = require("../../background/dictionary-cache.js");
-const youtubeTranscriptModel = require("../../shared/youtube-transcript-model.js");
-const youtubeTranscriptLoader = require("../../background/youtube-transcript-loader.js");
 
 function testEvent() {
   const listeners = [];
@@ -37,7 +29,8 @@ function companionMessageSender(targetTabID = 4, companionTabID = 90) {
 }
 
 function workerHarness(initialConnection, syncStorage, apiClient, sharedSessionStorage, options = {}) {
-  const storage = initialConnection ? { connection: initialConnection } : {};
+  const storage = options.localStorage || {};
+  if (initialConnection) storage.connection = initialConnection;
   const sessionStorage = sharedSessionStorage || {};
   const addListener = function () {};
   const alarms = new Map();
@@ -46,6 +39,7 @@ function workerHarness(initialConnection, syncStorage, apiClient, sharedSessionS
   const tabActivated = testEvent();
   const tabRemoved = testEvent();
   const runtimeMessages = [];
+  let runtimeListener;
   const chrome = {
     alarms: {
       async clear(name) {
@@ -72,11 +66,12 @@ function workerHarness(initialConnection, syncStorage, apiClient, sharedSessionS
     },
     runtime: {
       id: "goi-test",
+      getManifest() { return require("../../manifest.json"); },
       getURL(pathname) {
         return "chrome-extension://goi-test/" + pathname;
       },
       onInstalled: { addListener },
-      onMessage: { addListener },
+      onMessage: { addListener(listener) { runtimeListener = listener; } },
       onStartup: { addListener },
       async sendMessage(message) {
         runtimeMessages.push(message);
@@ -116,76 +111,58 @@ function workerHarness(initialConnection, syncStorage, apiClient, sharedSessionS
   };
   const context = {
     AbortController,
-    GoiExtension: {
-      apiClient: apiClient || {},
-      connectionManager,
-      captureDelivery,
-      captureOutbox,
-      captureModel,
-      dictionaryCache,
-      runtimeRouter,
-      settingsModel,
-      youtubeTranscriptModel,
-      youtubeTranscriptLoader,
-    },
     chrome,
     crypto,
     clearTimeout: options.clearTimeout || clearTimeout,
     fetch: options.fetch || fetch,
     globalThis: null,
-    importScripts() {},
     setTimeout: options.setTimeout || setTimeout,
     TextEncoder,
+    TextDecoder,
     URL,
   };
   context.globalThis = context;
   const backgroundDirectory = path.join(__dirname, "../../background");
-  const source = [
-    "companion-session.js",
-    "automatic-analysis.js",
-    "service-worker.js",
-  ].map(function (name) {
-    return fs.readFileSync(path.join(backgroundDirectory, name), "utf8");
-  }).join("\n") + `
+  vm.createContext(context);
+  context.importScripts = function (...files) {
+    for (const file of files) {
+      vm.runInContext(fs.readFileSync(path.join(backgroundDirectory, file), "utf8"), context, {
+        filename: file,
+      });
+      if (file === "./api-client.js" && apiClient) context.GoiExtension.apiClient = apiClient;
+    }
+  };
+  vm.runInContext(fs.readFileSync(path.join(backgroundDirectory, "service-worker.js"), "utf8"), context, {
+    filename: "service-worker.js",
+  });
+  vm.runInContext(`
 globalThis.__workerTest = {
+  captureDelivery,
+  automaticAnalysis,
   getConnection,
   saveConnection,
   verifyConnection,
   disconnectConnection,
   updateSettings,
-  getSiteAutoStatus,
-  setSiteAutoEnabled,
-  listSiteAutoOrigins,
-  removeSiteAutoOrigin,
-  runAutomaticSiteAnalysis,
-  scheduleAutomaticAnalysis,
   selectCollectedCapture,
   performCaptureFromTab,
   captureDirect,
   classifyCoverage,
   requestCoverage,
   analyzeTab,
-  enqueueCapture,
-  retryCaptureOutbox,
   runCaptureOutboxRetry,
   captureOutboxStatus,
   discardCaptureOutbox,
   getGlobalIgnoredWords,
   addGlobalIgnoredWord,
   removeGlobalIgnoredWord,
-  isRetryableCaptureError,
   openSubtitleBrowser,
-  loadCompanionTargets,
-  associateCompanionTab,
-  releaseCompanionTab,
   getCompanionSession,
   forwardCompanionLineAction,
   forwardCompanionTranscriptRetry,
   sanitizeSubtitleSession,
   captureCurrentYouTubeSelection,
-  selectYouTubePlayerData,
   getYouTubeTranscript,
-  handleRuntimeMessage,
   popupSender,
   companionSender,
   companionPageTargetID,
@@ -194,13 +171,20 @@ globalThis.__workerTest = {
   getPlayerConnection,
   requestPlayerCoverage,
   captureFromPlayer,
-};`;
-  vm.runInNewContext(source, context, { filename: "service-worker.js" });
+};`, context);
   return {
     alarms,
     chrome,
     events: { command, tabActivated, tabRemoved, tabUpdated },
     operations: context.__workerTest,
+    handleRuntimeMessage: runtimeListener,
+    dispatch(message, sender) {
+      return new Promise(function (resolve) {
+        if (!runtimeListener(message, sender, resolve)) resolve(undefined);
+      });
+    },
+    delivery: context.__workerTest.captureDelivery,
+    automaticAnalysis: context.__workerTest.automaticAnalysis,
     runtimeMessages,
     sessionStorage,
     storage,

@@ -118,7 +118,10 @@ export async function translateInBrowser(browser, value, onProgress = () => {}) 
           onProgress(`Downloading translator…${suffix}`);
         });
       },
-    }));
+    })).catch((error) => {
+      browserTranslatorPromises.delete(translatorAPI);
+      throw error;
+    });
     browserTranslatorPromises.set(translatorAPI, translatorPromise);
   }
   onProgress("Translating…");

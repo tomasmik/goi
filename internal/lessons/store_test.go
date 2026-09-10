@@ -164,9 +164,6 @@ func TestLessonBatchesActivateIndependently(t *testing.T) {
 			t.Fatalf("batch %d review link = phase %q, review %d; want review %d", batch+1, reviewing.Phase, reviewing.ReviewSessionID, reviewID)
 		}
 		completeLessonReview(t, ctx, reviewStore, reviewID)
-		if err := lessonStore.CompleteReviewedBatch(ctx, sessionID); err != nil {
-			t.Fatal(err)
-		}
 
 		session, err = lessonStore.Current(ctx, sessionID)
 		if err != nil {
@@ -192,7 +189,7 @@ func TestLessonBatchesActivateIndependently(t *testing.T) {
 	}
 }
 
-func TestLessonActivationUsesReviewCompletionTime(t *testing.T) {
+func TestLegacyLessonActivationUsesReviewCompletionTime(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "lesson-completion-time.sqlite"))
 	if err != nil {
@@ -220,12 +217,11 @@ func TestLessonActivationUsesReviewCompletionTime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	completeLessonReview(t, ctx, reviewStore, reviewID)
 	const completedAt int64 = 1_700_000_000
-	if _, err := db.Exec("UPDATE review_sessions SET completed_at = ? WHERE id = ?", completedAt, reviewID); err != nil {
+	if _, err := db.Exec("UPDATE review_sessions SET status = 'completed', completed_at = ? WHERE id = ?", completedAt, reviewID); err != nil {
 		t.Fatal(err)
 	}
-	if err := lessonStore.CompleteReviewedBatch(ctx, lessonID); err != nil {
+	if err := reviewStore.ReconcileCompletedLessons(ctx); err != nil {
 		t.Fatal(err)
 	}
 	completed, err := lessonStore.Current(ctx, lessonID)
@@ -576,7 +572,7 @@ func TestAbandonedLessonDoesNotSynchronizeCompletedReview(t *testing.T) {
 	}
 
 	store := NewStore(db)
-	if err := store.CompleteReviewedBatch(ctx, lessonID); err != nil {
+	if err := reviews.NewStore(db).ReconcileCompletedLessons(ctx); err != nil {
 		t.Fatal(err)
 	}
 	session, err := store.Current(ctx, lessonID)
@@ -650,7 +646,7 @@ func TestStaleLessonCompletionPreservesActiveSRSState(t *testing.T) {
 	}
 
 	store := NewStore(db)
-	if err := store.CompleteReviewedBatch(ctx, lessonID); err != nil {
+	if err := reviews.NewStore(db).ReconcileCompletedLessons(ctx); err != nil {
 		t.Fatal(err)
 	}
 	session, err := store.Current(ctx, lessonID)

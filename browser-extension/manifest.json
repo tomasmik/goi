@@ -85,6 +85,7 @@
         "shared/translation.js",
         "shared/subtitle-file-model.js",
         "content/capture-content.js",
+        "youtube/caption-history.js",
         "youtube/overlay.js"
       ],
       "css": [

@@ -1,106 +1,3 @@
-export function initBackupSettings(root = document, environment = globalThis) {
-  for (const form of root.querySelectorAll("[data-backup-settings]")) {
-    const toggle = form.querySelector("[data-backup-enabled]");
-    const controls = [...form.querySelectorAll("[data-backup-dependent]")];
-    if (!toggle || controls.length === 0) {
-      continue;
-    }
-    const sync = () => {
-      for (const control of controls) {
-        control.disabled = !toggle.checked;
-      }
-    };
-    toggle.addEventListener("change", sync);
-    form.addEventListener("submit", () => {
-      for (const control of controls) {
-        control.disabled = false;
-      }
-    });
-    sync();
-  }
-  for (const panel of root.querySelectorAll("[data-backup-live]")) {
-    const status = panel.querySelector("[data-backup-status]");
-    const button = panel.querySelector("[data-backup-run]");
-    const url = panel.dataset?.backupStateUrl;
-    if (!status || !button || !url || !button.disabled) {
-      continue;
-    }
-    let timer;
-    const poll = async () => {
-      try {
-        const response = await environment.fetch(url, { headers: { Accept: "application/json" } });
-        if (!response.ok) {
-          throw new Error("status request failed");
-        }
-        const result = await response.json();
-        const state = result.state || {};
-        if (result.busy || state.Status === "running" || state.status === "running") {
-          status.textContent = "Backup is running…";
-          timer = environment.setTimeout(poll, 1000);
-          return;
-        }
-        const stateStatus = state.Status || state.status;
-        if (stateStatus === "success") {
-          environment.location.reload();
-          return;
-        }
-        status.textContent = state.Error || state.error || "Backup did not complete.";
-        button.disabled = false;
-      } catch (_error) {
-        status.textContent = "Could not refresh backup status. Reload this page to check it.";
-        button.disabled = false;
-      }
-    };
-    timer = environment.setTimeout(poll, 500);
-    environment.addEventListener("pagehide", () => environment.clearTimeout(timer), { once: true });
-  }
-}
-
-export function initLocalTimes(root = document, intl = Intl) {
-  for (const element of root.querySelectorAll("time[data-local-time]")) {
-    const date = new Date(element.dateTime);
-    if (!Number.isNaN(date.getTime())) {
-      element.textContent = new intl.DateTimeFormat(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-        timeZone: element.dataset.timeZone || undefined,
-      }).format(date);
-    }
-  }
-}
-
-export function initTimeZoneControls(root = document, intl = Intl) {
-  for (const input of root.querySelectorAll("[data-time-zone]")) {
-    const current = root.querySelector(`[data-time-zone-current="${input.id}"]`);
-    const showCurrent = () => {
-      if (current) {
-        current.textContent = input.value;
-      }
-    };
-    const listID = input.getAttribute("list");
-    const list = listID ? root.getElementById(listID) : null;
-    if (list && typeof intl.supportedValuesOf === "function") {
-      const fragment = root.createDocumentFragment();
-      for (const zone of intl.supportedValuesOf("timeZone")) {
-        const option = root.createElement("option");
-        option.value = zone;
-        fragment.append(option);
-      }
-      list.replaceChildren(fragment);
-    }
-    const button = root.querySelector(`[data-time-zone-detect="${input.id}"]`);
-    button?.addEventListener("click", () => {
-      const zone = intl.DateTimeFormat().resolvedOptions().timeZone;
-      if (zone) {
-        input.value = zone;
-        showCurrent();
-        input.dispatchEvent?.(new Event("input", { bubbles: true }));
-      }
-    });
-    input.addEventListener?.("input", showCurrent);
-  }
-}
-
 export function initExampleProviderPresets(root = document) {
   for (const select of root.querySelectorAll("[data-example-provider-preset]")) {
     const form = select.closest("form");
@@ -199,6 +96,10 @@ export function initCurrentTabs(root = document) {
   for (const tabList of root.querySelectorAll(".settings-navigation, .filter-tabs")) {
     const current = tabList.querySelector('[aria-current="page"]');
     if (!current) {
+      continue;
+    }
+    if (tabList.matches(".filter-tabs")) {
+      tabList.scrollLeft = Math.max(0, current.offsetLeft - (tabList.clientWidth - current.offsetWidth) / 2);
       continue;
     }
     const start = current.offsetLeft;

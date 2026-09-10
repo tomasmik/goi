@@ -6,25 +6,20 @@
   const subtitleView = globalThis.GoiExtension.subtitleView;
   const dictionaryClient = globalThis.GoiExtension.dictionaryClient;
   const dictionaryRenderer = globalThis.GoiExtension.dictionaryView;
-  const translationModel = globalThis.GoiExtension.translation || {
-    create: function () {
-      return { translate: function () { return Promise.reject(new Error("Translation is unavailable.")); } };
-    },
-    selectedText: function (selection) { return selection.toString().trim(); }
-  };
+  const translationModel = globalThis.GoiExtension.translation;
   const HOVER_LOOKUP_DELAY_MS = 120;
   const tabID = Number(new URLSearchParams(location.search).get("tab"));
   const displayModeInputs = Array.from(document.querySelectorAll('input[name="display-mode"]'));
   const pauseBehaviorInputs = Array.from(document.querySelectorAll('input[name="pause-behavior"]'));
   const elements = {
     videoTitle: document.getElementById("video-title"),
-    transcriptHeading: document.getElementById("transcript-heading") || document.createElement("h2"),
-    transcriptNote: document.getElementById("transcript-note") || document.createElement("p"),
-    transcriptRetry: document.getElementById("transcript-retry") || document.createElement("button"),
+    transcriptHeading: document.getElementById("transcript-heading"),
+    transcriptNote: document.getElementById("transcript-note"),
+    transcriptRetry: document.getElementById("transcript-retry"),
     lineCount: document.getElementById("line-count"),
     unknownOnly: document.getElementById("unknown-only"),
-    search: document.getElementById("subtitle-search") || document.createElement("input"),
-    autoFollow: document.getElementById("auto-follow") || document.createElement("input"),
+    search: document.getElementById("subtitle-search"),
+    autoFollow: document.getElementById("auto-follow"),
     lines: document.getElementById("subtitle-lines"),
     emptyState: document.getElementById("empty-state"),
     emptyTitle: document.getElementById("empty-title"),
@@ -35,7 +30,7 @@
     batchOneTarget: document.getElementById("batch-one-target"),
     captureForm: document.getElementById("capture-form"),
     captureTarget: document.getElementById("capture-target"),
-    dictionaryLookup: document.getElementById("dictionary-lookup") || document.createElement("div"),
+    dictionaryLookup: document.getElementById("dictionary-lookup"),
     captureSentence: document.getElementById("capture-sentence"),
     captureTime: document.getElementById("capture-time"),
     captureSubmit: document.getElementById("capture-submit"),
@@ -67,9 +62,6 @@
     batchToolsToggle: document.getElementById("batch-tools-toggle"),
     batchTools: document.getElementById("batch-tools")
   };
-  if (!document.getElementById("auto-follow")) {
-    elements.autoFollow.checked = true;
-  }
   let session = { revision: -1, lines: [] };
   let selectedLineID;
   let lastSentCaptureKey = "";

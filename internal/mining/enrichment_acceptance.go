@@ -104,7 +104,7 @@ func (s *Store) BulkAcceptCandidates(ctx context.Context, ids []int64, candidate
 	return result, nil
 }
 
-func (s *Store) AcceptCandidate(ctx context.Context, captureID, captureRevision int64, candidate candidateAcceptance, input vocabulary.CreateInput) (int64, error) {
+func (s *Store) acceptCandidateWithMedia(ctx context.Context, captureID, captureRevision int64, candidate candidateAcceptance, input vocabulary.CreateInput, changes cardMediaChanges) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin mining candidate acceptance: %w", err)
@@ -129,6 +129,9 @@ func (s *Store) AcceptCandidate(ctx context.Context, captureID, captureRevision 
 	if strings.TrimSpace(candidate.written) != "" {
 		state.expression = candidate.written
 	}
+	if err := applyCardMediaInTx(ctx, tx, captureID, state, changes); err != nil {
+		return 0, err
+	}
 	vocabularyID, err := s.acceptInTx(ctx, tx, captureID, captureRevision, state, input)
 	if err != nil {
 		return 0, err
@@ -139,7 +142,7 @@ func (s *Store) AcceptCandidate(ctx context.Context, captureID, captureRevision 
 	return vocabularyID, nil
 }
 
-func (s *Store) attachCandidateWithExample(ctx context.Context, captureID, captureRevision int64, candidate candidateAcceptance, input vocabulary.CreateInput, example minedExampleDetails) (int64, error) {
+func (s *Store) attachCandidateWithExample(ctx context.Context, captureID, captureRevision int64, candidate candidateAcceptance, input vocabulary.CreateInput, example minedExampleDetails, changes cardMediaChanges) (int64, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin mining candidate attachment: %w", err)
@@ -178,6 +181,9 @@ func (s *Store) attachCandidateWithExample(ctx context.Context, captureID, captu
 	}
 	if err := s.vocabulary.CompleteSparseInTx(ctx, tx, vocabularyID, input.Pronunciation, input.Meanings); err != nil {
 		return 0, fmt.Errorf("complete existing vocabulary from mining candidate: %w", err)
+	}
+	if err := applyCardMediaInTx(ctx, tx, captureID, state, changes); err != nil {
+		return 0, err
 	}
 	if err := s.attachInTx(ctx, tx, captureID, captureRevision, vocabularyID, state, example); err != nil {
 		return 0, err

@@ -125,6 +125,9 @@ func (app *application) initializeCore(ctx context.Context, cfg config.Config, l
 	app.vocabulary = vocabulary.NewStore(app.db)
 	app.mining = mining.NewStore(app.db)
 	app.reviews = reviews.NewStore(app.db)
+	if err := app.reviews.ReconcileCompletedLessons(ctx); err != nil {
+		return fmt.Errorf("reconcile completed lessons: %w", err)
+	}
 	app.lessons = lessons.NewStore(app.db)
 	app.statistics = statistics.NewStore(app.db, cfg.TimeZone)
 	app.settings = settings.NewStore(app.db)
@@ -277,7 +280,7 @@ func (app *application) registerRoutes(router chi.Router, cfg config.Config) {
 		return time.LoadLocation(values.TimeZone)
 	}, cfg.BaseURL).Routes(router)
 	lessons.NewHandler(app.lessons, app.reviews, app.renderer).Routes(router)
-	reviews.NewHandler(app.reviews, app.lessons, app.renderer).Routes(router)
+	reviews.NewHandler(app.reviews, app.renderer).Routes(router)
 	settings.NewHandler(app.settings, app.renderer, app.dictionary, app.frequency, cfg.AuthEnabled).Routes(router)
 	backups.NewHandler(app.backupStore, app.backupService, app.googleDrive, cfg.DataDir, app.renderer).Routes(router)
 	statistics.NewHandler(app.statistics, app.renderer).Routes(router)

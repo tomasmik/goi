@@ -4,13 +4,6 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const settingsModel = require("../../shared/settings-model.js");
-const captionModel = require("../../shared/caption-model.js");
-const captureModel = require("../../shared/capture-model.js");
-const subtitleModel = require("../../shared/subtitle-model.js");
-const subtitleView = require("../../shared/subtitle-view.js");
-const dictionaryView = require("../../shared/dictionary-view.js");
-const dictionaryClient = require("../../shared/dictionary-client.js");
-const subtitleFileModel = require("../../shared/subtitle-file-model.js");
 
 function classNames(node) {
   return new Set(String(node.className || "").split(/\s+/u).filter(Boolean));
@@ -330,10 +323,13 @@ function createHarness(initialCaption = "", options = {}) {
             reason: "no_japanese_track",
           });
         }
-        if (message.type === "goi.capture.direct" && options.captureResponse) {
+        if (options.sendMessage && message.type === "goi.companion.open") {
+          return options.sendMessage(message);
+        }
+        if (message.type === "goi.capture.direct") {
           return Promise.resolve(typeof options.captureResponse === "function"
             ? options.captureResponse(message)
-            : options.captureResponse);
+            : options.captureResponse || { ok: true });
         }
         if (message.type === "goi.dictionary.lookup") {
           return Promise.resolve(options.dictionaryResponse || {
@@ -370,7 +366,7 @@ function createHarness(initialCaption = "", options = {}) {
             ? { ok: true, result: resolved }
             : { ok: false, errorCode: "not_connected" });
         }
-        return Promise.resolve({ ok: true });
+        return Promise.reject(new Error("Unexpected overlay message: " + message.type));
       },
       onMessage: {
         addListener(listener) {
@@ -389,16 +385,9 @@ function createHarness(initialCaption = "", options = {}) {
   const timers = [];
   let nextTimerID = 1;
   const context = {
-    GoiExtension: {
-      settingsModel,
-      captionModel,
-      captureModel,
-      subtitleModel,
-      subtitleView,
-      subtitleFileModel,
-      dictionaryClient,
-      dictionaryView,
-    },
+    TextEncoder,
+    TextDecoder,
+    AbortController,
     chrome,
     document,
     location: { href: "https://www.youtube.com/watch?v=test" },
@@ -427,8 +416,11 @@ function createHarness(initialCaption = "", options = {}) {
       callback();
     },
   };
-  const source = fs.readFileSync(path.join(__dirname, "../../youtube/overlay.js"), "utf8");
-  vm.runInNewContext(source, context, { filename: "overlay.js" });
+  vm.createContext(context);
+  const scripts = options.scripts || require("../../manifest.json").content_scripts[0].js;
+  for (const file of scripts) {
+    vm.runInContext(fs.readFileSync(path.join(__dirname, "../..", file), "utf8"), context, { filename: file });
+  }
 
   function runTimer(delay) {
     const timerIndex = timers.findIndex((timer) => timer.delay === delay && !timer.cancelled);

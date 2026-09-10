@@ -398,3 +398,36 @@ test("keeps every coverage request below the serialized JSON limit", function ()
     createCoverageBatches([{ id: 1, text: "one" }, { id: 1, text: "duplicate" }]);
   }, "invalid_coverage_cue");
 });
+
+test("all subtitle formats share malformed, duplicate, overlap and pre-deduplication limits", function () {
+  const candidates = [
+    ["00:00:00.000", "00:00:01.000", "猫"],
+    ["00:00:00.000", "00:00:01.000", "猫"],
+    ["invalid", "00:00:01.000", "broken"],
+    ["00:00:00.500", "00:00:01.500", "犬"],
+    ["00:00:02.000", "00:00:03.000", "猫"],
+  ];
+  function encode(format, cues) {
+    if (format === "ass") {
+      return "[Script Info]\n[Events]\nFormat: Start, End, Text\n" + cues.map(([start, end, text]) =>
+        "Dialogue: " + start.replace(/^0|0$/gu, "") + "," + end.replace(/^0|0$/gu, "") + "," + text
+      ).join("\n");
+    }
+    return (format === "webvtt" ? "WEBVTT\n\nNOTE metadata\n\n" : "") + cues.map(([start, end, text]) =>
+      (format === "srt" ? start.replace(".", ",") : start) + " --> " +
+      (format === "srt" ? end.replace(".", ",") : end) + "\n" + text
+    ).join("\n\n");
+  }
+  for (const format of ["srt", "webvtt", "ass"]) {
+    const parsed = parseSubtitleFile(utf8(encode(format, candidates)));
+    assert.equal(parsed.sourceCueCount, 5, format);
+    assert.equal(parsed.validCueCount, 4, format);
+    assert.equal(parsed.skippedCueCount, 1, format);
+    assert.equal(parsed.duplicateCueCount, 1, format);
+    assert.equal(parsed.totalCharacters, 4, format);
+    assert.deepEqual(parsed.cues.map((cue) => [cue.sourceOrder, cue.startMs, cue.endMs, cue.text]), [
+      [0, 0, 1000, "猫"], [3, 500, 1500, "犬"], [4, 2000, 3000, "猫"],
+    ], format);
+    expectCode(() => parseSubtitleFile(utf8(encode(format, Array(LIMITS.validCues + 1).fill(candidates[0])))), "too_many_cues");
+  }
+});

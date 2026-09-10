@@ -1027,13 +1027,10 @@ a[target="_blank"]:not(.external-link):not(:has(img))::after {
   margin-bottom: 1rem;
 }
 
-.settings-review-options {
-  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
-}
-
-.settings-review-grid .choice-field:first-child .settings-review-options,
-.settings-review-grid .choice-field:last-child .settings-review-options {
-  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+.choice-options.settings-review-options {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
 }
 
 .settings-review-options .choice-option span {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/tomasmik/goi/internal/backups"
 	"github.com/tomasmik/goi/internal/captureapi"
+	"github.com/tomasmik/goi/internal/examplegen"
 	appimports "github.com/tomasmik/goi/internal/imports"
 	"github.com/tomasmik/goi/internal/mining"
 	"github.com/tomasmik/goi/internal/vocabulary"
@@ -90,7 +91,8 @@ const (
 	vocabularyRequestBodyLimit int64 = 25 << 20
 	miningRequestBodyLimit     int64 = 128 << 10
 	defaultRequestTimeout            = 15 * time.Second
-	translationRequestTimeout        = 65 * time.Second
+	providerRequestTimeout           = examplegen.DefaultTimeout + 5*time.Second
+	providerTestRequestTimeout       = 2*examplegen.DefaultTimeout + 5*time.Second
 	mediaRequestTimeout              = 2 * time.Minute
 	longRequestTimeout               = 30 * time.Minute
 )
@@ -154,8 +156,14 @@ func csrfRecoveryTarget(r *http.Request) (string, string) {
 }
 
 func timeoutForRequest(r *http.Request) time.Duration {
-	if r.Method == http.MethodPost && r.URL.Path == "/api/extension/v1/translate" {
-		return translationRequestTimeout
+	if r.Method == http.MethodPost {
+		if r.URL.Path == "/settings/examples/test" {
+			return providerTestRequestTimeout
+		}
+		action := miningCaptureAction(r.URL.Path)
+		if r.URL.Path == "/api/extension/v1/translate" || action == "generate" || action == "translate" {
+			return providerRequestTimeout
+		}
 	}
 	if backupDownloadPath(r) {
 		return 0
@@ -201,6 +209,9 @@ func requestBodyLimit(r *http.Request) int64 {
 	if r.URL.Path == "/imports/anki/upload" {
 		return appimports.MaxArchiveBytes + 10<<20
 	}
+	if r.URL.Path == "/imports/text" {
+		return appimports.TextImportBodyLimit
+	}
 	if r.URL.Path == "/settings/backups/restore/upload" {
 		return backups.RestoreUploadRequestLimit
 	}
@@ -232,13 +243,18 @@ func requestBodyLimit(r *http.Request) int64 {
 }
 
 func miningMediaUploadPath(path string) bool {
+	action := miningCaptureAction(path)
+	return action == "accept" || action == "attach-candidate" || action == "media"
+}
+
+func miningCaptureAction(path string) string {
 	remainder, found := strings.CutPrefix(path, "/mining/captures/")
 	if !found {
-		return false
+		return ""
 	}
 	captureID, action, found := strings.Cut(remainder, "/")
 	if !found || captureID == "" || strings.Contains(action, "/") {
-		return false
+		return ""
 	}
-	return action == "accept" || action == "attach-candidate" || action == "media"
+	return action
 }

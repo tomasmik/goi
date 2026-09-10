@@ -244,14 +244,17 @@ func TestCompatibleModelFieldsRejectsDifferentLayouts(t *testing.T) {
 	}
 }
 
-func TestCombinedModelFieldsKeepsMixedNoteTypesMappable(t *testing.T) {
-	fields := combinedModelFields(map[string][]string{
+func TestCombinedModelLayoutKeepsMixedNoteTypesMappable(t *testing.T) {
+	fields, columns := combinedModelLayout(map[string][]string{
 		"2": {"Front", "Back"},
 		"1": {"Expression", "Reading", "Meaning"},
 	})
 	want := []string{"Expression / Front", "Reading", "Meaning / Back"}
 	if fmt.Sprint(fields) != fmt.Sprint(want) {
 		t.Fatalf("combined fields = %#v, want %#v", fields, want)
+	}
+	if fmt.Sprint(columns["1"]) != "[0 1 2]" || fmt.Sprint(columns["2"]) != "[0 2]" {
+		t.Fatalf("model columns = %v, want the original expression, reading, and meaning positions", columns)
 	}
 	notes := []Note{{ModelID: 1}, {ModelID: 2}, {ModelID: 1}}
 	if got := distinctModelCount(notes); got != 2 {
@@ -1371,6 +1374,19 @@ func TestCopyZipEntryEnforcesLimit(t *testing.T) {
 	}
 	if extracted.Len() > 11 {
 		t.Fatalf("extracted %d bytes, want at most 11", extracted.Len())
+	}
+
+	content, err := readZipEntryContext(context.Background(), reader.File[0], 64)
+	if err != nil || !bytes.Equal(content, bytes.Repeat([]byte("x"), 64)) {
+		t.Fatalf("read at limit = %q, %v; want the complete entry", content, err)
+	}
+	if content, err := readZipEntryContext(context.Background(), reader.File[0], 10); err == nil || content != nil {
+		t.Fatalf("read beyond limit = %q, %v; want no content and an error", content, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if content, err := readZipEntryContext(ctx, reader.File[0], 64); !errors.Is(err, context.Canceled) || content != nil {
+		t.Fatalf("canceled read = %q, %v; want no content and cancellation", content, err)
 	}
 }
 

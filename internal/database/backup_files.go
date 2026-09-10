@@ -40,21 +40,15 @@ func requireRegularFile(path string) error {
 	return nil
 }
 
-func validateBackupPaths(sourcePath, outputPath string, includeImports bool) error {
+func validateBackupPaths(sourcePath, outputPath string) error {
 	databaseArtifacts := []string{sourcePath, sourcePath + "-wal", sourcePath + "-shm", sourcePath + ".lock"}
-	outputArtifacts := []string{outputPath, outputPath + ".sha256", outputPath + ".backup.lock"}
-	if includeImports {
-		outputArtifacts = append(outputArtifacts, outputPath+".imports")
-	}
+	outputArtifacts := []string{outputPath, outputPath + ".sha256", outputPath + ".backup.lock", outputPath + ".imports"}
 	for _, databaseArtifact := range databaseArtifacts {
 		for _, outputArtifact := range outputArtifacts {
 			if err := requireDifferentPaths(databaseArtifact, outputArtifact); err != nil {
 				return fmt.Errorf("backup output overlaps database artifact: %w", err)
 			}
 		}
-	}
-	if !includeImports {
-		return nil
 	}
 	importsPath := outputPath + ".imports"
 	containsSource, err := pathWithinDirectory(importsPath, sourcePath)

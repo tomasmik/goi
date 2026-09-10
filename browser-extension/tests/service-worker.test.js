@@ -3,6 +3,9 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
+const vm = require("node:vm");
+const { createHarness: overlayHarness, descendants, classNames } = require("./helpers/overlay-harness.js");
+
 const settingsModel = require("../shared/settings-model.js");
 const {
   captureModel,
@@ -29,7 +32,6 @@ test("limits connection and active-site operations to the popup or options page"
     "goi.site-auto.set",
     "goi.site-auto.list",
     "goi.site-auto.remove",
-    "goi.companion.open",
     "goi.capture.outbox-status",
     "goi.capture.outbox.retry",
     "goi.capture.outbox.discard",
@@ -38,7 +40,7 @@ test("limits connection and active-site operations to the popup or options page"
 
   popupOnlyMessages.forEach(function (type) {
     let response;
-    const keepChannelOpen = harness.operations.handleRuntimeMessage(
+    const keepChannelOpen = harness.handleRuntimeMessage(
       { type, version: 1 },
       contentSender,
       function (value) { response = value; },
@@ -79,10 +81,10 @@ test("lists and removes automatically enabled sites", async function () {
   harness.storage.siteAutoOriginsV1 = ["https://z.example", "https://a.example"];
 
   assert.deepEqual(
-    JSON.parse(JSON.stringify(await harness.operations.listSiteAutoOrigins())),
+    JSON.parse(JSON.stringify(await harness.automaticAnalysis.listOrigins())),
     { ok: true, origins: ["https://a.example", "https://z.example"] },
   );
-  await harness.operations.removeSiteAutoOrigin("https://a.example", false);
+  await harness.automaticAnalysis.removeOrigin("https://a.example", false);
   assert.deepEqual(JSON.parse(JSON.stringify(harness.storage.siteAutoOriginsV1)), ["https://z.example"]);
 });
 
@@ -115,7 +117,7 @@ test("routes subtitle dictionary lookups through the stored Goi connection", asy
     },
   );
   let response;
-  const keepChannelOpen = harness.operations.handleRuntimeMessage(
+  const keepChannelOpen = harness.handleRuntimeMessage(
     { type: "goi.dictionary.lookup", version: 1, expression: "読む" },
     { id: "goi-test", tab: { id: 4, url: "https://www.youtube.com/watch?v=test" }, frameId: 0 },
     function (value) { response = value; },
@@ -146,7 +148,7 @@ test("marks subtitle words as known through the stored Goi connection", async fu
     },
   );
   let response;
-  harness.operations.handleRuntimeMessage(
+  harness.handleRuntimeMessage(
     { type: "goi.vocabulary.known", version: 1, expression: "育てる" },
     { id: "goi-test", tab: { id: 4, url: "https://www.youtube.com/watch?v=test" }, frameId: 0 },
     function (value) { response = value; },
@@ -177,7 +179,7 @@ test("explains when Goi does not provide the dictionary endpoint", async functio
     },
   );
   let response;
-  harness.operations.handleRuntimeMessage(
+  harness.handleRuntimeMessage(
     { type: "goi.dictionary.lookup", version: 1, expression: "読む" },
     { id: "goi-test", tab: { id: 4, url: "https://www.youtube.com/watch?v=test" }, frameId: 0 },
     function (value) { response = value; },
@@ -194,7 +196,7 @@ test("explains when Goi does not provide the dictionary endpoint", async functio
 test("ignores inherited object names as runtime message types", function () {
   const harness = workerHarness(null);
   let response;
-  const keepChannelOpen = harness.operations.handleRuntimeMessage(
+  const keepChannelOpen = harness.handleRuntimeMessage(
     { type: "toString", version: 1 },
     { id: "goi-test", url: "chrome-extension://goi-test/popup/popup.html", frameId: 0 },
     function (value) { response = value; },
@@ -407,7 +409,7 @@ test("reports privacy-scoped automatic-site status for the active web origin", a
     return [{ id: 7, url: "https://reader.example:8443/chapter/1", status: "complete" }];
   };
 
-  const status = await harness.operations.getSiteAutoStatus();
+  const status = await harness.automaticAnalysis.getStatus();
 
   assert.deepEqual(JSON.parse(JSON.stringify(status)), {
     ok: true,
@@ -419,13 +421,31 @@ test("reports privacy-scoped automatic-site status for the active web origin", a
   });
 });
 
+test("keeps automatic-origin changes serialized after a failed storage write", async function () {
+  const harness = workerHarness(null);
+  harness.storage.siteAutoOriginsV1 = ["https://a.example", "https://b.example"];
+  const save = harness.chrome.storage.local.set;
+  let writes = 0;
+  harness.chrome.storage.local.set = async function (values) {
+    if (++writes === 1) throw new Error("storage unavailable");
+    return save(values);
+  };
+
+  const failed = harness.automaticAnalysis.removeOrigin("https://a.example", false);
+  const next = harness.automaticAnalysis.removeOrigin("https://b.example", false);
+  await assert.rejects(failed, /storage unavailable/);
+  await next;
+
+  assert.deepEqual(Array.from(harness.storage.siteAutoOriginsV1), ["https://a.example"]);
+});
+
 test("requires the active origin permission before enabling automatic analysis", async function () {
   const harness = workerHarness(null);
   harness.chrome.tabs.query = async function () {
     return [{ id: 7, url: "http://reader.example/article", status: "complete" }];
   };
 
-  const status = await harness.operations.setSiteAutoEnabled(true);
+  const status = await harness.automaticAnalysis.setEnabled(true);
 
   assert.equal(status.ok, false);
   assert.equal(status.available, true);
@@ -495,7 +515,7 @@ test("automatically analyzes each web navigation once and stops safely when disa
     return [{ frameId: 0, result: true }];
   };
 
-  const enabled = await harness.operations.setSiteAutoEnabled(true);
+  const enabled = await harness.automaticAnalysis.setEnabled(true);
   assert.equal(enabled.enabled, true);
   assert.deepEqual(
     JSON.parse(JSON.stringify(harness.storage.siteAutoOriginsV1)),
@@ -503,7 +523,7 @@ test("automatically analyzes each web navigation once and stops safely when disa
   );
   assert.equal(analyses, 1);
 
-  const reenabled = await harness.operations.setSiteAutoEnabled(true);
+  const reenabled = await harness.automaticAnalysis.setEnabled(true);
   assert.equal(reenabled.enabled, true);
   assert.equal(stopped, 1);
   assert.equal(analyses, 2);
@@ -524,7 +544,7 @@ test("automatically analyzes each web navigation once and stops safely when disa
   await harness.events.tabUpdated.dispatch(tab.id, { url: tab.url }, tab);
   assert.equal(analyses, 4);
 
-  const disabled = await harness.operations.setSiteAutoEnabled(false);
+  const disabled = await harness.automaticAnalysis.setEnabled(false);
   assert.equal(disabled.enabled, false);
   assert.equal(harness.storage.siteAutoOriginsV1, undefined);
   assert.equal(stopped, 2);
@@ -559,7 +579,7 @@ test("disabling automatic analysis preserves a permission used by the Goi connec
     return true;
   };
 
-  const disabled = await harness.operations.setSiteAutoEnabled(false);
+  const disabled = await harness.automaticAnalysis.setEnabled(false);
 
   assert.equal(disabled.enabled, false);
   assert.equal(removals, 0);
@@ -583,12 +603,12 @@ test("maps YouTube automatic mode to the existing overlay setting", async functi
     assert.fail("YouTube already has its manifest host permission");
   };
 
-  const initial = await harness.operations.getSiteAutoStatus();
+  const initial = await harness.automaticAnalysis.getStatus();
   assert.equal(initial.kind, "youtube");
   assert.equal(initial.enabled, true);
   assert.equal(initial.permissionPattern, "https://www.youtube.com/*");
 
-  const disabled = await harness.operations.setSiteAutoEnabled(false);
+  const disabled = await harness.automaticAnalysis.setEnabled(false);
   assert.equal(disabled.enabled, false);
   assert.equal(stored[settingsModel.STORAGE_KEY].overlayEnabled, false);
 });
@@ -618,25 +638,21 @@ test("enabling YouTube captions injects the overlay into an already open tab", a
     injections.push(input);
   };
 
-  const enabled = await harness.operations.setSiteAutoEnabled(true);
+  const enabled = await harness.automaticAnalysis.setEnabled(true);
 
   assert.equal(enabled.enabled, true);
   assert.equal(stored[settingsModel.STORAGE_KEY].overlayEnabled, true);
-  assert.deepEqual(JSON.parse(JSON.stringify(injections[1].files)), [
-    "content/capture-content.css",
-    "shared/dictionary-view.css",
-    "youtube/overlay.css",
-  ]);
-  assert.deepEqual(JSON.parse(JSON.stringify(injections[2].files)), [
-    "shared/capture-model.js",
-    "shared/settings-model.js",
-    "shared/caption-model.js",
-    "shared/subtitle-model.js",
-    "shared/dictionary-view.js",
-    "shared/subtitle-file-model.js",
-    "content/capture-content.js",
-    "youtube/overlay.js",
-  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(injections[1].files)), require("../manifest.json").content_scripts[0].css);
+  assert.deepEqual(JSON.parse(JSON.stringify(injections[2].files)), require("../manifest.json").content_scripts[0].js);
+  const overlay = overlayHarness("猫", { scripts: injections[2].files });
+  await overlay.start();
+  const word = descendants(overlay.player).find((node) => classNames(node).has("goi-ext-caption-word"));
+  assert.equal(word.textContent, "猫");
+  word.dispatch("click");
+  await new Promise(setImmediate);
+  assert.equal(overlay.messages.find((message) => message.type === "goi.dictionary.lookup").expression, "猫");
+  assert.equal(descendants(overlay.player).find((node) => classNames(node).has("goi-dictionary-term")).textContent, "猫");
+
 });
 
 test("restores the YouTube setting when current-tab injection fails", async function () {
@@ -659,7 +675,7 @@ test("restores the YouTube setting when current-tab injection fails", async func
     throw new Error("tab closed");
   };
 
-  await assert.rejects(harness.operations.setSiteAutoEnabled(true), /tab closed/);
+  await assert.rejects(harness.automaticAnalysis.setEnabled(true), /tab closed/);
   assert.equal(stored[settingsModel.STORAGE_KEY].overlayEnabled, false);
 });
 
@@ -691,16 +707,7 @@ test("activating an existing YouTube tab restores its enabled overlay", async fu
   await harness.events.tabActivated.dispatch({ tabId: 4 });
 
   assert.equal(injections.length, 3);
-  assert.deepEqual(JSON.parse(JSON.stringify(injections[2].files)), [
-    "shared/capture-model.js",
-    "shared/settings-model.js",
-    "shared/caption-model.js",
-    "shared/subtitle-model.js",
-    "shared/dictionary-view.js",
-    "shared/subtitle-file-model.js",
-    "content/capture-content.js",
-    "youtube/overlay.js",
-  ]);
+  assert.deepEqual(JSON.parse(JSON.stringify(injections[2].files)), require("../manifest.json").content_scripts[0].js);
 });
 
 test("the YouTube shortcut persists and applies the enabled setting", async function () {
@@ -943,43 +950,31 @@ test("opens the subtitle browser for YouTube Shorts", async function () {
   assert.deepEqual(JSON.parse(JSON.stringify(opened)), { ok: true, tabId: 4 });
 });
 
-test("retries companion ownership loading after transient session storage failure", async function () {
-  const sessionStorage = {};
-  const harness = workerHarness(null, null, null, sessionStorage);
+test("existing companion URLs recover after worker restart without ownership storage", async function () {
   const videoTab = { id: 4, url: "https://www.youtube.com/watch?v=abc", status: "complete" };
-  let reads = 0;
-  let nextCompanionTabID = 8;
-  harness.chrome.storage.session.get = async function (key) {
-    reads += 1;
-    if (reads === 1) {
+  const sessionStorage = { companionTargetsV1: [{ companionTabID: 90, targetTabID: 99 }] };
+  let storageCalls = 0;
+  for (let restart = 0; restart < 2; restart += 1) {
+    const harness = workerHarness(null, null, null, sessionStorage);
+    harness.chrome.storage.session.get = harness.chrome.storage.session.set = async function () {
+      storageCalls += 1;
       throw new Error("session storage unavailable");
+    };
+    harness.chrome.tabs.get = async function () { return videoTab; };
+    harness.chrome.scripting.executeScript = async function () { return [{ result: true }]; };
+    harness.chrome.tabs.sendMessage = async function () { return { ok: true, unchanged: true }; };
+    for (let poll = 0; poll < 2; poll += 1) {
+      assert.equal((await harness.operations.getCompanionSession(4, companionMessageSender())).ok, true);
     }
-    return { [key]: sessionStorage[key] };
-  };
-  harness.chrome.scripting.executeScript = async function () {
-    return [{ frameId: 0, result: true }];
-  };
-  harness.chrome.tabs.query = async function () { return []; };
-  harness.chrome.tabs.sendMessage = async function () { return { ok: true }; };
-  harness.chrome.windows.create = async function () {
-    const tabID = nextCompanionTabID;
-    nextCompanionTabID += 1;
-    return { id: tabID + 1, tabs: [{ id: tabID }] };
-  };
-
-  await assert.rejects(
-    harness.operations.openSubtitleBrowser({ tab: videoTab, url: videoTab.url }),
-    (error) => error.code === "companion_storage_unavailable"
-  );
-  const opened = await harness.operations.openSubtitleBrowser({ tab: videoTab, url: videoTab.url });
-
-  assert.deepEqual(JSON.parse(JSON.stringify(opened)), { ok: true, tabId: 4 });
-  assert.equal(reads, 2);
-  assert.deepEqual(JSON.parse(JSON.stringify(sessionStorage.companionTargetsV1)), [{
-    companionTabID: 9,
-    targetTabID: 4,
-    targetURL: "https://www.youtube.com/watch?v=abc",
-  }]);
+    videoTab.url = "https://www.youtube.com/shorts/next";
+    assert.equal((await harness.operations.getCompanionSession(4, companionMessageSender())).ok, true);
+    videoTab.url = "https://www.youtube.com/";
+    await assert.rejects(harness.operations.getCompanionSession(4, companionMessageSender()), (error) => error.status === 400);
+    harness.chrome.tabs.get = async function () { throw new Error("tab closed"); };
+    await assert.rejects(harness.operations.getCompanionSession(4, companionMessageSender()), (error) => error.status === 404);
+    videoTab.url = "https://www.youtube.com/watch?v=abc";
+  }
+  assert.equal(storageCalls, 0);
 });
 
 test("rejects non-video YouTube pages before opening the companion", async function () {
@@ -1249,7 +1244,7 @@ test("downloads the complete Japanese YouTube transcript", async function () {
   const harness = workerHarness(null);
   harness.chrome.scripting.executeScript = async function (input) {
     if (input.files) {
-      assert.deepEqual(input.files, ["background/youtube-transcript-page.js"]);
+      assert.deepEqual(Array.from(input.files), ["background/youtube-transcript-page.js"]);
       return [{ result: undefined }];
     }
     scriptCalls += 1;
@@ -1337,7 +1332,7 @@ test("falls back to an alternate player when web subtitles require a proof token
   const harness = workerHarness(null);
   harness.chrome.scripting.executeScript = async function (input) {
     if (input.files) {
-      assert.deepEqual(input.files, ["background/youtube-transcript-page.js"]);
+      assert.deepEqual(Array.from(input.files), ["background/youtube-transcript-page.js"]);
       return [{ result: undefined }];
     }
     scriptCalls += 1;
@@ -1425,29 +1420,6 @@ test("uses the main video's captions while a preroll response is active", async 
   assert.deepEqual(JSON.parse(JSON.stringify(response.cues)), [
     { startMs: 1000, endMs: 2500, text: "広告の後の字幕" }
   ]);
-});
-
-test("combines caption tracks from matching player responses", function () {
-  const selected = workerHarness(null).operations.selectYouTubePlayerData({
-    transcriptSource: "transcript",
-    responses: [
-      { videoID: "ad", tracks: [] },
-      { videoID: "main", tracks: [{ baseUrl: "ja", languageCode: "ja" }] },
-      { videoID: "main", tracks: [
-        { baseUrl: "ja", languageCode: "ja" },
-        { baseUrl: "en", languageCode: "en" }
-      ] }
-    ]
-  }, "main");
-
-  assert.deepEqual(JSON.parse(JSON.stringify(selected)), {
-    videoID: "main",
-    tracks: [
-      { baseUrl: "ja", languageCode: "ja" },
-      { baseUrl: "en", languageCode: "en" }
-    ],
-    transcriptSource: "transcript"
-  });
 });
 
 test("reports when a YouTube video has no Japanese transcript", async function () {
@@ -1555,7 +1527,7 @@ test("queues a failed YouTube capture and retries with the original nonce", asyn
   assert.match(queuedNonce, /^[0-9a-f]{32}$/);
   assert.ok(harness.alarms.has("goi-capture-outbox"));
 
-  await harness.operations.retryCaptureOutbox(true);
+  await harness.delivery.retry(true);
 
   assert.equal(sent.length, 2);
   assert.equal(sent[0].capture_nonce, queuedNonce);
@@ -1936,4 +1908,106 @@ test("clears the badge when a page changes before coverage can render", async fu
   );
 
   assert.deepEqual(JSON.parse(JSON.stringify(badges)), [{ tabId: 12, text: "" }]);
+});
+
+test("the overlay opens its own companion through the registered worker route", async function () {
+  const worker = workerHarness(null);
+  const tab = { id: 4, url: "https://www.youtube.com/watch?v=test" };
+  const sender = { id: "goi-test", tab, url: tab.url, frameId: 0 };
+  let openedURL;
+  worker.chrome.tabs.query = async function (query) { return query.active ? [tab] : []; };
+  worker.chrome.scripting.executeScript = async function () { return [{ result: true }]; };
+  worker.chrome.windows.create = async function (options) {
+    openedURL = options.url;
+    return { tabs: [{ id: 90 }] };
+  };
+  const overlay = overlayHarness("猫", { sendMessage(message) { return worker.dispatch(message, sender); } });
+  await overlay.start();
+  descendants(overlay.player).find((node) => node.textContent === "Transcript").dispatch("click");
+  await new Promise(setImmediate);
+  assert.equal(openedURL, "chrome-extension://goi-test/companion/companion.html?tab=4");
+
+  for (const page of ["popup/popup.html", "options/options.html"]) {
+    const response = await worker.dispatch({ type: "goi.companion.open", version: 1, tabId: 999 }, {
+      id: "goi-test", url: "chrome-extension://goi-test/" + page,
+    });
+    assert.equal(response.tabId, 4);
+  }
+  for (const denied of [
+    { ...sender, frameId: 1 },
+    { ...sender, url: "https://reader.example/article", tab: { id: 4, url: "https://reader.example/article" } },
+    { ...sender, url: "https://www.youtube.com/", tab: { id: 4, url: "https://www.youtube.com/" } },
+    { ...sender, url: "chrome-extension://goi-test/player/player.html" },
+    { ...sender, url: "chrome-extension://goi-test/popup/popup.html?forged=1" },
+    { ...sender, url: "https://www.youtube.com/watch?v=test", tab: { id: 4, url: "https://reader.example/" } },
+  ]) {
+    const response = await worker.dispatch({ type: "goi.companion.open", version: 1 }, denied);
+    assert.equal(response.errorCode, "unavailable_page");
+  }
+  assert.equal(await worker.dispatch({ type: "goi.companion.open", version: 1 }, { ...sender, id: "foreign" }), undefined);
+  assert.equal((await worker.dispatch({ type: "goi.companion.open", version: 1, tabId: 999 }, sender)).tabId, 4);
+  assert.equal((await worker.dispatch({ type: "goi.connection.get", version: 1 }, sender)).errorCode, "unavailable_page");
+});
+
+test("both site-disable routes stop only automatic coverage and preserve shared grants", async function () {
+  for (const type of ["goi.site-auto.set", "goi.site-auto.remove"]) {
+    for (const protection of ["connection", "other-origin", "none"]) {
+      const origin = "https://shared.example:8443";
+      const worker = workerHarness(protection === "connection" ? { baseUrl: origin, token: "token" } : null);
+      worker.storage.siteAutoOriginsV1 = [origin];
+      if (protection === "other-origin") worker.storage.siteAutoOriginsV1.push("https://shared.example:9443");
+      const tabs = [
+        { id: 4, url: origin + "/automatic" },
+        { id: 5, url: origin + "/manual" },
+        { id: 6, url: "https://shared.example:9443/other" },
+      ];
+      const stopped = [];
+      const contexts = new Map(tabs.map((tab) => [tab.id, {
+        __goiCoverageSourceV1: { kind: tab.id === 5 ? "manual" : "automatic", origin: new URL(tab.url).origin },
+        GoiCoverage: { stop() { stopped.push(tab.id); } },
+      }]));
+      worker.chrome.tabs.query = async function (query) { return query.active ? [tabs[0]] : tabs; };
+      worker.chrome.scripting.executeScript = async function (input) {
+        const context = contexts.get(input.target.tabId);
+        context.args = input.args;
+        return [{ result: vm.runInNewContext("(" + input.func.toString() + ")(...args)", context) }];
+      };
+      const removed = [];
+      worker.chrome.permissions.remove = async function (value) { removed.push(...value.origins); return true; };
+      const response = await worker.dispatch({ type, version: 1, enabled: false, origin, revokePermission: true }, {
+        id: "goi-test", url: "chrome-extension://goi-test/popup/popup.html",
+      });
+      assert.equal(response.ok, true);
+      assert.deepEqual(stopped, [4]);
+      assert.equal((worker.storage.siteAutoOriginsV1 || []).includes(origin), false);
+      assert.deepEqual(removed, protection === "none" ? ["https://shared.example/*"] : []);
+    }
+  }
+});
+
+test("reader preference routes derive the origin and never expose trusted records", async function () {
+  const worker = workerHarness({ baseUrl: "https://goi.example", token: "secret" });
+  worker.storage.captureOutboxV2 = { sensitive: true };
+  worker.storage["goiCoveragePanel:https://other.example"] = { collapsed: false, corner: "top-left" };
+  const sender = { id: "goi-test", frameId: 0, url: "https://reader.example/chapter", tab: { id: 4, url: "https://reader.example/chapter" } };
+  const get = { type: "goi.coverage.panel.get", version: 1 };
+  assert.deepEqual(JSON.parse(JSON.stringify((await worker.dispatch(get, sender)).preference)), { collapsed: true, corner: "bottom-right" });
+  const preference = { collapsed: false, corner: "top-right" };
+  assert.equal((await worker.dispatch({ type: "goi.coverage.panel.update", version: 1, preference }, sender)).ok, true);
+  assert.deepEqual(JSON.parse(JSON.stringify((await worker.dispatch(get, sender)).preference)), preference);
+  for (const extra of [{ key: "connection" }, { key: "captureOutboxV2" }, { origin: "https://other.example" }]) {
+    assert.equal((await worker.dispatch({ ...get, ...extra }, sender)).ok, false);
+  }
+  for (const value of [{ corner: "top-right" }, { collapsed: false, corner: "invalid" }, { ...preference, token: "bad" }]) {
+    assert.equal((await worker.dispatch({ type: "goi.coverage.panel.update", version: 1, preference: value }, sender)).ok, false);
+  }
+  for (const denied of [
+    { ...sender, frameId: 1 },
+    { ...sender, url: "https://other.example" },
+    { ...sender, url: "file:///tmp/page", tab: { id: 4, url: "file:///tmp/page" } },
+    { id: "goi-test", url: "chrome-extension://goi-test/popup/popup.html" },
+  ]) assert.equal((await worker.dispatch(get, denied)).errorCode, "unavailable_page");
+  assert.equal(worker.storage.connection.token, "secret");
+  assert.deepEqual(worker.storage.captureOutboxV2, { sensitive: true });
+  assert.equal(worker.storage["goiCoveragePanel:https://other.example"].corner, "top-left");
 });

@@ -106,19 +106,8 @@ function descendants(node) {
 }
 
 function createHarness(options = {}) {
-  const ids = [
-    "video-title", "transcript-heading", "transcript-note", "transcript-retry",
-    "line-count", "unknown-only", "auto-follow", "subtitle-lines", "empty-state",
-    "empty-title", "empty-detail", "batch-one-target", "capture-form", "capture-target",
-    "capture-sentence", "capture-time", "capture-submit", "jump-selected", "capture-status",
-    "dictionary-lookup",
-    "overlay-enabled",
-    "hide-native", "furigana", "hover-lookup", "hide-native-detail", "font-size", "font-size-value", "vertical-position",
-    "vertical-position-value", "background-opacity", "background-opacity-value",
-    "coverage-display", "automatic-caption-mode", "settings-status", "page-status", "word-preview",
-    "translate-selection", "translation-tools-toggle", "translation-tools", "translation-input",
-    "translate-pasted", "translation-status", "translation-result", "batch-tools-toggle", "batch-tools",
-  ];
+  const html = fs.readFileSync(path.join(__dirname, "../companion/companion.html"), "utf8");
+  const ids = Array.from(html.matchAll(/\bid="([^"]+)"/gu), (match) => match[1]);
   const elements = Object.fromEntries(ids.map((id) => [id, fakeNode({ id })]));
   elements["auto-follow"].checked = true;
   elements["word-preview"].hidden = true;

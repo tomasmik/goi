@@ -78,6 +78,26 @@ test("allows the mining form to fall back when on-device translation is unavaila
   assert.equal(await translateInBrowser(browser, "犬がいる。"), null);
 });
 
+test("a failed translator initialization can be retried and then reused", async () => {
+  let creates = 0;
+  const browser = {
+    Translator: {
+      async create() {
+        creates += 1;
+        if (creates === 1) {
+          throw new Error("Model download interrupted");
+        }
+        return { async translate(text) { return `Translated: ${text}`; } };
+      },
+    },
+  };
+
+  await assert.rejects(translateInBrowser(browser, "雨が降る。"), /Model download interrupted/);
+  assert.equal(await translateInBrowser(browser, "雨が降る。"), "Translated: 雨が降る。");
+  assert.equal(await translateInBrowser(browser, "雪が降る。"), "Translated: 雪が降る。");
+  assert.equal(creates, 2);
+});
+
 test("uses Goi's configured translator before Chrome on the mining form", async () => {
   const listeners = new Map();
   let chromeTranslations = 0;

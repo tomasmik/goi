@@ -35,7 +35,6 @@ func (s *Store) CreateInTx(ctx context.Context, tx *sql.Tx, input CreateInput) (
 	if err != nil {
 		return 0, err
 	}
-
 	now := time.Now().UTC()
 	normalizedExpression := textnorm.Normalize(validated.expression)
 	if !input.AllowDuplicate {
@@ -50,6 +49,21 @@ func (s *Store) CreateInTx(ctx context.Context, tx *sql.Tx, input CreateInput) (
 		if !errors.Is(err, sql.ErrNoRows) {
 			return 0, fmt.Errorf("check existing vocabulary: %w", err)
 		}
+	}
+	example := examples.Input{
+		Origin:        examples.OriginManual,
+		Sentence:      input.ExampleSentence,
+		Translation:   input.ExampleTranslation,
+		TargetSurface: exampleTarget(input.ExampleTarget, validated.expression),
+	}
+	hasExample := strings.TrimSpace(example.Sentence) != ""
+	// Imports continue their transaction after invalid rows, so reject bad examples before writing.
+	if !hasExample {
+		if strings.TrimSpace(input.ExampleTranslation) != "" || strings.TrimSpace(input.ExampleTarget) != "" {
+			return 0, validationError("example sentence is required when example details are provided")
+		}
+	} else if err := examples.Validate(example); err != nil {
+		return 0, validationError("example: " + err.Error())
 	}
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO vocabulary (
@@ -85,17 +99,10 @@ func (s *Store) CreateInTx(ctx context.Context, tx *sql.Tx, input CreateInput) (
 	if err := insertVocabularyText(ctx, tx, id, validated); err != nil {
 		return 0, err
 	}
-	if strings.TrimSpace(input.ExampleSentence) == "" {
-		if strings.TrimSpace(input.ExampleTranslation) != "" || strings.TrimSpace(input.ExampleTarget) != "" {
-			return 0, validationError("example sentence is required when example details are provided")
+	if hasExample {
+		if _, err := s.examples.CreateInTx(ctx, tx, id, example); err != nil {
+			return 0, fmt.Errorf("create vocabulary example: %w", err)
 		}
-	} else if _, err := s.examples.CreateInTx(ctx, tx, id, examples.Input{
-		Origin:        examples.OriginManual,
-		Sentence:      input.ExampleSentence,
-		Translation:   input.ExampleTranslation,
-		TargetSurface: exampleTarget(input.ExampleTarget, validated.expression),
-	}); err != nil {
-		return 0, fmt.Errorf("create vocabulary example: %w", err)
 	}
 
 	for _, upload := range []*media.Upload{validated.audio, validated.picture} {
