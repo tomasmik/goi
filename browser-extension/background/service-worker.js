@@ -1005,6 +1005,16 @@ async function ensureCoverageScript(tabId) {
   if (states[0] && states[0].result) {
     return;
   }
+  const styles = await Promise.all([
+    "shared/dictionary-view.css",
+    "content/coverage-content.css"
+  ].map(async function (file) {
+    const response = await fetch(chrome.runtime.getURL(file));
+    if (!response.ok) {
+      throw new Error("Could not load reader styles: " + file);
+    }
+    return response.text();
+  }));
   await chrome.scripting.executeScript({
     target,
     files: [
@@ -1016,9 +1026,16 @@ async function ensureCoverageScript(tabId) {
       "content/coverage-content.js"
     ]
   });
+  await chrome.scripting.executeScript({
+    target,
+    func: function (cssText) {
+      globalThis.GoiCoverage.setStyles(cssText);
+    },
+    args: [styles.join("\n")]
+  });
   await chrome.scripting.insertCSS({
     target,
-    files: ["content/capture-content.css", "shared/dictionary-view.css", "content/coverage-content.css"]
+    files: ["content/capture-content.css", "content/coverage-content.css"]
   });
 }
 

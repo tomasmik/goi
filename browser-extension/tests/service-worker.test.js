@@ -1808,6 +1808,86 @@ test("global ignored words are treated as known in coverage results", async func
   assert.deepEqual(result.blocks[0].tokens.map((token) => token.status), ["known", "unknown"]);
 });
 
+test("loads reader styles into its isolated UI before analysis and reuses the loaded reader", async function () {
+  const fetchedFiles = [];
+  const injectedFiles = [];
+  const page = {};
+  const styles = [];
+  let analyses = 0;
+  const harness = workerHarness(null, undefined, undefined, undefined, {
+    async fetch(url) {
+      const file = new URL(url).pathname.slice(1);
+      assert.equal(new URL(url).protocol, "chrome-extension:");
+      assert.equal(new URL(url).hostname, "goi-test");
+      fetchedFiles.push(file);
+      return { ok: true, async text() { return fs.readFileSync(path.join(__dirname, "..", file), "utf8"); } };
+    },
+  });
+  harness.chrome.scripting.executeScript = async function (input) {
+    assert.deepEqual(JSON.parse(JSON.stringify(input.target)), { tabId: 12, frameIds: [0] });
+    if (input.files) {
+      injectedFiles.push(...input.files);
+      page.GoiCoverage = {
+        setStyles(cssText) { styles.push(cssText); },
+        beginAnalysis(id) {
+          assert.equal(styles.length, 1);
+          analyses += 1;
+          return { analysisID: id, url: "https://reader.example/", blocks: [] };
+        },
+        finishAnalysis() { return true; },
+      };
+      return [{ frameId: 0 }];
+    }
+    return [{
+      frameId: 0,
+      result: vm.runInNewContext("(" + input.func.toString() + ")(...args)", {
+        globalThis: page,
+        args: input.args || [],
+      }),
+    }];
+  };
+  const pageStyles = [];
+  harness.chrome.scripting.insertCSS = async function (input) {
+    pageStyles.push(...input.files);
+  };
+
+  await harness.operations.analyzeTab(12);
+  await harness.operations.analyzeTab(12);
+
+  assert.equal(analyses, 2);
+  assert.deepEqual(fetchedFiles, ["shared/dictionary-view.css", "content/coverage-content.css"]);
+  assert.deepEqual(injectedFiles, [
+    "shared/capture-model.js",
+    "shared/subtitle-model.js",
+    "shared/dictionary-client.js",
+    "shared/dictionary-view.js",
+    "content/capture-content.js",
+    "content/coverage-content.js",
+  ]);
+  assert.equal(styles[0], fetchedFiles.map(function (file) {
+    return fs.readFileSync(path.join(__dirname, "..", file), "utf8");
+  }).join("\n"));
+  assert.deepEqual(pageStyles, ["content/capture-content.css", "content/coverage-content.css"]);
+});
+
+test("a reader stylesheet failure stops before content injection and can be retried", async function () {
+  let fetches = 0;
+  const harness = workerHarness(null, undefined, undefined, undefined, {
+    async fetch() {
+      fetches += 1;
+      return { ok: false };
+    },
+  });
+  harness.chrome.scripting.executeScript = async function (input) {
+    assert.equal(input.files, undefined);
+    return [{ frameId: 0, result: false }];
+  };
+
+  await assert.rejects(harness.operations.analyzeTab(12), /Could not load reader styles/);
+  await assert.rejects(harness.operations.analyzeTab(12), /Could not load reader styles/);
+  assert.equal(fetches, 4);
+});
+
 test("a page without Japanese renders an empty coverage result without calling the API", async function () {
   let apiCalls = 0;
   const client = {

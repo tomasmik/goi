@@ -343,6 +343,9 @@ test("applies clamped offsets to half-open cue intervals without changing source
   assert.equal(cueIsOutsideVideo({ startMs: 10000, endMs: 11000 }, 10000, 0), true);
   assert.equal(cueIsOutsideVideo({ startMs: 9500, endMs: 10500 }, 10000, 0), false);
   assert.equal(cueIsOutsideVideo({ startMs: 100, endMs: 200 }, 10000, -1000), true);
+  assert.equal(cueIsOutsideVideo({ startMs: 1000, endMs: 2000 }, null, 0), false);
+  assert.equal(cueIsOutsideVideo({ startMs: 1000, endMs: 2000 }, Infinity, 0), false);
+  assert.equal(cueIsOutsideVideo({ startMs: 100, endMs: 200 }, null, -1000), true);
 });
 
 test("indexes subtitle timelines without losing overlaps or offsets", function () {

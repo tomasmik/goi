@@ -483,6 +483,9 @@
   }
 
   function invalidateSession(clearSelection) {
+    closeWordLookup(false);
+    lookupRuntime.hoverPausedVideo = false;
+    lookupRuntime.hoverPauseLocked = false;
     sessionGeneration += 1;
     submittedCueIDs.clear();
     sendingBatch = false;
@@ -500,10 +503,13 @@
     playbackDiscontinuity = true;
   }
 
-  async function replaceVideo(file) {
+  function replaceVideo(file) {
     if (!file) {
       return;
     }
+    savePlaybackPosition(true);
+    videoReady = false;
+    seeking = false;
     elements.video.pause();
     invalidateSession(true);
     cancelPlaybackFrame();
@@ -513,7 +519,6 @@
     }
     elements.video.removeAttribute("src");
     elements.video.load();
-    videoReady = false;
     videoDurationMs = null;
     videoFileName = String(file.name || "Local video");
     videoIdentity = [videoFileName, file.size, file.lastModified].join(":");
@@ -524,7 +529,7 @@
     lastSavedPlaybackBucket = -1;
     elements.videoName.textContent = videoFileName;
     elements.videoEmpty.hidden = true;
-    elements.fullscreen.disabled = false;
+    elements.fullscreen.disabled = true;
     offsetMs = savedOffsetMs;
     subtitleTracks.forEach(function (track) {
       track.offsetMs = savedOffsetMs;
@@ -541,7 +546,7 @@
       elements.video.src = videoURL;
       elements.video.load();
     } catch (_error) {
-      showStatus(elements.videoStatus, "Chrome could not open that video file.", true);
+      handleVideoError("Chrome could not open that file. Choose another video.");
     }
   }
 
@@ -990,7 +995,7 @@
       return;
     }
     const effective = effectiveTimes(cue);
-    const maximum = Math.max(0, (videoDurationMs || 0) - 1);
+    const maximum = videoDurationMs === null ? Infinity : Math.max(0, videoDurationMs - 1);
     elements.video.currentTime = Math.min(maximum, Math.max(0, effective.startMs)) / 1000;
   }
 
@@ -999,7 +1004,8 @@
     elements.captureTarget.focus();
   }
 
-  function closeWordLookup(resumePlayback = true) {
+  function closeWordLookup(resumePlayback = true, restoreFocus = false) {
+    const anchor = lookupRuntime.selection?.anchor;
     cancelWordLookupHover();
     cancelWordLookupClose();
     lookupRuntime.wordRevision += 1;
@@ -1011,11 +1017,15 @@
     if (resumePlayback) {
       resumeAfterSubtitleHover();
     }
+    if (restoreFocus && anchor?.isConnected) anchor.focus({ preventScroll: true });
   }
 
-  function positionWordLookup(anchor) {
+  function positionWordLookup() {
+    const anchor = lookupRuntime.selection?.anchor;
+    if (elements.wordLookup.hidden) return;
     const stage = elements.videoStage.getBoundingClientRect();
-    const target = anchor.getBoundingClientRect();
+    const target = anchor?.isConnected ? anchor.getBoundingClientRect() : elements.wordLookup.getBoundingClientRect();
+    elements.wordLookup.style.maxHeight = Math.max(0, Math.min(480, stage.height - 24)) + "px";
     const width = elements.wordLookup.offsetWidth || 360;
     const height = elements.wordLookup.offsetHeight || 260;
     const center = target.left - stage.left + target.width / 2;
@@ -1034,7 +1044,8 @@
     cancelWordLookupClose();
     lookupRuntime.pinned = Boolean(pinned);
     lockSubtitleHoverPause();
-    lookupRuntime.selection = { cue, word };
+    if (pinned && settings.pauseBehavior === "on_selection") elements.video.pause();
+    lookupRuntime.selection = { cue, word, anchor };
     lookupRuntime.suggestedEntrySequence = undefined;
     const revision = ++lookupRuntime.wordRevision;
     elements.wordLookupTitle.textContent = word.surface;
@@ -1043,8 +1054,10 @@
     elements.wordLookupKnown.disabled = false;
     elements.wordLookupMine.disabled = !captureEligible(cue);
     elements.wordLookup.hidden = false;
-    positionWordLookup(anchor);
-    const response = await dictionaryClient.lookup(chrome.runtime, expression);
+    positionWordLookup();
+    const response = await dictionaryClient.lookup(chrome.runtime, expression).catch(function () {
+      return { ok: false, errorCode: "network" };
+    });
     if (revision !== lookupRuntime.wordRevision || !lookupRuntime.selection) {
       return;
     }
@@ -1054,7 +1067,7 @@
         lookupRuntime.suggestedEntrySequence = candidate.entrySequence;
       }
     });
-    positionWordLookup(anchor);
+    positionWordLookup();
   }
 
   function scheduleWordLookup(cue, word, anchor) {
@@ -1111,7 +1124,9 @@
     const revision = ++lookupRuntime.revision;
     elements.dictionaryLookup.hidden = false;
     elements.dictionaryLookup.textContent = "Looking up “" + query + "”…";
-    const response = await dictionaryClient.lookup(chrome.runtime, query);
+    const response = await dictionaryClient.lookup(chrome.runtime, query).catch(function () {
+      return { ok: false, errorCode: "network" };
+    });
     if (revision !== lookupRuntime.revision) {
       return;
     }
@@ -1517,12 +1532,12 @@
     }
     elements.batchConfirmationText.textContent = "Send " + count +
       (count === 1 ? " line" : " lines") +
-      " to mining? Lines you have not played will be text-only.";
+      " to mining? Saves text, filename, and timestamp; no audio or video clips.";
     elements.batchConfirmation.hidden = false;
     elements.batchConfirm.focus();
   }
 
-  function captureInput(cue, target) {
+  function captureInput(cue, target, suggestedEntrySequence) {
     const effective = effectiveTimes(cue);
     return {
       rawText: target.surface,
@@ -1530,7 +1545,7 @@
       contextText: cue.text,
       sourceTitle: videoFileName,
       sourcePositionMs: Math.max(0, Math.round(effective.startMs)),
-      suggestedEntrySequence: workspaceRuntime.suggestedEntrySequence
+      suggestedEntrySequence
     };
   }
 
@@ -1572,7 +1587,7 @@
     }
     const response = await message("goi.player.capture", {
       sessionID: currentSessionID(),
-      capture: captureInput(cue, target)
+      capture: captureInput(cue, target, captureOptions.batch ? undefined : workspaceRuntime.suggestedEntrySequence)
     });
     if (!response.ok) {
       if (!captureOptions.quiet && workspaceRevision === workspaceRuntime.captureRevision) {
@@ -1691,10 +1706,10 @@
 
   async function toggleFullscreen() {
     try {
-      if (document.fullscreenElement === elements.videoStage) {
+      if (document.fullscreenElement === elements.viewerShell) {
         await document.exitFullscreen();
       } else {
-        await elements.videoStage.requestFullscreen();
+        await elements.viewerShell.requestFullscreen();
       }
     } catch (_error) {
       showStatus(elements.videoStatus, "Full screen is unavailable in this browser.", true);
@@ -1716,38 +1731,44 @@
   }
 
   function handleVideoMetadata() {
-    videoReady = Number.isFinite(elements.video.duration) && elements.video.duration > 0;
-    videoDurationMs = videoReady ? Math.round(elements.video.duration * 1000) : null;
-    if (videoReady && !playbackRestored) {
+    if (!videoURL || elements.video.readyState < 1 || elements.video.error) return;
+    videoReady = true;
+    videoDurationMs = Number.isFinite(elements.video.duration) && elements.video.duration > 0
+      ? Math.round(elements.video.duration * 1000)
+      : null;
+    if (!playbackRestored) {
       playbackRestored = true;
       const endMargin = Math.min(10, Math.max(0.25, elements.video.duration * 0.02));
-      if (savedPlaybackSeconds > 0 && savedPlaybackSeconds < elements.video.duration - endMargin) {
+      if (savedPlaybackSeconds > 0 &&
+          (videoDurationMs === null || savedPlaybackSeconds < elements.video.duration - endMargin)) {
         elements.video.currentTime = savedPlaybackSeconds;
         lastSavedPlaybackBucket = Math.floor(savedPlaybackSeconds / 5);
       }
     }
     elements.videoEmpty.hidden = true;
-    showStatus(
-      elements.videoStatus,
-      videoReady ? "Video loaded." : "Chrome could not determine this video’s duration.",
-      !videoReady
-    );
+    elements.fullscreen.disabled = false;
+    showStatus(elements.videoStatus, "Video loaded.", false);
     updateCueAvailability();
     renderTranscript();
     updatePlayback(true);
   }
 
-  function handleVideoError() {
+  function handleVideoError(message) {
     videoReady = false;
     videoDurationMs = null;
     cancelPlaybackFrame();
+    invalidateSession(true);
+    resetPlaybackTracking();
+    elements.fullscreen.disabled = true;
     showStatus(
       elements.videoStatus,
-      "Chrome cannot play this file or codec. Your subtitles remain available.",
+      typeof message === "string" ? message :
+        "Chrome cannot play this file or codec. Choose another video; your subtitles remain available.",
       true
     );
     updateCueAvailability();
     renderTranscript();
+    updatePlayback(true);
   }
 
   function bindSettings() {
@@ -1797,7 +1818,7 @@
       closePanel(true);
     });
     elements.wordLookupClose.addEventListener("click", function () {
-      closeWordLookup(true);
+      closeWordLookup(true, true);
     });
     elements.wordLookupMine.addEventListener("click", function () {
       const selection = lookupRuntime.selection;
@@ -1817,6 +1838,7 @@
       const response = await message("goi.vocabulary.known", {
         expression: selection.word.expression || selection.word.surface
       });
+      if (selection !== lookupRuntime.selection) return;
       if (!response.ok || !response.result) {
         elements.wordLookupKnown.disabled = false;
         showStatus(elements.videoStatus, errorText(response.errorCode, "Could not mark this word as known."), true);
@@ -1852,10 +1874,15 @@
       resumeAfterSubtitleHover();
     });
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && !elements.workspacePanel.hidden) {
-        closePanel(false);
+      if (event.key !== "Escape") return;
+      if (!elements.wordLookup.hidden) {
+        event.preventDefault();
+        closeWordLookup(true, true);
+      } else if (!elements.workspacePanel.hidden) {
+        closePanel(true);
       }
     });
+    globalThis.addEventListener("resize", positionWordLookup);
   }
 
   function removeActiveSubtitleTrack() {
@@ -1909,15 +1936,20 @@
     });
     elements.videoStage.addEventListener("drop", function (event) {
       const subtitleFiles = [];
+      let videoFile;
       Array.from(event.dataTransfer?.files || []).forEach(function (file) {
         const name = String(file.name || "").toLocaleLowerCase();
-        if (file.type.startsWith("video/")) {
-          replaceVideo(file);
-        } else if (/\.(?:srt|vtt|ass|ssa)$/u.test(name)) {
+        if (/\.(?:srt|vtt|ass|ssa)$/u.test(name)) {
           subtitleFiles.push(file);
+        } else if (!videoFile && (file.type.startsWith("video/") || /\.(?:mp4|m4v|webm|mkv|mov|ogv|avi)$/u.test(name))) {
+          videoFile = file;
         }
       });
+      if (videoFile) replaceVideo(videoFile);
       readSubtitleFiles(subtitleFiles);
+      if (!videoFile && !subtitleFiles.length) {
+        showStatus(elements.videoStatus, "Drop a video or an SRT, VTT, ASS, or SSA subtitle file.", true);
+      }
     });
   }
 
@@ -1941,26 +1973,28 @@
       return;
     }
     elements.captureTarget.value = selected;
-    workspaceRuntime.draftDirty = selected !== workspaceRuntime.initialTarget;
+    updateCaptureTarget();
+  }
+
+  function updateCaptureTarget() {
+    workspaceRuntime.draftDirty = Boolean(selectedCue()) && elements.captureTarget.value !== workspaceRuntime.initialTarget;
+    workspaceRuntime.suggestedEntrySequence = undefined;
+    clearLookup();
     updateCaptureWorkspace();
+    clearTimeout(lookupRuntime.timer);
+    lookupRuntime.timer = setTimeout(function () {
+      const cue = selectedCue();
+      const target = cue && subtitleModel.captureTarget(cue, elements.captureTarget.value);
+      if (target) {
+        lookupWord(target.expression);
+      } else {
+        clearLookup();
+      }
+    }, 250);
   }
 
   function bindCaptureEvents() {
-    elements.captureTarget.addEventListener("input", function () {
-      workspaceRuntime.draftDirty = Boolean(selectedCue()) && elements.captureTarget.value !== workspaceRuntime.initialTarget;
-      workspaceRuntime.suggestedEntrySequence = undefined;
-      updateCaptureWorkspace();
-      clearTimeout(lookupRuntime.timer);
-      lookupRuntime.timer = setTimeout(function () {
-        const cue = selectedCue();
-        const target = cue && subtitleModel.captureTarget(cue, elements.captureTarget.value);
-        if (target) {
-          lookupWord(target.expression);
-        } else {
-          clearLookup();
-        }
-      }, 250);
-    });
+    elements.captureTarget.addEventListener("input", updateCaptureTarget);
     elements.captureSentence.addEventListener("mouseup", useSentenceSelection);
     elements.captureSentence.addEventListener("keyup", useSentenceSelection);
     elements.captureForm.addEventListener("submit", function (event) {
@@ -2004,9 +2038,10 @@
     });
     elements.fullscreen.addEventListener("click", toggleFullscreen);
     document.addEventListener("fullscreenchange", function () {
-      elements.fullscreen.textContent = document.fullscreenElement === elements.videoStage
+      elements.fullscreen.textContent = document.fullscreenElement === elements.viewerShell
         ? "Exit full screen"
         : "Full screen";
+      positionWordLookup();
     });
     elements.connectionSetup.addEventListener("click", openConnectionSetup);
     document.addEventListener("selectionchange", updateSelectionTranslation);
@@ -2033,11 +2068,7 @@
 
   function bindVideoEvents() {
     elements.video.addEventListener("loadedmetadata", handleVideoMetadata);
-    elements.video.addEventListener("durationchange", function () {
-      if (Number.isFinite(elements.video.duration) && elements.video.duration > 0) {
-        handleVideoMetadata();
-      }
-    });
+    elements.video.addEventListener("durationchange", handleVideoMetadata);
     elements.video.addEventListener("error", handleVideoError);
     elements.video.addEventListener("playing", function () {
       lookupRuntime.hoverPausedVideo = false;
@@ -2136,6 +2167,7 @@
       return;
     }
     shuttingDown = true;
+    closeWordLookup(false);
     subtitleReadRevision += 1;
     coverageRevision += 1;
     clearTimeout(lookupRuntime.timer);

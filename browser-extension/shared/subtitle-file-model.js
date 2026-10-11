@@ -542,12 +542,13 @@
   }
 
   function cueIsOutsideVideo(cue, videoDurationMilliseconds, offsetMilliseconds) {
-    const duration = Number(videoDurationMilliseconds);
+    const duration = videoDurationMilliseconds == null ? NaN : Number(videoDurationMilliseconds);
     const effective = effectiveCueTimes(cue, offsetMilliseconds);
-    if (!effective || !Number.isFinite(duration) || duration < 0) {
+    if (!effective) {
       return false;
     }
-    return effective.endMs <= 0 || effective.startMs >= duration;
+    return effective.endMs <= 0 ||
+      (Number.isFinite(duration) && duration >= 0 && effective.startMs >= duration);
   }
 
   function utf8ByteLength(value) {

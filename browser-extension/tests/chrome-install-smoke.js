@@ -402,11 +402,40 @@ async function exerciseLocalPlayer(devTools, extensionID, popupSessionID, goiFix
   assert.equal(localVideo.ready, true);
   assert.equal(localVideo.batch, "Send 1 line to mining");
 
+  const videoControls = await devTools.send("Runtime.evaluate", {
+    expression: `(function () {
+      const video = document.getElementById("video");
+      const rect = video.getBoundingClientRect();
+      return {
+        emptyOverlayVisible: document.getElementById("video-empty").getClientRects().length > 0,
+        transportTarget: document.elementFromPoint(rect.left + 24, rect.bottom - 24)?.id
+      };
+    })()`,
+    returnByValue: true,
+  }, playerSession.sessionId);
+  assert.deepEqual(videoControls.result.value, {
+    emptyOverlayVisible: false,
+    transportTarget: "video",
+  }, "A chosen video must expose its native controls instead of the empty-state overlay");
+
+  const playButton = await devTools.send("Runtime.evaluate", {
+    expression: `(function () {
+      const video = document.getElementById("video");
+      video.muted = true;
+      const rect = video.getBoundingClientRect();
+      return {x: rect.left + 24, y: rect.bottom - 24};
+    })()`,
+    returnByValue: true,
+  }, playerSession.sessionId);
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+    await devTools.send("Input.dispatchMouseEvent", {
+      type, ...playButton.result.value, button: "left", clickCount: 1,
+    }, playerSession.sessionId);
+  }
+
   const playback = await devTools.send("Runtime.evaluate", {
     expression: `(async function () {
       const video = document.getElementById("video");
-      video.muted = true;
-      await video.play();
       await new Promise(function (resolve) { setTimeout(resolve, 250); });
       const result = {
         advanced: video.currentTime > 0,
@@ -691,6 +720,8 @@ async function exerciseLocalPlayer(devTools, extensionID, popupSessionID, goiFix
   assert.equal(Math.abs(resumedPlayback.result.value.currentTime - 0.25) < 0.12, true);
   assert.equal(resumedPlayback.result.value.offset, "250");
 
+  await exercisePlayerReliability(devTools, playerSession.sessionId, goiFixture);
+
   const enabledYouTubeFurigana = await devTools.send("Runtime.evaluate", {
     expression: `chrome.runtime.sendMessage({
       type: "goi.settings.patch",
@@ -701,6 +732,223 @@ async function exerciseLocalPlayer(devTools, extensionID, popupSessionID, goiFix
     returnByValue: true,
   }, popupSessionID);
   assert.equal(enabledYouTubeFurigana.result.value.settings.furiganaEnabled, true);
+}
+
+async function exercisePlayerReliability(devTools, sessionID, fixture) {
+  const selected = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      const video = document.getElementById("video");
+      document.getElementById("panel-close").click();
+      document.getElementById("offset-reset").click();
+      const pause = document.querySelector('[name="pause-behavior"][value="on_selection"]');
+      pause.checked = true;
+      pause.dispatchEvent(new Event("change"));
+      video.currentTime = 0.1;
+      await video.play();
+      await new Promise(resolve => setTimeout(resolve, 80));
+      document.querySelector("#subtitle-overlay .subtitle-word--unknown").click();
+      return {paused: video.paused, lookupVisible: !document.getElementById("word-lookup").hidden};
+    })()`,
+    awaitPromise: true, returnByValue: true,
+  }, sessionID);
+  assert.deepEqual(selected.result.value, { paused: true, lookupVisible: true });
+  for (const type of ["keyDown", "keyUp"]) {
+    await devTools.send("Input.dispatchKeyEvent", {
+      type, key: "Escape", code: "Escape", windowsVirtualKeyCode: 27,
+    }, sessionID);
+  }
+  const dismissed = await devTools.send("Runtime.evaluate", {
+    expression: `({
+      hidden: document.getElementById("word-lookup").hidden,
+      focusRestored: document.activeElement.matches(".subtitle-word--unknown"),
+      paused: document.getElementById("video").paused
+    })`, returnByValue: true,
+  }, sessionID);
+  assert.deepEqual(dismissed.result.value, { hidden: true, focusRestored: true, paused: true });
+
+  await clickPageElement(devTools, sessionID, "#fullscreen");
+  const fullscreenMining = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      for (let attempt = 0; attempt < 100 && !document.fullscreenElement; attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      document.querySelector("#subtitle-overlay .subtitle-word--unknown").click();
+      document.getElementById("word-lookup-mine").click();
+      const panel = document.getElementById("workspace-panel");
+      const result = {
+        fullscreen: document.fullscreenElement?.id,
+        miningVisible: !panel.hidden && document.fullscreenElement?.contains(panel) && panel.getBoundingClientRect().width > 0
+      };
+      document.getElementById("panel-close").click();
+      return result;
+    })()`, awaitPromise: true, returnByValue: true,
+  }, sessionID);
+  assert.deepEqual(fullscreenMining.result.value, { fullscreen: "viewer-shell", miningVisible: true });
+  await clickPageElement(devTools, sessionID, "#fullscreen");
+
+  await devTools.send("Runtime.evaluate", {
+    expression: `document.querySelector("#subtitle-overlay .subtitle-word--known").click()`,
+  }, sessionID);
+  await devTools.send("Emulation.setDeviceMetricsOverride", {
+    width: 500, height: 420, deviceScaleFactor: 1, mobile: false,
+  }, sessionID);
+  const dictionaryBounds = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if (document.querySelector("#word-lookup-content .goi-dictionary-term")?.textContent === "日本語") break;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      const stage = document.getElementById("video-stage").getBoundingClientRect();
+      const popup = document.getElementById("word-lookup").getBoundingClientRect();
+      const body = document.getElementById("word-lookup-content");
+      return {
+        fits: popup.left >= stage.left && popup.right <= stage.right && popup.top >= stage.top && popup.bottom <= stage.bottom,
+        scrollable: body.scrollHeight > body.clientHeight && getComputedStyle(body).overflowY === "auto"
+      };
+    })()`, awaitPromise: true, returnByValue: true,
+  }, sessionID);
+  assert.deepEqual(dictionaryBounds.result.value, { fits: true, scrollable: true });
+  await saveSmokeScreenshot(devTools, sessionID, "player-bounded-dictionary");
+  await devTools.send("Emulation.clearDeviceMetricsOverride", undefined, sessionID);
+
+  const captureCount = fixture.captures.length;
+  const reliability = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      const video = document.getElementById("video");
+      const byID = id => document.getElementById(id);
+      async function waitFor(predicate, description) {
+        for (let attempt = 0; attempt < 150; attempt += 1) {
+          if (predicate()) return;
+          await new Promise(resolve => setTimeout(resolve, 20));
+        }
+        throw new Error(description);
+      }
+      function chooseFile(id, file) {
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        byID(id).files = transfer.files;
+        byID(id).dispatchEvent(new Event("change", {bubbles: true}));
+      }
+      byID("word-lookup-close").click();
+      document.querySelector("#subtitle-overlay .subtitle-word--unknown").click();
+      const sendMessage = chrome.runtime.sendMessage;
+      let finishKnown;
+      chrome.runtime.sendMessage = function (message, ...args) {
+        if (message.type === "goi.vocabulary.known") return new Promise(resolve => { finishKnown = resolve; });
+        return sendMessage.call(chrome.runtime, message, ...args);
+      };
+      byID("word-lookup-known").click();
+      chrome.runtime.sendMessage = sendMessage;
+      chooseFile("subtitle-file", new File([
+        "1\\n00:00:00,000 --> 00:00:00,700\\n日本語を勉強する。\\n\\n" +
+        "2\\n00:00:00,700 --> 00:00:01,500\\n猫が好きです。\\n"
+      ], "reliability.srt", {type: "application/x-subrip"}));
+      await waitFor(() => byID("subtitle-track").selectedOptions[0].textContent.startsWith("reliability.srt") &&
+        byID("coverage-summary").textContent.includes("2/2 checked"), "new track coverage");
+      const trackChangeClosedLookup = byID("word-lookup").hidden;
+      document.querySelector("#subtitle-overlay .subtitle-word--unknown").click();
+      finishKnown({ok: true, result: {state: "marked_known"}});
+      await new Promise(resolve => setTimeout(resolve, 20));
+      const lateKnownPreservedNewLookup = !byID("word-lookup").hidden;
+      byID("word-lookup-close").click();
+      Object.defineProperty(video, "duration", {configurable: true, value: Infinity});
+      video.dispatchEvent(new Event("durationchange"));
+      const unknownDurationReady = !document.querySelectorAll(".line-time")[1].disabled;
+      document.querySelectorAll(".line-time")[1].click();
+      await waitFor(() => !video.seeking, "unknown-duration seek");
+      const unknownDurationSeek = Math.abs(video.currentTime - 0.7) < 0.05;
+      delete video.duration;
+      video.dispatchEvent(new Event("durationchange"));
+
+      document.querySelector(".unknown-target").click();
+      await waitFor(() => byID("dictionary-lookup").querySelector(".goi-dictionary-select"), "selected entry");
+      byID("dictionary-lookup").querySelector(".goi-dictionary-select").click();
+      byID("capture-sentence").setSelectionRange(0, 3);
+      byID("capture-sentence").dispatchEvent(new MouseEvent("mouseup"));
+      const changedTarget = byID("capture-target").value;
+      byID("capture-form").requestSubmit();
+      await waitFor(() => byID("capture-status").textContent === "Sent to mining.", "changed target capture");
+
+      document.querySelector(".unknown-target").click();
+      await waitFor(() => byID("dictionary-lookup").querySelector(".goi-dictionary-select"), "batch source entry");
+      byID("dictionary-lookup").querySelector(".goi-dictionary-select").click();
+      byID("batch-one-target").click();
+      const batchCopy = byID("batch-confirmation-text").textContent;
+      byID("batch-confirm").click();
+      await waitFor(() => byID("capture-status").textContent === "1 sent", "batch capture");
+
+      byID("panel-close").click();
+      video.currentTime = 0.1;
+      await waitFor(() => !video.seeking && document.querySelector("#subtitle-overlay .subtitle-word"), "subtitle before failure");
+      document.querySelector("#subtitle-overlay .subtitle-word").click();
+      chooseFile("video-file", new File(["not a playable video"], "broken.webm", {type: "video/webm"}));
+      await waitFor(() => video.error && byID("video-status").textContent.includes("cannot play"), "unsupported video feedback");
+      const failure = {
+        lookupClosed: byID("word-lookup").hidden,
+        subtitlesCleared: byID("subtitle-overlay").childElementCount === 0,
+        tracksPreserved: byID("subtitle-track").options.length === 3,
+        captureDisabled: byID("capture-submit").disabled,
+        fullscreenDisabled: byID("fullscreen").disabled
+      };
+      const dropped = new DataTransfer();
+      dropped.items.add(new File([globalThis.goiSmokeVideoFile], "dropped.webm", {type: ""}));
+      byID("video-stage").dispatchEvent(new DragEvent("drop", {bubbles: true, dataTransfer: dropped}));
+      await waitFor(() => video.readyState >= 2 && !video.error && !byID("fullscreen").disabled, "video recovery");
+      video.currentTime = 0.1;
+      await video.play();
+      await new Promise(resolve => setTimeout(resolve, 80));
+      const recovered = !video.paused && video.currentTime > 0.1 &&
+        byID("video-name").textContent === "dropped.webm" && byID("video-empty").getClientRects().length === 0;
+      video.pause();
+      return {trackChangeClosedLookup, lateKnownPreservedNewLookup, unknownDurationReady, unknownDurationSeek, changedTarget, batchCopy, failure, recovered};
+    })()`, awaitPromise: true, returnByValue: true,
+  }, sessionID);
+  assert.equal(Boolean(reliability.exceptionDetails), false, JSON.stringify(reliability.exceptionDetails));
+  assert.deepEqual(reliability.result.value, {
+    trackChangeClosedLookup: true,
+    lateKnownPreservedNewLookup: true,
+    unknownDurationReady: true,
+    unknownDurationSeek: true,
+    changedTarget: "日本語",
+    batchCopy: "Send 1 line to mining? Saves text, filename, and timestamp; no audio or video clips.",
+    failure: { lookupClosed: true, subtitlesCleared: true, tracksPreserved: true, captureDisabled: true, fullscreenDisabled: true },
+    recovered: true,
+  });
+  const captures = fixture.captures.slice(captureCount);
+  assert.deepEqual(captures.map(capture => capture.expression), ["日本語", "猫"]);
+  assert.equal(captures.every(capture => capture.suggested_entry_sequence == null), true,
+    "A new target or batch line must not inherit another word's selected dictionary entry");
+
+  await devTools.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-color-scheme", value: "light" }],
+  }, sessionID);
+  const lightTheme = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      document.querySelector(".unknown-target").click();
+      for (let attempt = 0; attempt < 100 && !document.querySelector("#dictionary-lookup .goi-dictionary-term"); attempt += 1) {
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      function luminance(color) {
+        const values = color.match(/[\\d.]+/g).slice(0, 3).map(Number).map(value => {
+          const channel = value / 255;
+          return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+        });
+        return values[0] * 0.2126 + values[1] * 0.7152 + values[2] * 0.0722;
+      }
+      function readable(text, surface) {
+        const foreground = luminance(getComputedStyle(text).color);
+        const background = luminance(getComputedStyle(surface).backgroundColor);
+        return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05) >= 4.5;
+      }
+      return {
+        label: readable(document.querySelector(".capture-card label"), document.getElementById("capture-panel")),
+        definition: readable(document.querySelector("#dictionary-lookup .goi-dictionary-term"), document.getElementById("dictionary-lookup")),
+        transcript: readable(document.querySelector(".line-text"), document.querySelector(".transcript-line.selected"))
+      };
+    })()`, awaitPromise: true, returnByValue: true,
+  }, sessionID);
+  assert.deepEqual(lightTheme.result.value, { label: true, definition: true, transcript: true });
+  await saveSmokeScreenshot(devTools, sessionID, "player-light-mining");
 }
 
 async function prepareYouTube(devTools) {
@@ -959,14 +1207,14 @@ async function exerciseReaderPage(devTools, extensionID, popupSessionID, goiFixt
     sourceKind: "web",
     entrySequence: 12345,
   });
+  await clickPageElement(devTools, readerSession.sessionId, '[aria-label="Show reading controls"]');
+  await clickPageElement(devTools, readerSession.sessionId, '[aria-label="Move Goi coverage panel"]');
   const moved = await devTools.send("Runtime.evaluate", {
-    expression: `(function () {
-      document.querySelector('[aria-label="Move Goi coverage panel"]').click();
-      return document.querySelector('[data-goi-corner]').dataset.goiCorner;
-    })()`,
+    expression: `document.getElementById("goi-ext-reader").shadowRoot.querySelector('[data-goi-corner]').dataset.goiCorner`,
     returnByValue: true,
   }, readerSession.sessionId);
   assert.equal(moved.result.value, "bottom-left");
+  await exerciseReaderUsability(devTools, readerSession.sessionId, goiFixture);
   const storedPreference = await devTools.send("Runtime.evaluate", {
     expression: `(async function () {
       const key = "goiCoveragePanel:" + ${JSON.stringify(goiFixture.baseURL)};
@@ -991,7 +1239,7 @@ async function exerciseReaderPage(devTools, extensionID, popupSessionID, goiFixt
   const restored = await devTools.send("Runtime.evaluate", {
     expression: `(async function () {
       for (let attempt = 0; attempt < 50; attempt += 1) {
-        const panel = document.querySelector('[data-goi-corner]');
+        const panel = document.getElementById("goi-ext-reader")?.shadowRoot.querySelector('[data-goi-corner]');
         if (panel?.dataset.goiCorner === "bottom-left") return true;
         await new Promise(resolve => setTimeout(resolve, 20));
       }
@@ -1036,8 +1284,22 @@ function startGoiFixture() {
   const server = http.createServer(function (request, response) {
     if (request.method === "GET" && request.url === "/reader-smoke") {
       response.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      response.end(`<!doctype html><html lang="ja"><head><title>Goi reader smoke</title></head>
-        <body><main><h1>Japanese reading</h1><p id="reading">日本語を勉強する。</p></main></body></html>`);
+      response.end(`<!doctype html><html lang="ja"><head><title>Goi reader smoke</title>
+        <style>
+          body { margin: 24px; font: 24px/1.8 sans-serif; }
+          main { min-height: 1600px; }
+          h1 { font-size: 24px; }
+          button { width: 700px !important; font: 40px/3 serif !important; }
+          section, article { position: fixed !important; width: 1200px !important; padding: 90px !important; }
+          ol, li, strong { margin: 80px !important; font-size: 60px !important; }
+          #edge-reading { position: fixed; right: 20px; bottom: 20px; margin: 0; }
+        </style></head><body><main><h1>Japanese reading</h1>
+          <p id="reading">日本語を勉強する。</p>
+          <p id="adjacent-reading">日本語勉強する。</p>
+          <p id="ruby-reading">日本語を<ruby><span id="ruby-base">勉強</span><rt>べんきょう</rt></ruby><span>する</span>。</p>
+          <p id="edge-reading">日本語を勉強する。</p>
+          <p id="offscreen-reading" style="margin-top: 1000px">日本語を勉強する。</p>
+        </main></body></html>`);
       return;
     }
     if (request.headers.authorization !== "Bearer chrome-smoke-token") {
@@ -1051,6 +1313,23 @@ function startGoiFixture() {
       }
       if (request.method === "GET" && request.url.startsWith("/api/extension/v1/dictionary?")) {
         const expression = new URL(request.url, "http://127.0.0.1").searchParams.get("expression") || "";
+        if (expression === "日本語") {
+          writeJSON(response, 200, {
+            query: expression,
+            state: "ready",
+            candidates: [{
+              written: "日本語",
+              entry_sequence: 22222,
+              reading: "にほんご",
+              meanings: ["Japanese language"],
+              senses: Array.from({ length: 16 }, (_, index) => ({
+                parts_of_speech: ["noun"],
+                meanings: [index === 0 ? "Japanese language" : "A longer dictionary explanation for sense " + (index + 1)],
+              })),
+            }],
+          });
+          return;
+        }
         writeJSON(response, 200, {
           query: expression,
           state: "ready",
@@ -1084,6 +1363,15 @@ function startGoiFixture() {
               tokens: [
                 token("猫", "猫", "ねこ", 0, 1, "unknown"),
                 token("好き", "好き", "すき", 2, 4, "known"),
+              ],
+            };
+          }
+          if (block.text === "日本語勉強する。") {
+            return {
+              id: block.id,
+              tokens: [
+                token("日本語", "日本語", "にほんご", 0, 3, "known"),
+                token("勉強する", "勉強する", "べんきょうする", 3, 7, "unknown"),
               ],
             };
           }
@@ -1442,6 +1730,7 @@ async function waitForPlayerWordLookup(devTools, sessionID) {
 }
 
 async function inspectAndCaptureYouTubeWord(devTools, sessionID, fixture) {
+  const capturesBefore = fixture.captures.length;
   const deadline = Date.now() + 10000;
   let clicked = false;
   let saved = false;
@@ -1475,8 +1764,8 @@ async function inspectAndCaptureYouTubeWord(devTools, sessionID, fixture) {
         saved = true;
         await clickPageElement(devTools, sessionID, ".goi-dictionary-select");
       }
-      if (saved && fixture.captures.length === 2) {
-        const capture = fixture.captures[1];
+      if (saved && fixture.captures.length > capturesBefore) {
+        const capture = fixture.captures[capturesBefore];
         return {
           lookup: observedLookup,
           frequencies: observedFrequencies,
@@ -1518,23 +1807,26 @@ async function inspectAndCaptureAnalyzedPage(devTools, sessionID, fixture) {
   let lastValue;
   while (Date.now() < deadline) {
     const evaluated = await devTools.send("Runtime.evaluate", {
-      expression: `({
-        panel: Boolean(document.getElementById("goi-ext-coverage")),
-        summary: document.querySelector("#goi-ext-coverage > div:first-child span")?.textContent || "",
-        compact: document.getElementById("goi-ext-coverage")?.classList.contains("goi-ext-coverage--collapsed") || false,
-        term: document.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-term")?.textContent || "",
-        reading: document.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-reading")?.textContent || "",
-        meaning: document.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-meanings li")?.textContent || "",
-        frequencies: Array.from(document.querySelectorAll("#goi-ext-coverage-word-menu .goi-dictionary-frequency"), (node) => node.textContent),
-        select: document.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-select")?.textContent || "",
+      expression: `(function () {
+        const reader = document.getElementById("goi-ext-reader")?.shadowRoot;
+        if (!reader) return {};
+        return {
+        panel: Boolean(reader.getElementById("goi-ext-coverage")),
+        summary: reader.querySelector("#goi-ext-coverage > div:first-child span")?.textContent || "",
+        compact: reader.getElementById("goi-ext-coverage")?.classList.contains("goi-ext-coverage--collapsed") || false,
+        term: reader.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-term")?.textContent || "",
+        reading: reader.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-reading")?.textContent || "",
+        meaning: reader.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-meanings li")?.textContent || "",
+        frequencies: Array.from(reader.querySelectorAll("#goi-ext-coverage-word-menu .goi-dictionary-frequency"), (node) => node.textContent),
+        select: reader.querySelector("#goi-ext-coverage-word-menu .goi-dictionary-select")?.textContent || "",
         readablePopup: (function () {
-          const menu = document.getElementById("goi-ext-coverage-word-menu");
+          const menu = reader.getElementById("goi-ext-coverage-word-menu");
           if (!menu) return false;
           const rect = menu.getBoundingClientRect();
           return rect.width >= 300 && rect.left >= 0 && rect.top >= 0 &&
             rect.right <= innerWidth && rect.bottom <= innerHeight;
         })()
-      })`,
+      }; })()`,
       returnByValue: true,
     }, sessionID);
     const value = evaluated.result && evaluated.result.value;
@@ -1543,7 +1835,7 @@ async function inspectAndCaptureAnalyzedPage(devTools, sessionID, fixture) {
       clicked = true;
       await clickPageTextRange(devTools, sessionID, "#reading", 4, 8);
     } else if (value && value.term === "勉強する" && value.reading === "べんきょうする" &&
-        value.meaning === "to study" && value.select === "Mine" && !selected) {
+        value.meaning === "to study" && value.select === "Save to mining" && !selected) {
       lookup = value;
       await saveSmokeScreenshot(devTools, sessionID, "reader-popup");
       await devTools.send("Emulation.setEmulatedMedia", {
@@ -1577,7 +1869,207 @@ async function inspectAndCaptureAnalyzedPage(devTools, sessionID, fixture) {
   );
 }
 
-async function clickPageTextRange(devTools, sessionID, selector, start, end) {
+async function exerciseReaderUsability(devTools, sessionID, fixture) {
+  const capturesBefore = fixture.captures.length;
+  await assertReaderFitsViewport(devTools, sessionID, false);
+  await clickPageElement(devTools, sessionID, '[aria-label="Hide unknown-word highlights"]');
+  await clickPageTextRange(devTools, sessionID, "#reading", 4, 8);
+  await waitForReaderTerm(devTools, sessionID, "勉強する");
+  const hiddenMarks = await devTools.send("Runtime.evaluate", {
+    expression: `!CSS.highlights.has("goi-unknown-words")`,
+    returnByValue: true,
+  }, sessionID);
+  assert.equal(hiddenMarks.result.value, true, "Hiding marks must leave dictionary lookup available");
+  await clickPageElement(devTools, sessionID, "#goi-ext-coverage-word-close");
+
+  // A caret on the right half of 語 is shared with the following unknown token.
+  await clickPageTextRange(devTools, sessionID, "#adjacent-reading", 2, 3, 0.85);
+  await waitForReaderTerm(devTools, sessionID, "日本語");
+  await clickPageElement(devTools, sessionID, "#goi-ext-coverage-word-close");
+  await clickPageTextRange(devTools, sessionID, "#ruby-base", 0, 2);
+  await waitForReaderTerm(devTools, sessionID, "勉強する");
+  await clickPageElement(devTools, sessionID, "#goi-ext-coverage-word-close");
+
+  const whitespace = await devTools.send("Runtime.evaluate", {
+    expression: `(function () {
+      const rect = document.getElementById("reading").getBoundingClientRect();
+      return { x: rect.right - 5, y: rect.top + rect.height / 2 };
+    })()`,
+    returnByValue: true,
+  }, sessionID);
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await devTools.send("Input.dispatchMouseEvent", {
+      type, ...whitespace.result.value, button: "left", clickCount: 1,
+    }, sessionID);
+  }
+  const blankClick = await devTools.send("Runtime.evaluate", {
+    expression: `!document.getElementById("goi-ext-reader").shadowRoot.getElementById("goi-ext-coverage-word-menu")`,
+    returnByValue: true,
+  }, sessionID);
+  assert.equal(blankClick.result.value, true, "Whitespace beside a line must not select its nearest word");
+
+  await clickPageTextRange(devTools, sessionID, "#edge-reading", 0, 3);
+  await waitForReaderTerm(devTools, sessionID, "日本語");
+  await assertReaderFitsViewport(devTools, sessionID, true);
+  const scrollPoint = await devTools.send("Runtime.evaluate", {
+    expression: `(function () {
+      const lookup = document.getElementById("goi-ext-reader").shadowRoot.querySelector(".dictionary-lookup");
+      const rect = lookup.getBoundingClientRect();
+      return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    })()`,
+    returnByValue: true,
+  }, sessionID);
+  await devTools.send("Input.dispatchMouseEvent", {
+    type: "mouseWheel", ...scrollPoint.result.value, deltaX: 0, deltaY: 240,
+  }, sessionID);
+  const internallyScrolled = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        const reader = document.getElementById("goi-ext-reader").shadowRoot;
+        if (!reader.getElementById("goi-ext-coverage-word-menu")) return false;
+        if (reader.querySelector(".dictionary-lookup").scrollTop > 0) return scrollY === 0;
+        await new Promise(resolve => requestAnimationFrame(resolve));
+      }
+      return false;
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, sessionID);
+  assert.equal(internallyScrolled.result.value, true, "Long definitions must scroll without dismissing or scrolling the page");
+  await saveSmokeScreenshot(devTools, sessionID, "reader-long-edge");
+
+  await devTools.send("Emulation.setDeviceMetricsOverride", {
+    width: 360, height: 520, deviceScaleFactor: 1, mobile: false,
+  }, sessionID);
+  await assertReaderFitsViewport(devTools, sessionID, true);
+  await saveSmokeScreenshot(devTools, sessionID, "reader-narrow-expanded");
+  await clickPageElement(devTools, sessionID, "#goi-ext-coverage-word-close");
+  await saveSmokeScreenshot(devTools, sessionID, "reader-narrow-controls");
+  await clickPageElement(devTools, sessionID, '[aria-label="Hide reading controls"]');
+  await assertReaderFitsViewport(devTools, sessionID, false);
+  const compact = await devTools.send("Runtime.evaluate", {
+    expression: `(function () {
+      const reader = document.getElementById("goi-ext-reader").shadowRoot;
+      return reader.getElementById("goi-ext-coverage-next").getClientRects().length === 0 &&
+        reader.querySelector('[aria-label="Close Goi reader"]').getClientRects().length > 0;
+    })()`,
+    returnByValue: true,
+  }, sessionID);
+  assert.equal(compact.result.value, true, "Compact reading controls must keep Close visible and word navigation out of the way");
+  await clickPageTextRange(devTools, sessionID, "#reading", 0, 3);
+  await waitForReaderTerm(devTools, sessionID, "日本語");
+  const pageScrolled = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      scrollTo(0, 120);
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      return !document.getElementById("goi-ext-reader").shadowRoot.getElementById("goi-ext-coverage-word-menu");
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, sessionID);
+  assert.equal(pageScrolled.result.value, true, "Scrolling the page must dismiss the detached dictionary");
+  assert.equal(fixture.captures.length, capturesBefore, "Reading definitions must not save words automatically");
+  await devTools.send("Emulation.clearDeviceMetricsOverride", undefined, sessionID);
+  await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      scrollTo(0, 0);
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    })()`,
+    awaitPromise: true,
+  }, sessionID);
+  await clickPageElement(devTools, sessionID, '[aria-label="Show reading controls"]');
+  await devTools.send("Runtime.evaluate", {
+    expression: `document.getElementById("goi-ext-reader").shadowRoot.getElementById("goi-ext-coverage-next").focus()`,
+  }, sessionID);
+  // The last clicked word was the first token; eight advances reach the off-screen paragraph.
+  for (let word = 0; word < 8; word += 1) {
+    await devTools.send("Input.dispatchKeyEvent", {
+      type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13,
+      text: "\r", unmodifiedText: "\r",
+    }, sessionID);
+    await devTools.send("Input.dispatchKeyEvent", {
+      type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13,
+    }, sessionID);
+    const focusedDictionary = await devTools.send("Runtime.evaluate", {
+      expression: `(function () {
+        const reader = document.getElementById("goi-ext-reader").shadowRoot;
+        return reader.activeElement?.id === "goi-ext-coverage-word-menu";
+      })()`, returnByValue: true,
+    }, sessionID);
+    assert.equal(focusedDictionary.result.value, true, "Keyboard lookup must focus the dictionary");
+    if (word < 7) {
+      await devTools.send("Input.dispatchKeyEvent", {
+        type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27,
+      }, sessionID);
+      await devTools.send("Input.dispatchKeyEvent", {
+        type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27,
+      }, sessionID);
+    }
+  }
+  await waitForReaderTerm(devTools, sessionID, "日本語");
+  const keyboardScroll = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const reader = document.getElementById("goi-ext-reader").shadowRoot;
+      return scrollY > 0 && Boolean(reader.getElementById("goi-ext-coverage-word-menu"));
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, sessionID);
+  assert.equal(keyboardScroll.result.value, true, "Keyboard navigation must keep the dictionary open after scrolling to a word");
+}
+
+async function waitForReaderTerm(devTools, sessionID, term) {
+  const result = await devTools.send("Runtime.evaluate", {
+    expression: `(async function () {
+      let actual = "No dictionary popup";
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const reader = document.getElementById("goi-ext-reader").shadowRoot;
+        actual = reader.querySelector(".goi-dictionary-term")?.textContent ||
+          reader.querySelector(".goi-dictionary-message")?.textContent || "No dictionary popup";
+        if (actual === ${JSON.stringify(term)}) return actual;
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      return actual;
+    })()`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, sessionID);
+  assert.equal(result.result.value, term, "Reader must look up " + term);
+}
+
+async function assertReaderFitsViewport(devTools, sessionID, withDictionary) {
+  const result = await devTools.send("Runtime.evaluate", {
+    expression: `(new Promise(function (resolve) {
+      requestAnimationFrame(function () {
+        const reader = document.getElementById("goi-ext-reader").shadowRoot;
+        const panel = reader.getElementById("goi-ext-coverage");
+        const menu = reader.getElementById("goi-ext-coverage-word-menu");
+        function fits(node) {
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.left >= 0 && rect.top >= 0 &&
+            rect.right <= innerWidth + 1 && rect.bottom <= innerHeight + 1 &&
+            node.scrollWidth <= node.clientWidth + 1;
+        }
+        const summary = panel.querySelector("strong").getBoundingClientRect();
+        resolve({
+          panel: fits(panel),
+          readableSummary: summary.width >= 100 && summary.height < 70,
+          buttons: Array.from(panel.querySelectorAll("button"))
+            .filter(button => button.getClientRects().length).every(fits),
+          dictionary: ${withDictionary} ? Boolean(menu && fits(menu)) : true
+        });
+      });
+    }))`,
+    awaitPromise: true,
+    returnByValue: true,
+  }, sessionID);
+  assert.deepEqual(result.result.value, {
+    panel: true, readableSummary: true, buttons: true, dictionary: true,
+  }, "Reader UI must remain legible and inside the viewport despite the page's styles");
+}
+
+async function clickPageTextRange(devTools, sessionID, selector, start, end, horizontalFraction = 0.5) {
   const evaluated = await devTools.send("Runtime.evaluate", {
     expression: `(function () {
       const text = document.querySelector(${JSON.stringify(selector)}).firstChild;
@@ -1585,7 +2077,7 @@ async function clickPageTextRange(devTools, sessionID, selector, start, end) {
       range.setStart(text, ${start});
       range.setEnd(text, ${end});
       const rect = range.getBoundingClientRect();
-      return {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
+      return {x: rect.left + rect.width * ${horizontalFraction}, y: rect.top + rect.height / 2};
     })()`,
     returnByValue: true,
   }, sessionID);
@@ -1601,7 +2093,9 @@ async function clickPageTextRange(devTools, sessionID, selector, start, end) {
 async function clickPageElement(devTools, sessionID, selector) {
   const evaluated = await devTools.send("Runtime.evaluate", {
     expression: `(function () {
-      const rect = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+      const node = document.querySelector(${JSON.stringify(selector)}) ||
+        document.getElementById("goi-ext-reader")?.shadowRoot.querySelector(${JSON.stringify(selector)});
+      const rect = node.getBoundingClientRect();
       return {x: rect.left + rect.width / 2, y: rect.top + rect.height / 2};
     })()`,
     returnByValue: true,

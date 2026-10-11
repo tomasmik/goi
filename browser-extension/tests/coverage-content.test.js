@@ -39,12 +39,14 @@ function matches(node, selector) {
   if (selector === "[data-goi-coverage-ui]") {
     return node.dataset.goiCoverageUi === "true";
   }
+  if (selector === "ruby") return node.tagName === "RUBY";
   return false;
 }
 
 function setConnected(node, connected) {
   node.isConnected = connected;
   (node.children || []).forEach((child) => setConnected(child, connected));
+  if (node.shadowRoot) setConnected(node.shadowRoot, connected);
 }
 
 function element(tagName) {
@@ -57,6 +59,10 @@ function element(tagName) {
     hidden: false,
     isConnected: true,
     style: {},
+    attachShadow() {
+      this.shadowRoot = element("shadow-root");
+      return this.shadowRoot;
+    },
     classList: {
       add(...names) {
         names.forEach((name) => classes.add(name));
@@ -133,6 +139,9 @@ function element(tagName) {
     getClientRects() {
       return [{}];
     },
+    getBoundingClientRect() {
+      return this.bounds || { left: 0, top: 0, right: 390, bottom: 180, width: 390, height: 180 };
+    },
     focus() {
       this.focused = true;
     },
@@ -171,7 +180,8 @@ function descendantTextNodes(root) {
 }
 
 function descendants(root) {
-  return (root.children || []).flatMap((child) => [child, ...descendants(child)]);
+  return [...(root.children || []), ...(root.shadowRoot ? [root.shadowRoot] : [])]
+    .flatMap((child) => [child, ...descendants(child)]);
 }
 
 function createHarness(content, options = {}) {
@@ -207,7 +217,10 @@ function createHarness(content, options = {}) {
       this.endOffset = offset;
     }
     getBoundingClientRect() {
-      return this.bounds || { top: 20, right: 60, bottom: 40, left: 20 };
+      return this.bounds || { top: 0, right: 60, bottom: 40, left: 0 };
+    }
+    getClientRects() {
+      return this.rects || [this.getBoundingClientRect()];
     }
   }
 
@@ -325,6 +338,9 @@ function createHarness(content, options = {}) {
       };
     },
     globalThis: null,
+    addEventListener(type, listener) {
+      document.addEventListener(type, listener);
+    },
     innerHeight: 800,
     innerWidth: 1200,
     location: { href: "https://reader.example/chapter", origin: "https://reader.example" },
@@ -355,6 +371,11 @@ function createHarness(content, options = {}) {
     root,
     storageData,
     confirmations,
+    resize(width, height) {
+      context.innerWidth = width;
+      context.innerHeight = height;
+      document.dispatch("resize");
+    },
     walkerReads() {
       return walkerReads;
     },
@@ -604,7 +625,7 @@ test("reports when the extension worker cannot refresh coverage", async function
   await new Promise(setImmediate);
 
   const panel = harness.findByID("goi-ext-coverage");
-  assert.equal(panel.children[0].children[0].textContent, "Goi · Coverage unavailable");
+  assert.equal(harness.findByClass("goi-ext-coverage-copy").children[0].textContent, "Goi · Coverage unavailable");
 });
 
 test("groups inline reading text, excludes ruby annotations, and captures its sentence", async function () {
@@ -728,14 +749,14 @@ test("offers a keyboard path through unknown words and restores focus", async fu
   assert.equal(next.hidden, false);
   assert.match(next["aria-label"], /2 total/u);
   const panel = harness.findByID("goi-ext-coverage");
-  assert.equal(panel.children[0].children[1].textContent, "0 / 2 words · 2 unique unknown words");
+  assert.equal(harness.findByClass("goi-ext-coverage-detail").textContent, "0 / 2 words · 2 unique unknown words");
 
   next.dispatch("click");
   await new Promise(setImmediate);
   let mine = harness.findByID("goi-ext-coverage-mine");
-  assert.equal(mine.textContent, "Send to mining");
+  assert.equal(mine.textContent, "Save to mining");
   assert.equal(harness.findByID("goi-ext-coverage-word-menu").focused, true);
-  assert.equal(harness.highlights.has("goi-active-unknown-word"), true);
+  assert.equal(harness.highlights.has("goi-active-word"), true);
 
   harness.document.dispatch("keydown", { key: "Escape" });
   assert.equal(harness.findByID("goi-ext-coverage-mine"), undefined);
@@ -745,11 +766,11 @@ test("offers a keyboard path through unknown words and restores focus", async fu
   next.dispatch("click");
   await new Promise(setImmediate);
   mine = harness.findByID("goi-ext-coverage-mine");
-  assert.equal(mine.textContent, "Send to mining");
+  assert.equal(mine.textContent, "Save to mining");
   mine.dispatch("click");
   await new Promise(setImmediate);
 
-  assert.equal(panel.children[0].children[1].textContent, "Queue full · retry when Goi is reachable");
+  assert.equal(harness.findByClass("goi-ext-coverage-detail").textContent, "Queue full · retry when Goi is reachable");
 });
 
 test("can ignore a highlighted word for the current page", function () {
@@ -783,7 +804,7 @@ test("can ignore a highlighted word for the current page", function () {
 
   assert.equal(harness.findByID("goi-ext-coverage-mine"), undefined);
   assert.equal(harness.findByID("goi-ext-coverage-ignore"), undefined);
-  assert.match(next["aria-label"], /1 total/u);
+  assert.match(next["aria-label"], /1 of 3/u);
   assert.equal(harness.highlights.get("goi-unknown-words").values.length, 1);
   assert.equal(harness.messages.some((message) => message.type === "goi.capture.direct"), false);
 });
@@ -840,9 +861,10 @@ test("scrolls an off-screen unknown word into view before focusing its action", 
   assert.deepEqual(JSON.parse(JSON.stringify(scrollOptions)), {
     block: "center",
     inline: "nearest",
+    behavior: "instant",
   });
   const menu = harness.findByID("goi-ext-coverage-word-menu");
-  assert.equal(menu.style.top, "232px");
+  assert.equal(menu.style.top, "228px");
   assert.equal(menu.focused, true);
 });
 
@@ -884,11 +906,11 @@ test("ignores an older capture result after a newer capture starts", async funct
   responses[1]({ ok: true, queued: false });
   await new Promise(setImmediate);
   const panel = harness.findByID("goi-ext-coverage");
-  assert.equal(panel.children[0].children[1].textContent, "Added 「犬」");
+  assert.equal(harness.findByClass("goi-ext-coverage-detail").textContent, "Added 「犬」");
 
   responses[0]({ ok: true, queued: false });
   await new Promise(setImmediate);
-  assert.equal(panel.children[0].children[1].textContent, "Added 「犬」");
+  assert.equal(harness.findByClass("goi-ext-coverage-detail").textContent, "Added 「犬」");
 });
 
 test("requires trusted clicks and revalidates page text before capture", async function () {
@@ -996,5 +1018,160 @@ test("remembers the coverage panel corner and collapsed state for the site", asy
   const reopenedPanel = reopened.findByID("goi-ext-coverage");
   assert.equal(reopenedPanel.dataset.goiCorner, "bottom-left");
   assert.equal(reopenedPanel.classList.contains("goi-ext-coverage--collapsed"), true);
-  assert.equal(reopenedPanel.children[1].children[1].textContent, "Options");
+  assert.equal(reopenedPanel.children[0].children[1].textContent, "Controls");
+});
+
+test("looks up familiar words and hidden marks without capturing or changing knowledge", async function () {
+  const harness = createHarness("猫犬鳥");
+  const tokens = ["known", "leech", "unknown"].map((status, index) => ({
+    surface: "猫犬鳥"[index], expression: "猫犬鳥"[index],
+    start_utf16: index, end_utf16: index + 1, status,
+  }));
+  harness.coverage.render(resultFor(harness.coverage.collectBlocks(), tokens));
+  harness.ranges.forEach((range, index) => {
+    range.rects = [{ left: index * 20, right: index * 20 + 20, top: 0, bottom: 20 }];
+  });
+  assert.equal(harness.highlights.get("goi-unknown-words").values.length, 1);
+  descendants(harness.documentElement).find(node => node.textContent === "Hide marks").dispatch("click");
+  assert.equal(harness.highlights.has("goi-unknown-words"), false);
+
+  for (let index = 0; index < tokens.length; index += 1) {
+    harness.setCaret(harness.references.textNode, index);
+    harness.document.dispatch("click", { clientX: index * 20 + 5, clientY: 10 });
+    await new Promise(setImmediate);
+    assert.equal(harness.messages.at(-1).expression, tokens[index].surface);
+    assert.ok(harness.findByID("goi-ext-coverage-word-menu"));
+    assert.equal(Boolean(harness.findByID("goi-ext-coverage-ignore")), index === 2);
+    assert.equal(harness.highlights.has("goi-active-word"), true);
+  }
+  assert.equal(harness.messages.some(message => message.type === "goi.capture.direct"), false);
+  harness.coverage.render(resultFor(harness.coverage.collectBlocks(), tokens));
+  assert.equal(harness.highlights.has("goi-unknown-words"), false, "refresh keeps marks hidden");
+});
+
+test("an ignored word stays available for reading", async function () {
+  const harness = createHarness("猫");
+  harness.coverage.render(resultFor(harness.coverage.collectBlocks(), [{
+    surface: "猫", expression: "猫", start_utf16: 0, end_utf16: 1, status: "unknown",
+  }]));
+  harness.setCaret(harness.references.textNode, 0);
+  harness.document.dispatch("click", { clientX: 10, clientY: 10 });
+  harness.findByID("goi-ext-coverage-ignore").dispatch("click");
+  assert.equal(harness.highlights.has("goi-unknown-words"), false);
+  harness.document.dispatch("click", { clientX: 10, clientY: 10 });
+  await new Promise(setImmediate);
+  assert.ok(harness.findByID("goi-ext-coverage-word-menu"));
+  assert.equal(harness.findByID("goi-ext-coverage-ignore"), undefined);
+});
+
+test("uses glyph rectangles at adjacent token boundaries and rejects line whitespace", async function () {
+  const harness = createHarness("猫犬");
+  harness.coverage.render(resultFor(harness.coverage.collectBlocks(), [
+    { surface: "猫", start_utf16: 0, end_utf16: 1, status: "known" },
+    { surface: "犬", start_utf16: 1, end_utf16: 2, status: "unknown" },
+  ]));
+  harness.ranges[0].rects = [{ left: 0, right: 20, top: 0, bottom: 20 }];
+  harness.ranges[1].rects = [{ left: 20, right: 40, top: 0, bottom: 20 }];
+  harness.setCaret(harness.references.textNode, 1);
+  harness.document.dispatch("click", { clientX: 18, clientY: 10 });
+  await new Promise(setImmediate);
+  assert.equal(harness.messages.at(-1).expression, "猫");
+  harness.document.dispatch("click", { clientX: 22, clientY: 10 });
+  await new Promise(setImmediate);
+  assert.equal(harness.messages.at(-1).expression, "犬");
+  harness.setCaret(harness.references.textNode, 2);
+  harness.document.dispatch("click", { clientX: 90, clientY: 10 });
+  assert.equal(harness.findByID("goi-ext-coverage-word-menu"), undefined);
+});
+
+test("checks individual lines of a wrapped word", function () {
+  const harness = createHarness("日本語");
+  harness.coverage.render(resultFor(harness.coverage.collectBlocks(), [{
+    surface: "日本語", start_utf16: 0, end_utf16: 3, status: "known",
+  }]));
+  harness.ranges[0].rects = [
+    { left: 80, right: 120, top: 0, bottom: 20 },
+    { left: 0, right: 20, top: 30, bottom: 50 },
+  ];
+  harness.setCaret(harness.references.textNode, 2);
+  harness.document.dispatch("click", { clientX: 60, clientY: 35 });
+  assert.equal(harness.findByID("goi-ext-coverage-word-menu"), undefined);
+  harness.document.dispatch("click", { clientX: 10, clientY: 35 });
+  assert.ok(harness.findByID("goi-ext-coverage-word-menu"));
+  harness.document.dispatch("keydown", { key: "Escape" });
+  harness.findByID("goi-ext-coverage-next").dispatch("click");
+  harness.document.dispatch("scroll");
+  assert.ok(harness.findByID("goi-ext-coverage-word-menu"), "keyboard lookup anchors to one line of a wrapped word");
+});
+
+test("finds ruby base text when the browser returns an annotation caret", function () {
+  const harness = createHarness(function ({ root, element: makeElement, text: makeText, references }) {
+    const paragraph = makeElement("p");
+    references.ruby = makeElement("ruby");
+    references.base = references.ruby.appendChild(makeText("猫"));
+    references.rt = makeElement("rt");
+    references.annotation = references.rt.appendChild(makeText("ねこ"));
+    references.ruby.appendChild(references.rt);
+    paragraph.appendChild(references.ruby);
+    root.appendChild(paragraph);
+  });
+  harness.coverage.render(resultFor(harness.coverage.collectBlocks(), [{
+    surface: "猫", start_utf16: 0, end_utf16: 1, status: "known",
+  }]));
+  harness.ranges[0].rects = [{ left: 0, right: 20, top: 20, bottom: 40 }];
+  harness.setCaret(harness.references.annotation, 1);
+  harness.document.dispatch("click", { target: harness.references.ruby, clientX: 10, clientY: 30 });
+  assert.ok(harness.findByID("goi-ext-coverage-word-menu"));
+  harness.document.dispatch("click", { target: harness.references.rt, clientX: 10, clientY: 10 });
+  assert.equal(harness.findByID("goi-ext-coverage-word-menu"), undefined);
+});
+
+test("repositions after definitions load and resize, and dismisses only on page scroll", async function () {
+  const harness = createHarness("猫");
+  let finishLookup;
+  harness.setMessageResponse(() => new Promise(resolve => { finishLookup = resolve; }));
+  harness.coverage.render(resultFor(harness.coverage.collectBlocks(), [{
+    surface: "猫", start_utf16: 0, end_utf16: 1, status: "known",
+  }]));
+  harness.ranges[0].rects = [{ left: 1150, right: 1170, top: 700, bottom: 720 }];
+  harness.setCaret(harness.references.textNode, 0);
+  harness.document.dispatch("click", { clientX: 1160, clientY: 710 });
+  const menu = harness.findByID("goi-ext-coverage-word-menu");
+  assert.equal(menu.style.left, "802px");
+  assert.equal(menu.style.top, "512px");
+  menu.bounds = { width: 390, height: 580 };
+  finishLookup({ ok: true, result: { state: "no_match", query: "猫" } });
+  await new Promise(setImmediate);
+  assert.equal(menu.style.top, "112px");
+  menu.bounds = { width: 304, height: 300 };
+  harness.resize(320, 320);
+  assert.equal(menu.style.left, "8px");
+  assert.equal(menu.style.top, "12px");
+  assert.equal(menu.style.maxHeight, "304px");
+  harness.document.dispatch("scroll", { target: harness.findByID("goi-ext-reader") });
+  assert.ok(harness.findByID("goi-ext-coverage-word-menu"));
+  harness.document.dispatch("scroll");
+  assert.ok(harness.findByID("goi-ext-coverage-word-menu"), "a queued scroll that already placed the anchor does not close it");
+  harness.ranges[0].rects = [{ left: 1150, right: 1170, top: 600, bottom: 620 }];
+  harness.document.dispatch("scroll");
+  assert.equal(harness.findByID("goi-ext-coverage-word-menu"), undefined);
+});
+
+test("late dictionary results cannot replace a more recently selected word", async function () {
+  const harness = createHarness("猫犬");
+  const responses = [];
+  harness.setMessageResponse(() => new Promise(resolve => { responses.push(resolve); }));
+  harness.coverage.render(resultFor(harness.coverage.collectBlocks(), [
+    { surface: "猫", start_utf16: 0, end_utf16: 1, status: "known" },
+    { surface: "犬", start_utf16: 1, end_utf16: 2, status: "known" },
+  ]));
+  const next = harness.findByID("goi-ext-coverage-next");
+  next.dispatch("click");
+  next.dispatch("click");
+  responses[1]({ ok: true, result: { state: "no_match", query: "犬" } });
+  await new Promise(setImmediate);
+  responses[0]({ ok: true, result: { state: "no_match", query: "猫" } });
+  await new Promise(setImmediate);
+  assert.equal(harness.findByID("goi-ext-coverage-word-menu")["aria-label"], "Dictionary entry for 犬");
+  assert.equal(harness.findByID("goi-ext-coverage-mine")["aria-label"], "Save 犬 to mining");
 });

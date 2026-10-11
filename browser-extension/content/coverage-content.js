@@ -6,7 +6,7 @@
   }
 
   const HIGHLIGHT_NAME = "goi-unknown-words";
-  const ACTIVE_HIGHLIGHT_NAME = "goi-active-unknown-word";
+  const ACTIVE_HIGHLIGHT_NAME = "goi-active-word";
   const MAX_BLOCKS = 1000;
   const MAX_BLOCK_CHARACTERS = 18000;
   const MAX_CHARACTERS = 120000;
@@ -37,24 +37,26 @@
   let blocksByID = new Map();
   let tokensByNode = new Map();
   let highlightRanges = [];
-  let unknownOccurrences = [];
-  let unknownCursor = -1;
+  let wordOccurrences = [];
+  let wordCursor = -1;
   let highlightsVisible = true;
   let collectionPartial = false;
+  let readerHost;
+  let readerRoot;
+  let readerStyle;
+  let readerCSS = "";
   let panel;
   let panelSummary;
   let panelDetail;
   let toggleButton;
-  let nextUnknownButton;
+  let nextWordButton;
   let wordActionMenu;
   let wordLookupContent;
-  let mineAction;
-  let ignoreAction;
-  let globalIgnoreAction;
-  let mineReturnFocus;
+  let wordAnchor;
+  let dictionaryReturnFocus;
   let mineStatusRevision = 0;
   let lookupRevision = 0;
-  let selectedUnknown;
+  let selectedWord;
   let analysisRoot;
   let activeAnalysisID = "";
   let activeAnalysisURL = "";
@@ -70,7 +72,8 @@
     const collapsed = preference.collapsed !== false;
     panel.dataset.goiCorner = corner;
     panel.classList.toggle("goi-ext-coverage--collapsed", collapsed);
-    collapseButton.textContent = collapsed ? "Options" : "Done";
+    collapseButton.textContent = collapsed ? "Controls" : "Less";
+    collapseButton.setAttribute("aria-expanded", String(!collapsed));
     collapseButton.setAttribute("aria-label", collapsed ? "Show reading controls" : "Hide reading controls");
   }
 
@@ -278,32 +281,52 @@
     if (panel && panel.isConnected) {
       return panel;
     }
+    readerHost = document.createElement("div");
+    readerHost.id = "goi-ext-reader";
+    readerHost.dataset.goiCoverageUi = "true";
+    readerRoot = readerHost.attachShadow({ mode: "open" });
+    readerStyle = document.createElement("style");
+    readerStyle.textContent = readerCSS;
+    readerRoot.appendChild(readerStyle);
+    document.documentElement.appendChild(readerHost);
     panel = document.createElement("section");
     panel.id = "goi-ext-coverage";
     panel.dataset.goiCoverageUi = "true";
     panel.setAttribute("role", "region");
     panel.setAttribute("aria-label", "Goi page reader");
 
+    const header = document.createElement("div");
+    header.className = "goi-ext-coverage-header";
     const copy = document.createElement("div");
+    copy.className = "goi-ext-coverage-copy";
     copy.setAttribute("role", "status");
     copy.setAttribute("aria-live", "polite");
     panelSummary = document.createElement("strong");
     panelDetail = document.createElement("span");
-    copy.append(panelSummary, panelDetail);
-    panel.appendChild(copy);
-
-    const actions = document.createElement("div");
-    nextUnknownButton = makeButton("Next", "Open next unknown word", function (event) {
-      showNextUnknown(event.currentTarget);
-    });
-    nextUnknownButton.id = "goi-ext-coverage-next";
-    nextUnknownButton.hidden = true;
-    actions.appendChild(nextUnknownButton);
-    const collapseButton = makeButton("Options", "Show reading controls", function () {
+    panelDetail.className = "goi-ext-coverage-detail";
+    const hint = document.createElement("span");
+    hint.className = "goi-ext-coverage-hint";
+    hint.textContent = "Click a word to read its meaning";
+    copy.append(panelSummary, panelDetail, hint);
+    header.appendChild(copy);
+    const collapseButton = makeButton("Controls", "Show reading controls", function () {
       panel.classList.toggle("goi-ext-coverage--collapsed");
       savePanelPreference(collapseButton);
     });
-    actions.appendChild(collapseButton);
+    collapseButton.setAttribute("aria-controls", "goi-ext-coverage-controls");
+    header.append(collapseButton, makeButton("Close", "Close Goi reader", stop));
+    panel.appendChild(header);
+
+    const actions = document.createElement("div");
+    actions.id = "goi-ext-coverage-controls";
+    actions.className = "goi-ext-coverage-controls";
+    nextWordButton = makeButton("Next word", "Look up next word", function (event) {
+      if (!event.isTrusted) return;
+      showNextWord(event.currentTarget);
+    });
+    nextWordButton.id = "goi-ext-coverage-next";
+    nextWordButton.hidden = true;
+    actions.appendChild(nextWordButton);
     actions.appendChild(makeButton("Move", "Move Goi coverage panel", function () {
       const current = PANEL_CORNERS.indexOf(panel.dataset.goiCorner);
       panel.dataset.goiCorner = PANEL_CORNERS[(current + 1) % PANEL_CORNERS.length];
@@ -325,11 +348,11 @@
         showError();
       }
     }));
-    actions.appendChild(makeButton("Close", "Close Goi coverage", stop));
     panel.appendChild(actions);
-    document.documentElement.appendChild(panel);
+    readerRoot.appendChild(panel);
     panel.dataset.goiCorner = PANEL_CORNERS[0];
     panel.classList.add("goi-ext-coverage--collapsed");
+    applyPanelPreference(collapseButton, { collapsed: true });
     loadPanelPreference(collapseButton);
     return panel;
   }
@@ -343,7 +366,7 @@
     clearHighlights();
     highlightRanges = [];
     tokensByNode = new Map();
-    resetUnknownNavigation();
+    resetWordNavigation();
   }
 
   function showError() {
@@ -355,7 +378,7 @@
     clearHighlights();
     highlightRanges = [];
     tokensByNode = new Map();
-    resetUnknownNavigation();
+    resetWordNavigation();
   }
 
   function render(result) {
@@ -379,14 +402,13 @@
     }
     setTokens(result.blocks);
     toggleButton.hidden = highlightRanges.length === 0;
-    highlightsVisible = true;
     applyHighlights();
   }
 
   function setTokens(resultBlocks) {
     tokensByNode = new Map();
     highlightRanges = [];
-    resetUnknownNavigation();
+    resetWordNavigation();
     const currentGroups = new Map();
     resultBlocks.forEach(function (block) {
       const record = blocksByID.get(block.id);
@@ -399,22 +421,20 @@
       if (!currentGroups.get(record.group)) {
         return;
       }
-      const unknown = block.tokens.filter(function (token) {
-        return token.status === "unknown" &&
+      const tokens = block.tokens.filter(function (token) {
+        return Number.isInteger(token.start_utf16) && Number.isInteger(token.end_utf16) &&
           token.start_utf16 >= 0 &&
           token.end_utf16 > token.start_utf16 &&
           token.end_utf16 <= record.text.length &&
           record.text.slice(token.start_utf16, token.end_utf16) === token.surface;
       });
-      if (!unknown.length) {
-        return;
-      }
-      unknown.forEach(function (token) {
+      tokens.forEach(function (token) {
         const nodeToken = {
           ...token,
           groupStart: record.start + token.start_utf16,
           groupEnd: record.start + token.end_utf16,
           record,
+          marked: token.status === "unknown",
           ranges: []
         };
         record.group.segments.forEach(function (segment) {
@@ -424,7 +444,7 @@
             return;
           }
           const nodePart = {
-            ...nodeToken,
+            token: nodeToken,
             nodeStart: start - segment.start,
             nodeEnd: end - segment.start
           };
@@ -433,16 +453,16 @@
             const nodeTokens = tokensByNode.get(segment.node) || [];
             nodeTokens.push(nodePart);
             tokensByNode.set(segment.node, nodeTokens);
-            highlightRanges.push(range);
+            if (nodeToken.marked) highlightRanges.push(range);
             nodeToken.ranges.push(range);
           }
         });
         if (nodeToken.ranges.length) {
-          unknownOccurrences.push(nodeToken);
+          wordOccurrences.push(nodeToken);
         }
       });
     });
-    updateUnknownNavigationLabel();
+    updateWordNavigationLabel();
   }
 
   function textRange(node, start, end) {
@@ -465,10 +485,12 @@
 
   function applyHighlights() {
     clearHighlights();
-    if (highlightsVisible && highlightRanges.length && globalThis.CSS && CSS.highlights && typeof Highlight === "function") {
-      CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...highlightRanges));
-      if (selectedUnknown && selectedUnknown.ranges.length) {
-        CSS.highlights.set(ACTIVE_HIGHLIGHT_NAME, new Highlight(...selectedUnknown.ranges));
+    if (globalThis.CSS && CSS.highlights && typeof Highlight === "function") {
+      if (highlightsVisible && highlightRanges.length) {
+        CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(...highlightRanges));
+      }
+      if (selectedWord && selectedWord.ranges.length) {
+        CSS.highlights.set(ACTIVE_HIGHLIGHT_NAME, new Highlight(...selectedWord.ranges));
       }
     }
     if (toggleButton) {
@@ -477,11 +499,8 @@
         ? "Hide unknown-word highlights"
         : "Show unknown-word highlights");
     }
-    if (nextUnknownButton) {
-      nextUnknownButton.hidden = !highlightsVisible || unknownOccurrences.length === 0;
-    }
-    if (!highlightsVisible) {
-      dismissMineAction(false);
+    if (nextWordButton) {
+      nextWordButton.hidden = wordOccurrences.length === 0;
     }
   }
 
@@ -497,20 +516,22 @@
     return null;
   }
 
-  function unknownAtPoint(event) {
-    if (!highlightsVisible || (event.target.closest && event.target.closest(INTERACTIVE))) {
+  function wordAtPoint(event) {
+    if (event.target.closest && event.target.closest(INTERACTIVE)) {
       return null;
     }
     const caret = caretAtPoint(event);
-    const tokens = caret && tokensByNode.get(caret.node);
-    if (!tokens) {
-      return null;
+    let tokens = caret && tokensByNode.get(caret.node) || [];
+    tokens = tokens.filter(function (candidate) {
+      return candidate.nodeStart <= caret.offset && caret.offset <= candidate.nodeEnd;
+    }).map(function (candidate) { return candidate.token; });
+    const ruby = event.target.closest && event.target.closest("ruby");
+    if (ruby) {
+      tokens = tokens.concat(wordOccurrences.filter(function (candidate) {
+        return candidate.ranges.some(function (range) { return ruby.contains(range.startContainer); });
+      }));
     }
-    const token = tokens.find(function (candidate) {
-      return candidate.nodeStart <= caret.offset && caret.offset < candidate.nodeEnd;
-    }) || tokens.find(function (candidate) {
-      return candidate.nodeStart < caret.offset && caret.offset === candidate.nodeEnd;
-    }) || null;
+    const token = tokens.find(function (candidate) { return rectAtPoint(candidate, event); });
     if (token && !groupIsCurrent(token.record.group)) {
       invalidateCoverage();
       return null;
@@ -518,11 +539,21 @@
     return token;
   }
 
+  function rectAtPoint(token, point) {
+    for (const range of token.ranges) {
+      for (const rect of range.getClientRects()) {
+        if (point.clientX >= rect.left && point.clientX < rect.right &&
+            point.clientY >= rect.top && point.clientY < rect.bottom) return rect;
+      }
+    }
+    return null;
+  }
+
   function invalidateCoverage() {
     clearHighlights();
     highlightRanges = [];
     tokensByNode = new Map();
-    resetUnknownNavigation();
+    resetWordNavigation();
     if (panelSummary) {
       panelSummary.textContent = "Goi · Page changed";
     }
@@ -576,10 +607,13 @@
     }
   }
 
-  function showMineAction(token, point, returnFocus) {
-    dismissMineAction(false);
-    selectedUnknown = token;
-    mineReturnFocus = returnFocus;
+  function showDictionary(token, anchor, returnFocus) {
+    dismissDictionary(false);
+    selectedWord = token;
+    wordCursor = wordOccurrences.indexOf(token);
+    updateWordNavigationLabel();
+    wordAnchor = anchor;
+    dictionaryReturnFocus = returnFocus;
     wordActionMenu = document.createElement("section");
     wordActionMenu.id = "goi-ext-coverage-word-menu";
     wordActionMenu.dataset.goiCoverageUi = "true";
@@ -593,7 +627,7 @@
     heading.textContent = token.surface;
     heading.lang = "ja";
     const closeAction = makeButton("Close", "Close dictionary", function () {
-      dismissMineAction(true);
+      dismissDictionary(true);
     });
     closeAction.id = "goi-ext-coverage-word-close";
     header.append(heading, closeAction);
@@ -605,29 +639,52 @@
     loading.textContent = "Looking up “" + token.surface + "”…";
     wordLookupContent.appendChild(loading);
 
-    const actions = document.createElement("div");
-    ignoreAction = makeButton("Ignore on this page", "Ignore " + token.surface + " on this page", ignoreUnknown);
-    ignoreAction.id = "goi-ext-coverage-ignore";
-    globalIgnoreAction = makeButton("Ignore everywhere", "Ignore " + token.surface + " on every page", ignoreUnknownEverywhere);
-    globalIgnoreAction.id = "goi-ext-coverage-ignore-global";
-    actions.append(ignoreAction, globalIgnoreAction);
-    wordActionMenu.append(header, wordLookupContent, actions);
-
-    const left = Math.max(8, Math.min(point.clientX, innerWidth - 396));
-    const top = Math.max(8, Math.min(point.clientY + 12, innerHeight - 260));
-    wordActionMenu.style.left = left + "px";
-    wordActionMenu.style.top = top + "px";
-    document.documentElement.appendChild(wordActionMenu);
+    wordActionMenu.append(header, wordLookupContent);
+    appendWordOptions(token);
+    readerRoot.appendChild(wordActionMenu);
+    positionDictionary();
     applyHighlights();
-    wordActionMenu.focus();
-    lookupSelectedUnknown(token);
+    wordActionMenu.focus({ preventScroll: true });
+    lookupSelectedWord(token);
   }
 
-  async function lookupSelectedUnknown(token) {
+  function positionDictionary() {
+    if (!wordActionMenu || !wordAnchor) return;
+    const margin = 8;
+    const gap = 8;
+    wordActionMenu.style.maxHeight = Math.max(0, Math.min(620, innerHeight - margin * 2)) + "px";
+    const bounds = wordActionMenu.getBoundingClientRect();
+    const below = innerHeight - margin - wordAnchor.bottom - gap;
+    const above = wordAnchor.top - gap - margin;
+    const top = bounds.height <= below || below >= above
+      ? wordAnchor.bottom + gap
+      : wordAnchor.top - gap - bounds.height;
+    wordActionMenu.style.left = Math.max(margin, Math.min(wordAnchor.left, innerWidth - bounds.width - margin)) + "px";
+    wordActionMenu.style.top = Math.max(margin, Math.min(top, innerHeight - bounds.height - margin)) + "px";
+  }
+
+  function appendWordOptions(token) {
+    if (!token.marked) return;
+    const options = document.createElement("details");
+    options.className = "goi-ext-coverage-word-options";
+    options.addEventListener("toggle", positionDictionary);
+    const summary = document.createElement("summary");
+    summary.textContent = "Word options";
+    const actions = document.createElement("div");
+    const ignoreAction = makeButton("Ignore on this page", "Ignore " + token.surface + " on this page", ignoreUnknown);
+    ignoreAction.id = "goi-ext-coverage-ignore";
+    const globalIgnoreAction = makeButton("Ignore everywhere", "Ignore " + token.surface + " on every page", ignoreUnknownEverywhere);
+    globalIgnoreAction.id = "goi-ext-coverage-ignore-global";
+    actions.append(ignoreAction, globalIgnoreAction);
+    options.append(summary, actions);
+    wordLookupContent.appendChild(options);
+  }
+
+  async function lookupSelectedWord(token) {
     const revision = ++lookupRevision;
     try {
       const response = await dictionaryClient.lookup(chrome.runtime, token.expression || token.surface);
-      if (revision !== lookupRevision || token !== selectedUnknown || !wordLookupContent) {
+      if (revision !== lookupRevision || token !== selectedWord || !wordLookupContent) {
         return;
       }
       const view = subtitleModel.dictionaryView(response);
@@ -638,15 +695,15 @@
       }
       dictionaryRenderer.render(wordLookupContent, view, {
         document,
-        actionLabel: "Mine",
+        actionLabel: "Save to mining",
         selectedEntrySequence: null,
         onSelect(candidate) {
-          captureSelectedUnknown(candidate.entrySequence);
+          captureSelectedWord(candidate.entrySequence);
           return false;
         }
       });
     } catch (_error) {
-      if (revision !== lookupRevision || token !== selectedUnknown || !wordLookupContent) {
+      if (revision !== lookupRevision || token !== selectedWord || !wordLookupContent) {
         return;
       }
       wordLookupContent.replaceChildren();
@@ -655,21 +712,26 @@
       message.textContent = "Could not reach Goi.";
       wordLookupContent.appendChild(message);
       appendFallbackMineAction(token);
+    } finally {
+      if (revision === lookupRevision && token === selectedWord && wordLookupContent) {
+        appendWordOptions(token);
+        positionDictionary();
+      }
     }
   }
 
   function appendFallbackMineAction(token) {
-    mineAction = makeButton("Send to mining", "Send " + token.surface + " to mining", mineUnknown);
+    const mineAction = makeButton("Save to mining", "Save " + token.surface + " to mining", mineSelectedWord);
     mineAction.id = "goi-ext-coverage-mine";
     wordLookupContent.appendChild(mineAction);
   }
 
-  function showNextUnknown(returnFocus) {
-    if (!highlightsVisible || unknownOccurrences.length === 0) {
+  function showNextWord(returnFocus) {
+    if (wordOccurrences.length === 0) {
       return;
     }
-    unknownCursor = (unknownCursor + 1) % unknownOccurrences.length;
-    const token = unknownOccurrences[unknownCursor];
+    wordCursor = (wordCursor + 1) % wordOccurrences.length;
+    const token = wordOccurrences[wordCursor];
     if (!groupIsCurrent(token.record.group)) {
       invalidateCoverage();
       return;
@@ -682,20 +744,20 @@
         ? node
         : node && node.parentElement;
       if (scrollTarget && typeof scrollTarget.scrollIntoView === "function") {
-        scrollTarget.scrollIntoView({ block: "center", inline: "nearest" });
+        scrollTarget.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
         bounds = rangeBounds(range);
       }
     }
-    const point = boundsAreVisible(bounds)
-      ? { clientX: bounds.left, clientY: bounds.bottom }
-      : { clientX: innerWidth - 232, clientY: innerHeight - 64 };
-    updateUnknownNavigationLabel();
-    showMineAction(token, point, returnFocus);
+    const anchor = boundsAreVisible(bounds)
+      ? bounds
+      : { left: innerWidth / 2, top: innerHeight / 2, bottom: innerHeight / 2 };
+    updateWordNavigationLabel();
+    showDictionary(token, anchor, returnFocus);
   }
 
   function rangeBounds(range) {
-    return range && typeof range.getBoundingClientRect === "function"
-      ? range.getBoundingClientRect()
+    return range
+      ? range.getClientRects()[0] || null
       : null;
   }
 
@@ -707,26 +769,26 @@
       bounds.left <= innerWidth && bounds.top <= innerHeight);
   }
 
-  function updateUnknownNavigationLabel() {
-    if (!nextUnknownButton) {
+  function updateWordNavigationLabel() {
+    if (!nextWordButton) {
       return;
     }
-    const progress = unknownCursor >= 0
-      ? ", currently " + (unknownCursor + 1) + " of " + unknownOccurrences.length
-      : ", " + unknownOccurrences.length + " total";
-    nextUnknownButton.setAttribute("aria-label", "Open next unknown word" + progress);
+    const progress = wordCursor >= 0
+      ? ", currently " + (wordCursor + 1) + " of " + wordOccurrences.length
+      : ", " + wordOccurrences.length + " total";
+    nextWordButton.setAttribute("aria-label", "Look up next word" + progress);
   }
 
-  function mineUnknown(event) {
+  function mineSelectedWord(event) {
     if (!event.isTrusted) {
       return;
     }
-    captureSelectedUnknown(null);
+    captureSelectedWord(null);
   }
 
-  async function captureSelectedUnknown(suggestedEntrySequence) {
-    const token = selectedUnknown;
-    dismissMineAction(true);
+  async function captureSelectedWord(suggestedEntrySequence) {
+    const token = selectedWord;
+    dismissDictionary(true);
     if (!token) {
       return;
     }
@@ -781,49 +843,36 @@
     if (!event.isTrusted) {
       return;
     }
-    const token = selectedUnknown;
-    const returnFocus = mineReturnFocus;
-    dismissMineAction(false);
+    const token = selectedWord;
+    const returnFocus = dictionaryReturnFocus;
+    dismissDictionary(false);
     if (!token) {
       return;
     }
     const key = token.expression || token.surface;
     const removedRanges = new Set();
-    unknownOccurrences.forEach(function (candidate) {
+    wordOccurrences.forEach(function (candidate) {
       if ((candidate.expression || candidate.surface) === key) {
+        candidate.marked = false;
         candidate.ranges.forEach(function (range) { removedRanges.add(range); });
       }
     });
-    unknownOccurrences = unknownOccurrences.filter(function (candidate) {
-      return (candidate.expression || candidate.surface) !== key;
-    });
     highlightRanges = highlightRanges.filter(function (range) { return !removedRanges.has(range); });
-    tokensByNode.forEach(function (tokens, node) {
-      const remaining = tokens.filter(function (candidate) {
-        return (candidate.expression || candidate.surface) !== key;
-      });
-      if (remaining.length) {
-        tokensByNode.set(node, remaining);
-      } else {
-        tokensByNode.delete(node);
-      }
-    });
-    unknownCursor = -1;
-    updateUnknownNavigationLabel();
+    const remaining = wordOccurrences.filter(function (candidate) { return candidate.marked; }).length;
     panelDetail.textContent = "Ignored 「" + token.surface + "」 on this page · " +
-      unknownOccurrences.length + (unknownOccurrences.length === 1 ? " highlighted word remains" : " highlighted words remain");
+      remaining + (remaining === 1 ? " highlighted word remains" : " highlighted words remain");
     toggleButton.hidden = highlightRanges.length === 0;
     applyHighlights();
     if (returnFocus && returnFocus.isConnected && typeof returnFocus.focus === "function") {
-      returnFocus.focus();
+      returnFocus.focus({ preventScroll: true });
     }
   }
 
   async function ignoreUnknownEverywhere(event) {
-    if (!event.isTrusted || !selectedUnknown) {
+    if (!event.isTrusted || !selectedWord) {
       return;
     }
-    const token = selectedUnknown;
+    const token = selectedWord;
     if (!confirm("Ignore 「" + token.surface + "」 on every page? You can undo this from Goi Capture.")) {
       return;
     }
@@ -837,6 +886,7 @@
         panelDetail.textContent = "Could not update ignored words";
         return;
       }
+      if (token !== selectedWord) return;
       ignoreUnknown(event);
       panelDetail.textContent = "Ignored 「" + token.surface + "」 everywhere";
     } catch (_error) {
@@ -844,33 +894,31 @@
     }
   }
 
-  function dismissMineAction(restoreFocus) {
+  function dismissDictionary(restoreFocus) {
     lookupRevision += 1;
-    const returnFocus = mineReturnFocus;
-    selectedUnknown = undefined;
-    mineReturnFocus = undefined;
+    const returnFocus = dictionaryReturnFocus;
+    selectedWord = undefined;
+    dictionaryReturnFocus = undefined;
     if (wordActionMenu) wordActionMenu.remove();
     wordActionMenu = undefined;
+    wordAnchor = undefined;
     wordLookupContent = undefined;
-    mineAction = undefined;
-    ignoreAction = undefined;
-    globalIgnoreAction = undefined;
     if (globalThis.CSS && CSS.highlights) {
       CSS.highlights.delete(ACTIVE_HIGHLIGHT_NAME);
     }
     if (restoreFocus && returnFocus && returnFocus.isConnected && typeof returnFocus.focus === "function") {
-      returnFocus.focus();
+      returnFocus.focus({ preventScroll: true });
     }
   }
 
-  function resetUnknownNavigation() {
+  function resetWordNavigation() {
     mineStatusRevision += 1;
-    unknownOccurrences = [];
-    unknownCursor = -1;
-    dismissMineAction(false);
-    if (nextUnknownButton) {
-      nextUnknownButton.hidden = true;
-      nextUnknownButton.setAttribute("aria-label", "Open next unknown word");
+    wordOccurrences = [];
+    wordCursor = -1;
+    dismissDictionary(false);
+    if (nextWordButton) {
+      nextWordButton.hidden = true;
+      nextWordButton.setAttribute("aria-label", "Look up next word");
     }
   }
 
@@ -894,9 +942,13 @@
     tokensByNode = new Map();
     blocksByID = new Map();
     analysisRoot = undefined;
-    resetUnknownNavigation();
+    resetWordNavigation();
     if (panel) {
-      panel.remove();
+      panelPreferenceRevision += 1;
+      readerHost.remove();
+      readerHost = undefined;
+      readerRoot = undefined;
+      readerStyle = undefined;
       panel = undefined;
     }
     if (typeof clearTimeout === "function") clearTimeout(automaticRefreshTimer);
@@ -914,26 +966,38 @@
     if (event.target.closest && event.target.closest("[data-goi-coverage-ui]")) {
       return;
     }
-    const token = unknownAtPoint(event);
+    const token = wordAtPoint(event);
     if (token) {
       const selection = typeof getSelection === "function" ? getSelection() : null;
       if (event.button !== undefined && event.button !== 0 ||
           event.metaKey || event.ctrlKey || event.altKey || event.shiftKey ||
           selection && !selection.isCollapsed) {
-        dismissMineAction();
+        dismissDictionary();
         return;
       }
       event.preventDefault();
-      showMineAction(token, event);
+      showDictionary(token, rectAtPoint(token, event), document.activeElement);
     } else {
-      dismissMineAction();
+      dismissDictionary();
     }
   }, true);
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape") {
-      dismissMineAction(true);
+      dismissDictionary(true);
     }
   });
+  document.addEventListener("scroll", function (event) {
+    if (event.target === readerHost ||
+        (event.target.closest && event.target.closest("[data-goi-coverage-ui]"))) return;
+    // The scroll from keyboard navigation can arrive after the popup opens.
+    if (selectedWord && selectedWord.ranges.some(function (range) {
+      return Array.from(range.getClientRects()).some(function (rect) {
+        return rect.left === wordAnchor.left && rect.top === wordAnchor.top;
+      });
+    })) return;
+    dismissDictionary(false);
+  }, true);
+  globalThis.addEventListener("resize", positionDictionary);
 
   function beginAnalysis(analysisID) {
     activeAnalysisID = String(analysisID || "");
@@ -973,6 +1037,10 @@
   }
 
   globalThis.GoiCoverage = {
+    setStyles(css) {
+      readerCSS = css;
+      if (readerStyle) readerStyle.textContent = css;
+    },
     beginAnalysis,
     collectBlocks,
     failAnalysis,
