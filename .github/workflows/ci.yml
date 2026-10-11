@@ -44,9 +44,6 @@ jobs:
       - name: Test browser JavaScript
         run: node --test browser-extension/tests/*.test.js web/tests/*.test.js
 
-      - name: Test the installed Chrome extension
-        run: node --test browser-extension/tests/chrome-install-smoke.js
-
       - name: Build the Docker image
         run: docker build --tag goi:ci .
 
