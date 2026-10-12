@@ -4,7 +4,7 @@ import "time"
 
 const (
 	Version            = "1.10"
-	CacheSchemaVersion = 1
+	CacheSchemaVersion = 2
 	SourceURL          = "https://www.edrdg.org/pub/Nihongo/JMdict_e_NG.gz"
 )
 
@@ -48,6 +48,7 @@ type Sense struct {
 	RestrictedKanji    []string
 	RestrictedReadings []string
 	PartsOfSpeech      []string
+	UsuallyKana        bool
 	Glosses            []Gloss
 }
 
@@ -56,6 +57,9 @@ type Gloss struct {
 	Language string
 	Type     string
 }
+
+// usuallyKanaMisc is the expansion of JMdict's &uk; entity.
+const usuallyKanaMisc = "word usually written using kana alone"
 
 type Candidate struct {
 	EntrySequence int64

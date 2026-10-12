@@ -1547,6 +1547,47 @@ func TestAcceptDictionaryCandidateUsesCopiedDefaults(t *testing.T) {
 	}
 }
 
+func TestAcceptDictionaryCandidateSavesChosenWrittenForm(t *testing.T) {
+	for _, test := range []struct {
+		writeAs string
+		want    string
+	}{
+		{"", "ちょうど"},
+		{writeAsKana, "ちょうど"},
+		{writeAsWritten, "丁度"},
+	} {
+		ctx, db := openMiningTestDatabase(t)
+		store := NewStore(db)
+		capture := createMiningCapture(t, ctx, store, "ちょうど", "00000000000000000000000000000034")
+		match := readyMiningMatch("丁度", "ちょうど", "exactly")
+		match.Candidates[0].Senses[0].UsuallyKana = true
+		completeMiningEnrichment(t, ctx, store, match)
+		router := miningTestRouter(t, store, "https://goi.example")
+
+		detail := serveMiningForm(router, http.MethodGet, capturePath(capture.ID), nil).Body.String()
+		if !strings.Contains(detail, `name="write_as" value="kana" checked`) || !strings.Contains(detail, "Usually written in kana.") {
+			t.Fatalf("usually-kana word does not default to kana: %s", detail)
+		}
+
+		form := url.Values{
+			"revision":     {strconvInt(capture.Revision)},
+			"candidate_id": {candidateID(match.Candidates[0])},
+			"write_as":     {test.writeAs},
+		}
+		response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/accept", capture.ID), form)
+		if response.Code != http.StatusSeeOther {
+			t.Fatalf("write_as %q response = %d, body = %s", test.writeAs, response.Code, response.Body.String())
+		}
+		var expression, pronunciation string
+		if err := db.QueryRow("SELECT expression, pronunciation FROM vocabulary").Scan(&expression, &pronunciation); err != nil {
+			t.Fatal(err)
+		}
+		if expression != test.want || pronunciation != "ちょうど" {
+			t.Fatalf("write_as %q saved %q (%q), want %q", test.writeAs, expression, pronunciation, test.want)
+		}
+	}
+}
+
 func TestAcceptDictionaryCandidatePreservesEdits(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	store := NewStore(db)

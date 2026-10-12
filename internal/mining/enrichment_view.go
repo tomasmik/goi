@@ -18,25 +18,35 @@ type EnrichmentView struct {
 }
 
 type CandidateView struct {
-	ID                   string
-	Revision             int64
-	Written              string
-	Pronunciation        string
-	Meanings             string
-	MeaningList          []string
-	MeaningSummary       string
-	Notes                string
-	AllowSparse          bool
-	ExampleSentence      string
-	ExampleTranslation   string
-	ExampleTarget        string
-	PartsOfSpeech        string
-	GlobalRank           string
-	NovelRank            string
-	GlobalRankLabel      string
-	NovelRankLabel       string
+	ID                 string
+	Revision           int64
+	Written            string
+	Pronunciation      string
+	Meanings           string
+	MeaningList        []string
+	MeaningSummary     string
+	Notes              string
+	AllowSparse        bool
+	ExampleSentence    string
+	ExampleTranslation string
+	ExampleTarget      string
+	PartsOfSpeech      string
+	GlobalRank         string
+	NovelRank          string
+	GlobalRankLabel    string
+	NovelRankLabel     string
+	UsuallyKana        bool
+	WriteAs            []WriteAsOption
+	Selected           bool
+}
+
+// WriteAsOption is one form a card can be saved under; candidates without a
+// separate kana form have a single unnamed option.
+type WriteAsOption struct {
+	Value                string
+	Expression           string
+	Checked              bool
 	ExistingVocabularyID int64
-	Selected             bool
 }
 
 func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) EnrichmentView {
@@ -97,6 +107,7 @@ func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) 
 			PartsOfSpeech:   strings.Join(candidatePartsOfSpeech(candidate), " · "),
 			ExampleSentence: capture.ContextText,
 			ExampleTarget:   capture.RawText,
+			UsuallyKana:     usuallyKana(candidate),
 			Selected:        id == selectedCandidateID,
 		}
 		candidateView.GlobalRank, candidateView.GlobalRankLabel = frequencyBadge("Global", candidate.GlobalRank)
@@ -106,6 +117,19 @@ func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) 
 		}
 		if candidateView.Written == "" {
 			candidateView.Written = capture.Expression
+		}
+		writeAs := ""
+		if form.submitted && form.candidateID == id {
+			writeAs = form.writeAs
+		}
+		if offersKana(candidate) {
+			useKana := candidateExpression(candidate, writeAs) == candidate.Reading
+			candidateView.WriteAs = []WriteAsOption{
+				{Value: writeAsWritten, Expression: candidate.Written, Checked: !useKana},
+				{Value: writeAsKana, Expression: candidate.Reading, Checked: useKana},
+			}
+		} else {
+			candidateView.WriteAs = []WriteAsOption{{Expression: candidateView.Written, Checked: true}}
 		}
 		if form.submitted && form.candidateID == id {
 			candidateView.Revision = form.revision

@@ -220,7 +220,7 @@ func (h *Handler) bulkAccept(ctx context.Context, ids []int64) (BulkAcceptResult
 		if enrichment.State != EnrichmentReady || len(enrichment.Candidates) != 1 {
 			continue
 		}
-		candidate, err := candidateAcceptanceFor(enrichment, candidateID(enrichment.Candidates[0]))
+		candidate, err := candidateAcceptanceFor(enrichment, candidateID(enrichment.Candidates[0]), "")
 		if err != nil {
 			continue
 		}

@@ -8,6 +8,7 @@ import (
 	"html"
 	"io"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ type xmlSense struct {
 	RestrictedKanji    []string   `xml:"stagk"`
 	RestrictedReadings []string   `xml:"stagr"`
 	PartsOfSpeech      []string   `xml:"pos"`
+	Misc               []string   `xml:"misc"`
 	Glosses            []xmlGloss `xml:"gloss"`
 }
 
@@ -229,7 +231,7 @@ func convertEntry(source xmlEntry, order int) (Entry, error) {
 		} else {
 			inheritedPartsOfSpeech = append([]string(nil), partsOfSpeech...)
 		}
-		sense := Sense{Number: index + 1, RestrictedKanji: trimValues(value.RestrictedKanji), RestrictedReadings: trimValues(value.RestrictedReadings), PartsOfSpeech: partsOfSpeech}
+		sense := Sense{Number: index + 1, RestrictedKanji: trimValues(value.RestrictedKanji), RestrictedReadings: trimValues(value.RestrictedReadings), PartsOfSpeech: partsOfSpeech, UsuallyKana: slices.Contains(trimValues(value.Misc), usuallyKanaMisc)}
 		for _, gloss := range value.Glosses {
 			language := gloss.Language
 			if language == "" {

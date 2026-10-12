@@ -928,6 +928,20 @@
   grid-template-columns: minmax(220px, .72fr) minmax(320px, 1.28fr);
 }
 
+.mining-write-as .choice-options {
+  max-width: 22rem;
+}
+
+.mining-write-as .choice-option span {
+  font-size: 1.15rem;
+}
+
+/* Only the actions for the chosen written form apply; each knows whether that form is already a card. */
+.mining-card-editor:has(input[name="write_as"][value="kana"]:checked) [data-write-as="written"],
+.mining-card-editor:has(input[name="write_as"][value="written"]:checked) [data-write-as="kana"] {
+  display: none;
+}
+
 .mining-example-fields {
   display: grid;
   gap: .85rem;

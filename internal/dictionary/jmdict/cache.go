@@ -66,6 +66,7 @@ CREATE TABLE jmdict_senses (
     id INTEGER PRIMARY KEY,
     ent_seq INTEGER NOT NULL REFERENCES jmdict_entries(ent_seq) ON DELETE CASCADE,
     position INTEGER NOT NULL,
+    usually_kana INTEGER NOT NULL CHECK (usually_kana IN (0, 1)),
     UNIQUE (ent_seq, position)
 );
 CREATE TABLE jmdict_sense_kanji (
@@ -378,7 +379,7 @@ func (w cacheWriter) insertEntry(entry Entry) error {
 		}
 	}
 	for _, sense := range entry.Senses {
-		result, err := w.tx.ExecContext(w.ctx, `INSERT INTO jmdict_senses (ent_seq, position) VALUES (?, ?)`, entry.Sequence, sense.Number)
+		result, err := w.tx.ExecContext(w.ctx, `INSERT INTO jmdict_senses (ent_seq, position, usually_kana) VALUES (?, ?, ?)`, entry.Sequence, sense.Number, sense.UsuallyKana)
 		if err != nil {
 			return fmt.Errorf("insert sense for JMdict entry %d: %w", entry.Sequence, err)
 		}

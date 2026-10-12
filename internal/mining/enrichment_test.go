@@ -71,14 +71,35 @@ func TestCandidateAcceptanceUsesStableIdentity(t *testing.T) {
 		{Written: "開く", Reading: "あく", Senses: []jmdict.Sense{{Glosses: []jmdict.Gloss{{Text: "to open", Language: "eng"}}}}},
 		{Written: "空く", Reading: "あく", Senses: []jmdict.Sense{{Glosses: []jmdict.Gloss{{Text: "to become empty", Language: "eng"}}}}},
 	}}
-	candidate, err := candidateAcceptanceFor(enrichment, candidateID(enrichment.Candidates[1]))
+	candidate, err := candidateAcceptanceFor(enrichment, candidateID(enrichment.Candidates[1]), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if candidate.written != "空く" || candidate.reading != "あく" || len(candidate.meanings) != 1 || candidate.meanings[0] != "to become empty" {
 		t.Fatalf("candidate = %#v", candidate)
 	}
-	if _, err := candidateAcceptanceFor(enrichment, "unknown"); !errors.Is(err, ErrStaleEnrichment) {
+	if _, err := candidateAcceptanceFor(enrichment, "unknown", ""); !errors.Is(err, ErrStaleEnrichment) {
 		t.Fatalf("stale candidate error = %v", err)
+	}
+}
+
+func TestCandidateExpressionDefaultsUsuallyKanaWordsToKana(t *testing.T) {
+	usuallyKana := jmdict.Candidate{Written: "丁度", Reading: "ちょうど", Senses: []jmdict.Sense{{UsuallyKana: true}}}
+	usuallyKanji := jmdict.Candidate{Written: "猫", Reading: "ねこ", Senses: []jmdict.Sense{{}}}
+	kanaSpelling := jmdict.Candidate{Written: "キレイ", Reading: "きれい", Senses: []jmdict.Sense{{UsuallyKana: true}}}
+	for _, test := range []struct {
+		candidate jmdict.Candidate
+		writeAs   string
+		want      string
+	}{
+		{usuallyKana, "", "ちょうど"},
+		{usuallyKana, writeAsWritten, "丁度"},
+		{usuallyKanji, "", "猫"},
+		{usuallyKanji, writeAsKana, "ねこ"},
+		{kanaSpelling, writeAsKana, "キレイ"},
+	} {
+		if got := candidateExpression(test.candidate, test.writeAs); got != test.want {
+			t.Errorf("candidateExpression(%s, %q) = %s, want %s", test.candidate.Written, test.writeAs, got, test.want)
+		}
 	}
 }

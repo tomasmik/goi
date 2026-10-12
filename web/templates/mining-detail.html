@@ -224,6 +224,17 @@
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
       <input type="hidden" name="revision" value="{{.Revision}}">
       <input type="hidden" name="candidate_id" value="{{.ID}}">
+      {{if gt (len .WriteAs) 1}}
+      <fieldset class="choice-field mining-write-as">
+        <legend>Write the word as</legend>
+        <div class="choice-options">
+          {{range .WriteAs}}
+          <label class="choice-option"><input type="radio" name="write_as" value="{{.Value}}" {{if .Checked}}checked{{end}}><span lang="ja">{{.Expression}}</span></label>
+          {{end}}
+        </div>
+        {{if .UsuallyKana}}<span class="help">Usually written in kana.</span>{{end}}
+      </fieldset>
+      {{end}}
       <div class="form-grid mining-word-fields">
         {{template "card-reading-field" .}}
         {{template "card-meanings-field" .}}
@@ -245,6 +256,8 @@
       {{end}}
       </div>
       {{template "mining-card-media" $}}
+      {{range .WriteAs}}
+      <div class="mining-write-as-actions" data-write-as="{{.Value}}">
       {{if .ExistingVocabularyID}}
       <p class="alert alert-warning">This card is already in your vocabulary. Restarting keeps its content and history, adds this capture, and clears its current review progress and leech status.</p>
       <div class="form-actions">
@@ -252,6 +265,8 @@
       </div>
       {{else}}
       <div class="form-actions"><button class="button" type="submit">Save card</button></div>
+      {{end}}
+      </div>
       {{end}}
     </form>
   </article>

@@ -287,3 +287,34 @@ func TestCacheLookupRanksReadingPriorityIndependently(t *testing.T) {
 		t.Fatalf("priorities = %d, %d", match.Candidates[0].Priority, match.Candidates[1].Priority)
 	}
 }
+
+func TestCacheLookupMarksUsuallyKanaSenses(t *testing.T) {
+	dictionary := strings.Replace(testDictionary, `<!ENTITY v1 "Ichidan verb">`, `<!ENTITY v1 "Ichidan verb">
+<!ENTITY uk "word usually written using kana alone">`, 1)
+	dictionary = strings.Replace(dictionary, `</JMdict>`, `  <entry>
+    <ent_seq>1004</ent_seq>
+    <k_ele><keb>丁度</keb></k_ele>
+    <r_ele><reb>ちょうど</reb></r_ele>
+    <sense><misc>&uk;</misc><gloss>exactly</gloss></sense>
+  </entry>
+</JMdict>`, 1)
+	path := filepath.Join(t.TempDir(), "jmdict.sqlite")
+	if _, err := Build(context.Background(), strings.NewReader(dictionary), path, Source{DownloadedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cache.Close()
+
+	for expression, want := range map[string]bool{"ちょうど": true, "食べる": false} {
+		match, err := cache.Lookup(context.Background(), expression, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(match.Candidates) == 0 || match.Candidates[0].Senses[0].UsuallyKana != want {
+			t.Fatalf("%s match = %#v, want usually kana %v", expression, match, want)
+		}
+	}
+}

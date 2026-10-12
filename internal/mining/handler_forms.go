@@ -46,6 +46,7 @@ type detailForm struct {
 	exampleTranslation     string
 	exampleTarget          string
 	candidateID            string
+	writeAs                string
 	submitted              bool
 	captureFieldsSubmitted bool
 }
@@ -131,12 +132,16 @@ func readAcceptForm(w http.ResponseWriter, r *http.Request) (detailForm, error) 
 	form, err := readVocabularyFields(r, detailForm{
 		submitted:   true,
 		candidateID: strings.TrimSpace(r.FormValue("candidate_id")),
+		writeAs:     r.FormValue("write_as"),
 	})
 	if err != nil {
 		return form, err
 	}
 	if len(form.candidateID) > 64 {
 		return form, handlerValidationError("invalid dictionary candidate")
+	}
+	if form.writeAs != "" && form.writeAs != writeAsWritten && form.writeAs != writeAsKana {
+		return form, handlerValidationError("invalid written form")
 	}
 	return form, nil
 }

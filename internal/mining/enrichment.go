@@ -7,6 +7,12 @@ import (
 	"fmt"
 
 	"github.com/tomasmik/goi/internal/dictionary/jmdict"
+	"github.com/tomasmik/goi/internal/kana"
+)
+
+const (
+	writeAsWritten = "written"
+	writeAsKana    = "kana"
 )
 
 type EnrichmentState string
@@ -66,11 +72,37 @@ func candidateID(candidate jmdict.Candidate) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(identity)))
 }
 
-func candidateAcceptanceFor(enrichment Enrichment, id string) (candidateAcceptance, error) {
+// candidateExpression is the form a card is saved under: the user's choice when there
+// is one, otherwise kana for words JMdict marks as usually written in kana.
+func candidateExpression(candidate jmdict.Candidate, writeAs string) string {
+	if !offersKana(candidate) {
+		return candidate.Written
+	}
+	switch writeAs {
+	case writeAsKana:
+		return candidate.Reading
+	case writeAsWritten:
+		return candidate.Written
+	}
+	if usuallyKana(candidate) {
+		return candidate.Reading
+	}
+	return candidate.Written
+}
+
+func offersKana(candidate jmdict.Candidate) bool {
+	return candidate.Written != "" && kana.ToHiragana(candidate.Written) != kana.ToHiragana(candidate.Reading)
+}
+
+func usuallyKana(candidate jmdict.Candidate) bool {
+	return len(candidate.Senses) > 0 && candidate.Senses[0].UsuallyKana
+}
+
+func candidateAcceptanceFor(enrichment Enrichment, id, writeAs string) (candidateAcceptance, error) {
 	for _, candidate := range enrichment.Candidates {
 		if candidateID(candidate) == id {
 			return candidateAcceptance{
-				written:  candidate.Written,
+				written:  candidateExpression(candidate, writeAs),
 				reading:  candidate.Reading,
 				meanings: candidateMeanings(candidate),
 			}, nil

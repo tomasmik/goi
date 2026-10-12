@@ -177,7 +177,7 @@ func (c *Cache) loadReadingPairs(ctx context.Context, expression, suppliedReadin
 
 func (c *Cache) loadSenses(ctx context.Context, pair lookupPair) ([]Sense, error) {
 	rows, err := c.db.QueryContext(ctx, `
-		SELECT s.id, s.position
+		SELECT s.id, s.position, s.usually_kana
 		FROM jmdict_senses s
 		WHERE s.ent_seq = ?
 		  AND (NOT EXISTS (SELECT 1 FROM jmdict_sense_kanji sk WHERE sk.sense_id = s.id)
@@ -194,13 +194,14 @@ func (c *Cache) loadSenses(ctx context.Context, pair lookupPair) ([]Sense, error
 	}
 	defer rows.Close()
 	type senseRow struct {
-		id     int64
-		number int
+		id          int64
+		number      int
+		usuallyKana bool
 	}
 	var senseRows []senseRow
 	for rows.Next() {
 		var value senseRow
-		if err := rows.Scan(&value.id, &value.number); err != nil {
+		if err := rows.Scan(&value.id, &value.number, &value.usuallyKana); err != nil {
 			return nil, fmt.Errorf("scan applicable JMdict sense: %w", err)
 		}
 		senseRows = append(senseRows, value)
@@ -213,7 +214,7 @@ func (c *Cache) loadSenses(ctx context.Context, pair lookupPair) ([]Sense, error
 	}
 	senses := make([]Sense, 0, len(senseRows))
 	for _, row := range senseRows {
-		sense := Sense{Number: row.number}
+		sense := Sense{Number: row.number, UsuallyKana: row.usuallyKana}
 		glossRows, err := c.db.QueryContext(ctx, `SELECT text, language, gloss_type FROM jmdict_glosses WHERE sense_id = ? ORDER BY position`, row.id)
 		if err != nil {
 			return nil, fmt.Errorf("load JMdict glosses: %w", err)

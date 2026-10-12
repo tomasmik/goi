@@ -217,7 +217,7 @@ func (h *Handler) accept(w http.ResponseWriter, r *http.Request) {
 	}
 	var candidate candidateAcceptance
 	if err == nil && form.candidateID != "" {
-		candidate, err = h.resolveCandidate(r.Context(), id, form.revision, form.candidateID)
+		candidate, err = h.resolveCandidate(r.Context(), id, form.revision, form.candidateID, form.writeAs)
 	}
 	var changes cardMediaChanges
 	if err == nil {
@@ -368,7 +368,7 @@ func (h *Handler) attachCandidate(w http.ResponseWriter, r *http.Request) {
 		h.renderDetail(w, r, id, detailForm{}, "invalid dictionary attachment", "", http.StatusBadRequest)
 		return
 	}
-	candidate, err := h.resolveCandidate(r.Context(), id, form.revision, form.candidateID)
+	candidate, err := h.resolveCandidate(r.Context(), id, form.revision, form.candidateID, form.writeAs)
 	if err != nil {
 		h.renderDetailError(w, r, id, form, err)
 		return
@@ -394,7 +394,7 @@ func (h *Handler) attachCandidate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, capturePath(id), http.StatusSeeOther)
 }
 
-func (h *Handler) resolveCandidate(ctx context.Context, captureID, revision int64, candidateID string) (candidateAcceptance, error) {
+func (h *Handler) resolveCandidate(ctx context.Context, captureID, revision int64, candidateID, writeAs string) (candidateAcceptance, error) {
 	capture, err := h.store.Get(ctx, captureID)
 	if err != nil {
 		return candidateAcceptance{}, err
@@ -402,7 +402,7 @@ func (h *Handler) resolveCandidate(ctx context.Context, captureID, revision int6
 	if capture.Status != StatusPending || capture.Revision != revision {
 		return candidateAcceptance{}, ErrRevisionConflict
 	}
-	return candidateAcceptanceFor(lookupEnrichment(ctx, h.dictionary, capture), candidateID)
+	return candidateAcceptanceFor(lookupEnrichment(ctx, h.dictionary, capture), candidateID, writeAs)
 }
 
 func (h *Handler) discard(w http.ResponseWriter, r *http.Request) {

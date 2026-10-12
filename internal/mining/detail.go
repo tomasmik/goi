@@ -175,11 +175,13 @@ func (h *Handler) detailEnrichment(ctx context.Context, capture Capture, form de
 }
 
 func (h *Handler) addCandidateVocabularyState(ctx context.Context, candidate *CandidateView) error {
-	vocabularyID, err := h.store.existingVocabularyID(ctx, candidate.Written)
-	if err != nil {
-		return err
+	for index := range candidate.WriteAs {
+		vocabularyID, err := h.store.existingVocabularyID(ctx, candidate.WriteAs[index].Expression)
+		if err != nil {
+			return err
+		}
+		candidate.WriteAs[index].ExistingVocabularyID = vocabularyID
 	}
-	candidate.ExistingVocabularyID = vocabularyID
 	return nil
 }
 
