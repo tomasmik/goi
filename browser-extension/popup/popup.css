@@ -1,6 +1,5 @@
 body {
-  width: min(420px, 100vw);
-  max-width: 100%;
+  width: 420px;
   margin: 0;
   background: #f7f4ef;
 }
