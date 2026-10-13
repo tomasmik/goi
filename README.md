@@ -38,6 +38,22 @@ docker compose up -d --build
 Then open [http://127.0.0.1:8080](http://127.0.0.1:8080). Application data and
 local backups live in separate Docker volumes.
 
+Prebuilt images for `linux/amd64` and `linux/arm64` are published to
+`ghcr.io/tomasmik/goi` on every release. `latest` tracks the newest stable
+release, and each release is also tagged by version, such as `v0.2.0`.
+Pre-releases only get their version tag. To use it instead of building
+locally:
+
+```sh
+docker run -d --name goi -p 8080:8080 \
+  -e APP_BACKUP_DIR=/backups \
+  -v goi-data:/data -v goi-backups:/backups \
+  ghcr.io/tomasmik/goi:latest
+```
+
+With Compose, set `image: ghcr.io/tomasmik/goi:latest` in `compose.yaml`,
+remove the `build` section, and run `docker compose up -d`.
+
 To run from source, install Go 1.26.6 and use:
 
 ```sh
