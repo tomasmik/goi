@@ -27,8 +27,6 @@
     subtitleTrackRemove: document.getElementById("subtitle-track-remove"),
     audioTrackControls: document.getElementById("audio-track-controls"),
     audioTrack: document.getElementById("audio-track"),
-    previousLine: document.getElementById("previous-line"),
-    nextLine: document.getElementById("next-line"),
     videoName: document.getElementById("video-name"),
     videoStage: document.getElementById("video-stage"),
     video: document.getElementById("video"),
@@ -893,8 +891,6 @@
         offsetMs
       );
     });
-    elements.previousLine.disabled = !videoReady || cues.length === 0;
-    elements.nextLine.disabled = !videoReady || cues.length === 0;
     updateCaptureWorkspace();
     updateBatchButton();
   }
@@ -2099,8 +2095,6 @@
     elements.audioTrack.addEventListener("change", function () {
       switchAudioTrack(Number(elements.audioTrack.value));
     });
-    elements.previousLine.addEventListener("click", function () { stepLine(-1); });
-    elements.nextLine.addEventListener("click", function () { stepLine(1); });
     ["dragenter", "dragover"].forEach(function (type) {
       elements.videoStage.addEventListener(type, function (event) {
         event.preventDefault();

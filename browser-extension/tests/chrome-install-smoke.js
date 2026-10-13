@@ -91,7 +91,7 @@ test("Chrome installs the extension and runs local video and YouTube flows", {
     enabled: extension.enabled,
   }, {
     name: "Goi Capture",
-    version: "0.2.2",
+    version: "0.2.3",
     path: fs.realpathSync(extensionDirectory),
     enabled: true,
   });
@@ -109,7 +109,7 @@ test("Chrome installs the extension and runs local video and YouTube flows", {
     heading: "Goi Capture",
     extensionID: installed.id,
     manifestName: "Goi Capture",
-    manifestVersion: "0.2.2",
+    manifestVersion: "0.2.3",
     manifestIcon: "icons/icon128.png",
     analyzeDisabled: true,
     analyzeText: "This page can’t be analyzed",

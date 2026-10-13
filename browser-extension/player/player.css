@@ -540,24 +540,14 @@ main {
   grid-column: 1 / -1;
 }
 
-.line-nav {
-  position: absolute;
-  z-index: 6;
-  left: 12px;
-  bottom: 56px;
-  display: flex;
-  gap: 6px;
-}
-
 .fullscreen-button {
   position: absolute;
   z-index: 6;
+  top: 12px;
   right: 12px;
-  bottom: 56px;
 }
 
-.fullscreen-button,
-.line-nav button {
+.fullscreen-button {
   min-height: 32px;
   padding: 5px 9px;
   border-color: rgb(255 255 255 / 35%);
@@ -1366,13 +1356,8 @@ legend {
   }
 
   .fullscreen-button {
+    top: 8px;
     right: 8px;
-    bottom: 52px;
-  }
-
-  .line-nav {
-    left: 8px;
-    bottom: 52px;
   }
 }
 

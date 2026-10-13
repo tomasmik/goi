@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Goi Capture",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "minimum_chrome_version": "116",
   "description": "Check Japanese text coverage and capture words into Goi.",
   "icons": {
