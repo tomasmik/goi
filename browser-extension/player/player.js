@@ -8,6 +8,7 @@
   const playerCoverageModel = globalThis.GoiExtension.playerCoverage;
   const playerTranscriptModel = globalThis.GoiExtension.playerTranscript;
   const playerStateModel = globalThis.GoiExtension.playerState;
+  const playerMkv = globalThis.GoiExtension.playerMkv;
   const dictionaryClient = globalThis.GoiExtension.dictionaryClient;
   const dictionaryRenderer = globalThis.GoiExtension.dictionaryView;
   const translationModel = globalThis.GoiExtension.translation;
@@ -24,6 +25,10 @@
     subtitleTrackControls: document.getElementById("subtitle-track-controls"),
     subtitleTrack: document.getElementById("subtitle-track"),
     subtitleTrackRemove: document.getElementById("subtitle-track-remove"),
+    audioTrackControls: document.getElementById("audio-track-controls"),
+    audioTrack: document.getElementById("audio-track"),
+    previousLine: document.getElementById("previous-line"),
+    nextLine: document.getElementById("next-line"),
     videoName: document.getElementById("video-name"),
     videoStage: document.getElementById("video-stage"),
     video: document.getElementById("video"),
@@ -138,6 +143,10 @@
   let cueByID = new Map();
   let offsetMs = 0;
   let subtitleReadRevision = 0;
+  let videoSourceFile = null;
+  let containerInfo = null;
+  let activeAudioTrackNumber;
+  let containerScan = null;
   let coverageRevision = 0;
   let coverageState = playerCoverageModel.emptyState();
   let selectedCueID;
@@ -534,6 +543,24 @@
     subtitleTracks.forEach(function (track) {
       track.offsetMs = savedOffsetMs;
     });
+    containerScan?.abort();
+    containerScan = null;
+    videoSourceFile = null;
+    containerInfo = null;
+    activeAudioTrackNumber = undefined;
+    updateAudioTrackControls();
+    const embeddedWasActive = Boolean(activeSubtitleTrack()?.embedded);
+    subtitleTracks = subtitleTracks.filter(function (track) { return !track.embedded; });
+    if (embeddedWasActive) {
+      activeSubtitleTrackID = undefined;
+      if (subtitleTracks.length) {
+        activateSubtitleTrack(subtitleTracks[0].id, false);
+      } else {
+        clearSubtitleTrack();
+      }
+    } else {
+      updateSubtitleTrackControls();
+    }
     resetPlaybackTracking();
     updateTimingControls();
     updateCueAvailability();
@@ -547,7 +574,101 @@
       elements.video.load();
     } catch (_error) {
       handleVideoError("Chrome could not open that file. Choose another video.");
+      return;
     }
+    readContainerTracks(file);
+  }
+
+  function trackLabel(track) {
+    return [track.name, track.language === "und" ? "" : track.language].filter(Boolean).join(" · ");
+  }
+
+  async function readContainerTracks(file) {
+    const scan = new AbortController();
+    containerScan = scan;
+    let info;
+    try {
+      info = await playerMkv.readInfo(file);
+    } catch (_error) {
+      return;
+    }
+    if (scan.signal.aborted || !info) {
+      return;
+    }
+    videoSourceFile = file;
+    containerInfo = info;
+    activeAudioTrackNumber = info.tracks.find(function (track) { return track.type === "audio"; })?.number;
+    updateAudioTrackControls();
+    const textTracks = info.tracks.filter(playerMkv.isTextSubtitle);
+    if (!textTracks.length) {
+      if (info.tracks.some(function (track) { return track.type === "subtitle"; })) {
+        showStatus(elements.pageStatus, "This video's embedded subtitles are images and can't be read.", false);
+      }
+      return;
+    }
+    showStatus(elements.pageStatus, "Reading embedded subtitles…", false);
+    let extracted;
+    try {
+      extracted = await playerMkv.extractSubtitles(file, info, {
+        signal: scan.signal,
+        onProgress: function (fraction) {
+          showStatus(elements.pageStatus, "Reading embedded subtitles… " + Math.round(fraction * 100) + "%", false);
+        }
+      });
+    } catch (_error) {
+      if (!scan.signal.aborted) {
+        showStatus(elements.pageStatus, "Could not read the embedded subtitles.", true);
+      }
+      return;
+    }
+    if (scan.signal.aborted) {
+      return;
+    }
+    if (!extracted.length) {
+      showStatus(elements.pageStatus, "The embedded subtitles have no lines.", false);
+      return;
+    }
+    const japanese = function (item) { return /^(?:ja|jpn)\b/iu.test(item.track.language) ? 0 : 1; };
+    extracted.sort(function (left, right) { return japanese(left) - japanese(right); });
+    await readSubtitleFiles(extracted.map(function (item) {
+      return new File([item.text], ["Embedded", trackLabel(item.track)].filter(Boolean).join(" · "));
+    }), { embedded: true, signal: scan.signal });
+  }
+
+  function updateAudioTrackControls() {
+    const audioTracks = containerInfo
+      ? containerInfo.tracks.filter(function (track) { return track.type === "audio"; })
+      : [];
+    elements.audioTrack.replaceChildren(...audioTracks.map(function (track, index) {
+      const option = document.createElement("option");
+      option.value = String(track.number);
+      option.textContent = ["Audio " + (index + 1), trackLabel(track)].filter(Boolean).join(" · ");
+      option.selected = track.number === activeAudioTrackNumber;
+      return option;
+    }));
+    elements.audioTrackControls.hidden = audioTracks.length < 2;
+  }
+
+  function switchAudioTrack(trackNumber) {
+    if (!containerInfo || !videoSourceFile || trackNumber === activeAudioTrackNumber) {
+      return;
+    }
+    const resumeSeconds = elements.video.currentTime;
+    const wasPlaying = !elements.video.paused;
+    activeAudioTrackNumber = trackNumber;
+    const nextURL = URL.createObjectURL(playerMkv.withAudioTrackFirst(videoSourceFile, containerInfo, trackNumber));
+    URL.revokeObjectURL(videoURL);
+    videoURL = nextURL;
+    videoReady = false;
+    savedPlaybackSeconds = resumeSeconds;
+    playbackRestored = false;
+    elements.video.src = videoURL;
+    elements.video.load();
+    if (wasPlaying) {
+      elements.video.play().catch(function () {});
+    }
+    updateAudioTrackControls();
+    showStatus(elements.pageStatus, "Switched to " + elements.audioTrack.selectedOptions[0]?.textContent + ".", false);
   }
 
   function activeSubtitleTrack() {
@@ -635,21 +756,24 @@
     updatePlayback(true);
   }
 
-  async function readSubtitleFiles(files) {
+  async function readSubtitleFiles(files, options) {
     const selectedFiles = Array.from(files || []);
     if (selectedFiles.length === 0) {
       return;
     }
-    const readRevision = ++subtitleReadRevision;
+    const readRevision = options?.embedded ? subtitleReadRevision : ++subtitleReadRevision;
+    const cancelled = function () {
+      return shuttingDown || options?.signal?.aborted ||
+        (!options?.embedded && readRevision !== subtitleReadRevision);
+    };
     showStatus(elements.pageStatus, "Reading subtitle tracks…", false);
-    const imported = [];
     const errors = [];
-    let nextID = nextCueID;
-    let nextGeneration = Math.max(
-      subtitleGeneration,
-      ...subtitleTracks.map(function (track) { return track.subtitleGeneration; })
-    );
-    for (const file of selectedFiles) {
+    const readError = function (file, error) {
+      errors.push(error instanceof subtitleFileModel.SubtitleFileError
+        ? error.message
+        : "Could not read " + String(file.name || "that subtitle file") + ".");
+    };
+    const sources = await Promise.all(selectedFiles.map(async function (file) {
       try {
         if (file.size > subtitleFileModel.LIMITS.sourceBytes) {
           throw new subtitleFileModel.SubtitleFileError(
@@ -657,34 +781,43 @@
             "Subtitle files must be 5 MiB or smaller."
           );
         }
-        const bytes = await file.arrayBuffer();
-        if (readRevision !== subtitleReadRevision || shuttingDown) {
-          return;
-        }
-        nextGeneration += 1;
-        const parsed = subtitleFileModel.parseSubtitleFile(bytes, {
+        return { file, bytes: await file.arrayBuffer() };
+      } catch (error) {
+        readError(file, error);
+        return null;
+      }
+    }));
+    if (cancelled()) {
+      return;
+    }
+    const imported = [];
+    let nextID = nextCueID;
+    let nextGeneration = Math.max(
+      subtitleGeneration,
+      ...subtitleTracks.map(function (track) { return track.subtitleGeneration; })
+    );
+    sources.filter(Boolean).forEach(function (source) {
+      try {
+        const parsed = subtitleFileModel.parseSubtitleFile(source.bytes, {
           firstCueID: nextID,
-          subtitleGeneration: nextGeneration
+          subtitleGeneration: nextGeneration + 1
         });
+        nextGeneration += 1;
         nextID = parsed.nextCueID;
         imported.push({
           id: nextSubtitleTrackID + imported.length,
-          name: String(file.name || "Subtitles"),
+          name: String(source.file.name || "Subtitles"),
           subtitleGeneration: nextGeneration,
           cues: parsed.cues,
           skippedCueCount: parsed.skippedCueCount,
           duplicateCueCount: parsed.duplicateCueCount,
-          offsetMs: savedOffsetMs
+          offsetMs: savedOffsetMs,
+          embedded: Boolean(options?.embedded)
         });
       } catch (error) {
-        errors.push(error instanceof subtitleFileModel.SubtitleFileError
-          ? error.message
-          : "Could not read " + String(file.name || "that subtitle file") + ".");
+        readError(source.file, error);
       }
-    }
-    if (readRevision !== subtitleReadRevision || shuttingDown) {
-      return;
-    }
+    });
     if (imported.length === 0) {
       showStatus(elements.pageStatus, errors[0] || "Could not read those subtitle files.", true);
       return;
@@ -692,7 +825,11 @@
     nextSubtitleTrackID += imported.length;
     nextCueID = nextID;
     subtitleTracks.push(...imported);
-    activateSubtitleTrack(imported[0].id, false);
+    if (options?.embedded && activeSubtitleTrackID !== undefined) {
+      updateSubtitleTrackControls();
+    } else {
+      activateSubtitleTrack(imported[0].id, false);
+    }
     const duplicateCount = imported.reduce(function (total, track) {
       return total + track.duplicateCueCount;
     }, 0);
@@ -756,6 +893,8 @@
         offsetMs
       );
     });
+    elements.previousLine.disabled = !videoReady || cues.length === 0;
+    elements.nextLine.disabled = !videoReady || cues.length === 0;
     updateCaptureWorkspace();
     updateBatchButton();
   }
@@ -997,6 +1136,30 @@
     const effective = effectiveTimes(cue);
     const maximum = videoDurationMs === null ? Infinity : Math.max(0, videoDurationMs - 1);
     elements.video.currentTime = Math.min(maximum, Math.max(0, effective.startMs)) / 1000;
+  }
+
+  function stepLine(direction) {
+    const eligible = cues.filter(captureEligible);
+    if (!eligible.length) {
+      return false;
+    }
+    const nowMs = currentTimeMs();
+    const toleranceMs = 50;
+    let target;
+    if (direction > 0) {
+      target = eligible.find(function (cue) { return effectiveTimes(cue).startMs > nowMs + toleranceMs; });
+    } else {
+      const active = eligible.findLast(function (cue) {
+        const effective = effectiveTimes(cue);
+        return effective.startMs <= nowMs + toleranceMs && effective.endMs > nowMs;
+      });
+      const referenceMs = active ? effectiveTimes(active).startMs : nowMs;
+      target = eligible.findLast(function (cue) { return effectiveTimes(cue).startMs < referenceMs - toleranceMs; });
+    }
+    if (target) {
+      seekCue(target);
+    }
+    return true;
   }
 
   function selectWord(cue, word, suggestedEntrySequence) {
@@ -1747,7 +1910,7 @@
     }
     elements.videoEmpty.hidden = true;
     elements.fullscreen.disabled = false;
-    showStatus(elements.videoStatus, "Video loaded.", false);
+    showStatus(elements.videoStatus, "", false);
     updateCueAvailability();
     renderTranscript();
     updatePlayback(true);
@@ -1882,6 +2045,17 @@
         closePanel(true);
       }
     });
+    document.addEventListener("keydown", function (event) {
+      const key = event.key.length === 1 ? event.key.toLocaleLowerCase() : event.key;
+      const direction = { a: -1, ArrowLeft: -1, d: 1, ArrowRight: 1 }[key];
+      if (!direction || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+          event.target.closest?.("input, textarea, select, [contenteditable]")) {
+        return;
+      }
+      if (stepLine(direction)) {
+        event.preventDefault();
+      }
+    }, true);
     globalThis.addEventListener("resize", positionWordLookup);
   }
 
@@ -1922,6 +2096,11 @@
       activateSubtitleTrack(elements.subtitleTrack.value, true);
     });
     elements.subtitleTrackRemove.addEventListener("click", removeActiveSubtitleTrack);
+    elements.audioTrack.addEventListener("change", function () {
+      switchAudioTrack(Number(elements.audioTrack.value));
+    });
+    elements.previousLine.addEventListener("click", function () { stepLine(-1); });
+    elements.nextLine.addEventListener("click", function () { stepLine(1); });
     ["dragenter", "dragover"].forEach(function (type) {
       elements.videoStage.addEventListener(type, function (event) {
         event.preventDefault();
@@ -2037,6 +2216,10 @@
       elements.batchOneTarget.focus();
     });
     elements.fullscreen.addEventListener("click", toggleFullscreen);
+    elements.video.addEventListener("dblclick", function (event) {
+      event.preventDefault();
+      toggleFullscreen();
+    });
     document.addEventListener("fullscreenchange", function () {
       elements.fullscreen.textContent = document.fullscreenElement === elements.viewerShell
         ? "Exit full screen"
@@ -2170,6 +2353,7 @@
     closeWordLookup(false);
     subtitleReadRevision += 1;
     coverageRevision += 1;
+    containerScan?.abort();
     clearTimeout(lookupRuntime.timer);
     cancelPlaybackFrame();
     savePlaybackPosition(true);

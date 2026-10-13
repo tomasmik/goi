@@ -25,6 +25,10 @@
           <select id="subtitle-track" aria-label="Subtitle track"></select>
           <button id="subtitle-track-remove" class="quiet" type="button" aria-label="Remove selected subtitle track">Remove</button>
         </div>
+        <div id="audio-track-controls" class="subtitle-track-controls" hidden>
+          <label class="visually-hidden" for="audio-track">Audio track</label>
+          <select id="audio-track" aria-label="Audio track"></select>
+        </div>
         <div class="file-summary" aria-live="polite">
           <span id="video-name">No video</span>
         </div>
@@ -48,12 +52,12 @@
       <section id="viewer-shell" class="viewer-shell" aria-label="Local video workspace">
         <section class="video-card" aria-label="Video player">
           <div id="video-stage" class="video-stage" tabindex="0" aria-describedby="drop-help">
-            <video id="video" controls playsinline preload="metadata" disablepictureinpicture disableremoteplayback controlslist="noremoteplayback"></video>
+            <video id="video" controls playsinline preload="metadata" disablepictureinpicture disableremoteplayback controlslist="noremoteplayback nofullscreen"></video>
             <div id="video-empty" class="video-empty">
               <span class="empty-mark" aria-hidden="true">▶</span>
               <strong>No video selected</strong>
               <button id="empty-open-video" class="primary empty-open" type="button">Open video</button>
-              <small id="drop-help">Drop a video here. Add an SRT, VTT, ASS, or SSA file for subtitles and mining. Files stay in this tab. Embedded subtitles are not imported.</small>
+              <small id="drop-help">Drop a video here. Add an SRT, VTT, ASS, or SSA file for subtitles and mining. Text subtitles inside MKV files are added automatically. Files stay in this tab.</small>
             </div>
             <div id="subtitle-overlay" class="subtitle-overlay" aria-label="Goi subtitles"></div>
             <aside id="word-lookup" class="word-lookup" aria-label="Dictionary lookup" hidden>
@@ -67,6 +71,10 @@
                 <button id="word-lookup-mine" class="primary" type="button">Mine this word</button>
               </div>
             </aside>
+            <div class="line-nav">
+              <button id="previous-line" type="button" aria-keyshortcuts="A ArrowLeft" title="Previous line (A or ←)" disabled>‹ Line</button>
+              <button id="next-line" type="button" aria-keyshortcuts="D ArrowRight" title="Next line (D or →)" disabled>Line ›</button>
+            </div>
             <button id="fullscreen" class="fullscreen-button" type="button" disabled>Full screen</button>
           </div>
           <p id="video-status" class="video-status" role="status" aria-live="polite"></p>
@@ -251,6 +259,7 @@
     <script src="player-coverage.js"></script>
     <script src="player-transcript.js"></script>
     <script src="player-state.js"></script>
+    <script src="player-mkv.js"></script>
     <script src="player.js"></script>
   </body>
 </html>
