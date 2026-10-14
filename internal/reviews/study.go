@@ -77,7 +77,11 @@ func (s *Store) StudyCounts(ctx context.Context) (StudyCounts, error) {
 
 func (s *Store) LeechCount(ctx context.Context, _ time.Time) (int, error) {
 	var count int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM leech_states WHERE active = 1`).Scan(&count); err != nil {
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM leech_states ls
+		JOIN vocabulary v ON v.id = ls.vocabulary_id
+		WHERE ls.active = 1 AND v.status IN ('active', 'suspended')`).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count leeches: %w", err)
 	}
 	return count, nil

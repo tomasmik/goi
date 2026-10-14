@@ -435,6 +435,7 @@ func TestMarkCorrectReversesFinalFailureAndLeechEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 	insertDueVocabulary(t, db)
+	setReviewStage(t, db, leechMinimumStage)
 	store := NewStore(db)
 	sessionID, err := store.StartNormal(ctx, 1)
 	if err != nil {

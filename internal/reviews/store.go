@@ -832,7 +832,11 @@ func (s *Store) finishItemTx(ctx context.Context, tx *sql.Tx, sessionID, itemID,
 	); err != nil {
 		return fmt.Errorf("insert review result: %w", err)
 	}
-	if err := updateLeechAfterResultTx(ctx, tx, vocabularyID, success, applySRS, now); err != nil {
+	leech := leechResult{success: success, srsApplied: applySRS, at: now.Unix()}
+	if stage, ok := stageBefore.(int); ok {
+		leech.stageBefore = stage
+	}
+	if err := updateLeechAfterResultTx(ctx, tx, vocabularyID, leech); err != nil {
 		return err
 	}
 	if applySRS && !success {

@@ -650,6 +650,7 @@ func TestReviewFailureRequeuesAndCanComplete(t *testing.T) {
 func TestGiveUpAfterARejectedAnswerUsesTheNormalFailurePath(t *testing.T) {
 	ctx, db := openReviewTestDatabase(t)
 	insertDueVocabulary(t, db)
+	setReviewStage(t, db, leechMinimumStage)
 	store := NewStore(db)
 	sessionID, err := store.StartNormal(ctx, 1)
 	if err != nil {
@@ -714,6 +715,7 @@ func TestGiveUpAfterARejectedAnswerUsesTheNormalFailurePath(t *testing.T) {
 func TestUndoAfterGiveUpRemovesTheFailure(t *testing.T) {
 	ctx, db := openReviewTestDatabase(t)
 	insertDueVocabulary(t, db)
+	setReviewStage(t, db, leechMinimumStage)
 	store := NewStore(db)
 	sessionID, err := store.StartNormal(ctx, 1)
 	if err != nil {

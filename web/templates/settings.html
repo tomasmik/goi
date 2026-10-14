@@ -192,7 +192,7 @@
         <label>
           Mark after
           <input type="number" name="leech_failure_count" min="1" max="100" value="{{.Values.LeechFailureCount}}" required>
-          <span class="help">failed reviews</span>
+          <span class="help">failed reviews, once past the first learning steps</span>
         </label>
         <label>
           Suspend after another
@@ -202,7 +202,7 @@
         <label>
           Clear after
           <input type="number" name="leech_recovery_streak" min="1" max="100" value="{{.Values.LeechRecoveryStreak}}" required>
-          <span class="help">correct answers in a row</span>
+          <span class="help">correct reviews in a row; practice this many in a row to resume a suspended leech</span>
         </label>
       </div>
     </details>

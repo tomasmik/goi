@@ -5,7 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/tomasmik/goi/internal/srs"
 )
 
 type leechSettings struct {
@@ -27,53 +28,100 @@ type leechState struct {
 	resetAfterReviewResult int64
 }
 
-func updateLeechAfterResultTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, success, srsApplied bool, now time.Time) error {
-	state, err := loadLeechStateTx(ctx, tx, vocabularyID)
+type leechResult struct {
+	success     bool
+	srsApplied  bool
+	stageBefore int
+	at          int64
+}
+
+const leechMinimumStage = int(srs.StageFour)
+
+func updateLeechAfterResultTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, result leechResult) error {
+	previous, err := loadLeechStateTx(ctx, tx, vocabularyID)
 	if err != nil {
 		return err
 	}
-	if !state.active && (success || !srsApplied) {
+	if !previous.active && (result.success || !result.srsApplied || result.stageBefore < leechMinimumStage) {
 		return nil
 	}
 	settings, err := loadLeechSettingsTx(ctx, tx)
 	if err != nil {
 		return err
 	}
-	if !state.exists {
-		state.exists = true
-	}
-
-	if state.active {
-		if success {
-			state.correctStreak++
-			if state.correctStreak >= settings.clearAfter {
-				if err := clearActiveLeechTx(ctx, tx, vocabularyID, &state, now.Unix()); err != nil {
-					return err
-				}
-			}
-		} else {
-			state.failuresSinceMark++
-			state.correctStreak = 0
-			if !state.autoSuspendedAt.Valid && state.failuresSinceMark >= settings.suspendAfter {
-				if err := autoSuspendLeechTx(ctx, tx, vocabularyID, &state, now.Unix()); err != nil {
-					return err
-				}
-			}
-		}
-	} else {
-		state.failuresTowardLeech++
-		if state.failuresTowardLeech >= settings.markAfter {
-			state.failuresTowardLeech = 0
-			state.active = true
-			state.everLeech = true
-			state.markedAt = sql.NullInt64{Int64: now.Unix(), Valid: true}
-			state.failuresSinceMark = 0
-			state.correctStreak = 0
-			state.autoSuspendedAt = sql.NullInt64{}
-			state.clearedAt = sql.NullInt64{}
-		}
+	state := previous
+	state.exists = true
+	applyLeechResult(&state, settings, result)
+	if err := syncLeechSuspensionTx(ctx, tx, vocabularyID, previous, &state); err != nil {
+		return err
 	}
 	return saveLeechStateTx(ctx, tx, vocabularyID, state)
+}
+
+func applyLeechResult(state *leechState, settings leechSettings, result leechResult) {
+	if !state.active {
+		if result.success || !result.srsApplied || result.stageBefore < leechMinimumStage {
+			return
+		}
+		state.failuresTowardLeech++
+		if state.failuresTowardLeech < settings.markAfter {
+			return
+		}
+		state.failuresTowardLeech = 0
+		state.active = true
+		state.everLeech = true
+		state.markedAt = sql.NullInt64{Int64: result.at, Valid: true}
+		state.failuresSinceMark = 0
+		state.correctStreak = 0
+		state.autoSuspendedAt = sql.NullInt64{}
+		state.clearedAt = sql.NullInt64{}
+		return
+	}
+	if state.autoSuspendedAt.Valid {
+		if !result.success {
+			state.correctStreak = 0
+			return
+		}
+		state.correctStreak++
+		if state.correctStreak >= settings.clearAfter {
+			state.autoSuspendedAt = sql.NullInt64{}
+			state.failuresSinceMark = 0
+			state.correctStreak = 0
+		}
+		return
+	}
+	if !result.srsApplied {
+		return
+	}
+	if !result.success {
+		state.failuresSinceMark++
+		state.correctStreak = 0
+		if state.failuresSinceMark >= settings.suspendAfter {
+			state.autoSuspendedAt = sql.NullInt64{Int64: result.at, Valid: true}
+		}
+		return
+	}
+	state.correctStreak++
+	if state.correctStreak < settings.clearAfter {
+		return
+	}
+	state.active = false
+	state.markedAt = sql.NullInt64{}
+	state.failuresSinceMark = 0
+	state.correctStreak = 0
+	state.clearedAt = sql.NullInt64{Int64: result.at, Valid: true}
+}
+
+func syncLeechSuspensionTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, previous leechState, state *leechState) error {
+	switch {
+	case previous.autoSuspendedAt.Valid && !state.autoSuspendedAt.Valid:
+		return resumeAutoSuspensionTx(ctx, tx, vocabularyID, previous.autoSuspendedAt.Int64)
+	case !previous.autoSuspendedAt.Valid && state.autoSuspendedAt.Valid:
+		return autoSuspendLeechTx(ctx, tx, vocabularyID, state)
+	case previous.autoSuspendedAt.Valid && state.autoSuspendedAt.Valid:
+		state.autoSuspendedAt = previous.autoSuspendedAt
+	}
+	return nil
 }
 
 func loadLeechSettingsTx(ctx context.Context, tx *sql.Tx) (leechSettings, error) {
@@ -141,12 +189,14 @@ func saveLeechStateTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, state
 	return nil
 }
 
-func autoSuspendLeechTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, state *leechState, now int64) error {
+func autoSuspendLeechTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, state *leechState) error {
+	at := state.autoSuspendedAt.Int64
+	state.autoSuspendedAt = sql.NullInt64{}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE srs_states
 		SET suspended_at = ?
 		WHERE vocabulary_id = ? AND suspended_at IS NULL
-		  AND EXISTS (SELECT 1 FROM vocabulary WHERE id = ? AND status = 'active')`, now, vocabularyID, vocabularyID)
+		  AND EXISTS (SELECT 1 FROM vocabulary WHERE id = ? AND status = 'active')`, at, vocabularyID, vocabularyID)
 	if err != nil {
 		return fmt.Errorf("suspend leech reviews: %w", err)
 	}
@@ -157,36 +207,10 @@ func autoSuspendLeechTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, sta
 	if affected == 0 {
 		return nil
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE vocabulary SET status = 'suspended', updated_at = ? WHERE id = ?`, now, vocabularyID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE vocabulary SET status = 'suspended', updated_at = ? WHERE id = ?`, at, vocabularyID); err != nil {
 		return fmt.Errorf("mark leech suspended: %w", err)
 	}
-	state.autoSuspendedAt = sql.NullInt64{Int64: now, Valid: true}
-	return nil
-}
-
-func clearActiveLeechTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, state *leechState, now int64) error {
-	if state.autoSuspendedAt.Valid {
-		result, err := tx.ExecContext(ctx, `
-			UPDATE srs_states SET suspended_at = NULL
-			WHERE vocabulary_id = ? AND suspended_at = ?`, vocabularyID, state.autoSuspendedAt.Int64)
-		if err != nil {
-			return fmt.Errorf("resume recovered leech reviews: %w", err)
-		}
-		if affected, err := result.RowsAffected(); err != nil {
-			return fmt.Errorf("check recovered leech reviews: %w", err)
-		} else if affected == 1 {
-			if _, err := tx.ExecContext(ctx, `UPDATE vocabulary SET status = 'active', updated_at = ? WHERE id = ? AND status = 'suspended'`, now, vocabularyID); err != nil {
-				return fmt.Errorf("activate recovered leech: %w", err)
-			}
-		}
-	}
-	state.failuresTowardLeech = 0
-	state.active = false
-	state.markedAt = sql.NullInt64{}
-	state.failuresSinceMark = 0
-	state.correctStreak = 0
-	state.autoSuspendedAt = sql.NullInt64{}
-	state.clearedAt = sql.NullInt64{Int64: now, Valid: true}
+	state.autoSuspendedAt = sql.NullInt64{Int64: at, Valid: true}
 	return nil
 }
 
@@ -205,7 +229,7 @@ func (s *Store) rebuildLeechStateTx(ctx context.Context, tx *sql.Tx, vocabularyI
 		resetAfterReviewResult: previous.resetAfterReviewResult,
 	}
 	rows, err := tx.QueryContext(ctx, `
-		SELECT rr.outcome, rr.srs_applied, rr.created_at
+		SELECT rr.outcome, rr.srs_applied, COALESCE(rr.stage_before, 0), rr.created_at
 		FROM review_results rr
 		JOIN review_session_items rsi ON rsi.id = rr.session_item_id
 		WHERE rsi.vocabulary_id = ? AND rr.voided_at IS NULL AND rr.id > ?
@@ -216,12 +240,12 @@ func (s *Store) rebuildLeechStateTx(ctx context.Context, tx *sql.Tx, vocabularyI
 	defer rows.Close()
 	for rows.Next() {
 		var outcome string
-		var srsApplied int
-		var createdAt int64
-		if err := rows.Scan(&outcome, &srsApplied, &createdAt); err != nil {
+		var result leechResult
+		if err := rows.Scan(&outcome, &result.srsApplied, &result.stageBefore, &result.at); err != nil {
 			return fmt.Errorf("scan leech review history: %w", err)
 		}
-		applyLeechHistoryResult(&state, settings, outcome == "success", srsApplied == 1, createdAt)
+		result.success = outcome == "success"
+		applyLeechResult(&state, settings, result)
 	}
 	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterate leech review history: %w", err)
@@ -229,54 +253,10 @@ func (s *Store) rebuildLeechStateTx(ctx context.Context, tx *sql.Tx, vocabularyI
 	if err := rows.Close(); err != nil {
 		return fmt.Errorf("close leech review history: %w", err)
 	}
-	if previous.autoSuspendedAt.Valid && !state.autoSuspendedAt.Valid {
-		if err := resumeAutoSuspensionTx(ctx, tx, vocabularyID, previous.autoSuspendedAt.Int64); err != nil {
-			return err
-		}
-	} else if !previous.autoSuspendedAt.Valid && state.autoSuspendedAt.Valid {
-		if err := autoSuspendLeechTx(ctx, tx, vocabularyID, &state, state.autoSuspendedAt.Int64); err != nil {
-			return err
-		}
-	} else if previous.autoSuspendedAt.Valid && state.autoSuspendedAt.Valid {
-		state.autoSuspendedAt = previous.autoSuspendedAt
+	if err := syncLeechSuspensionTx(ctx, tx, vocabularyID, previous, &state); err != nil {
+		return err
 	}
 	return saveLeechStateTx(ctx, tx, vocabularyID, state)
-}
-
-func applyLeechHistoryResult(state *leechState, settings leechSettings, success, srsApplied bool, createdAt int64) {
-	if !state.active {
-		if success || !srsApplied {
-			return
-		}
-		state.failuresTowardLeech++
-		if state.failuresTowardLeech < settings.markAfter {
-			return
-		}
-		state.failuresTowardLeech = 0
-		state.active = true
-		state.everLeech = true
-		state.markedAt = sql.NullInt64{Int64: createdAt, Valid: true}
-		state.clearedAt = sql.NullInt64{}
-		return
-	}
-	if success {
-		state.correctStreak++
-		if state.correctStreak < settings.clearAfter {
-			return
-		}
-		state.active = false
-		state.markedAt = sql.NullInt64{}
-		state.failuresSinceMark = 0
-		state.correctStreak = 0
-		state.autoSuspendedAt = sql.NullInt64{}
-		state.clearedAt = sql.NullInt64{Int64: createdAt, Valid: true}
-		return
-	}
-	state.failuresSinceMark++
-	state.correctStreak = 0
-	if !state.autoSuspendedAt.Valid && state.failuresSinceMark >= settings.suspendAfter {
-		state.autoSuspendedAt = sql.NullInt64{Int64: createdAt, Valid: true}
-	}
 }
 
 func resumeAutoSuspensionTx(ctx context.Context, tx *sql.Tx, vocabularyID, suspendedAt int64) error {
@@ -284,13 +264,13 @@ func resumeAutoSuspensionTx(ctx context.Context, tx *sql.Tx, vocabularyID, suspe
 		UPDATE srs_states SET suspended_at = NULL
 		WHERE vocabulary_id = ? AND suspended_at = ?`, vocabularyID, suspendedAt)
 	if err != nil {
-		return fmt.Errorf("undo automatic leech suspension: %w", err)
+		return fmt.Errorf("resume automatic leech suspension: %w", err)
 	}
 	if affected, err := result.RowsAffected(); err != nil {
-		return fmt.Errorf("check automatic leech suspension undo: %w", err)
+		return fmt.Errorf("check resumed automatic leech suspension: %w", err)
 	} else if affected == 1 {
 		if _, err := tx.ExecContext(ctx, `UPDATE vocabulary SET status = 'active' WHERE id = ? AND status = 'suspended'`, vocabularyID); err != nil {
-			return fmt.Errorf("reactivate leech after undo: %w", err)
+			return fmt.Errorf("reactivate leech: %w", err)
 		}
 	}
 	return nil
