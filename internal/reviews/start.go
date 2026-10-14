@@ -261,7 +261,7 @@ func (s *Store) startSessionWithPreferences(ctx context.Context, kind string, id
 			return 0, fmt.Errorf("get study item ID: %w", err)
 		}
 		itemIDs = append(itemIDs, itemID)
-		meaningOnlyItems[itemID] = isKanaOnly(expression)
+		meaningOnlyItems[itemID] = isHiraganaOnly(expression)
 	}
 	random := rand.New(rand.NewSource(seed))
 	cards := buildPromptCards(itemIDs, meaningOnlyItems, preferences.cardOrder, random)
@@ -446,13 +446,13 @@ func buildPromptCards(itemIDs []int64, meaningOnlyItems map[int64]bool, cardOrde
 	return cards
 }
 
-func isKanaOnly(expression string) bool {
+func isHiraganaOnly(expression string) bool {
 	hasKana := false
 	for _, character := range strings.TrimSpace(expression) {
 		switch {
-		case unicode.In(character, unicode.Hiragana, unicode.Katakana):
+		case unicode.Is(unicode.Hiragana, character):
 			hasKana = true
-		case unicode.IsSpace(character), strings.ContainsRune("ーｰ・･゠\u3099\u309a", character):
+		case unicode.IsSpace(character), strings.ContainsRune("ー\u3099\u309a", character):
 		default:
 			return false
 		}

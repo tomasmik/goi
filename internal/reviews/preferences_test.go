@@ -48,7 +48,7 @@ func TestBuildPromptCardsKeepsSingleWordTogether(t *testing.T) {
 	}
 }
 
-func TestBuildPromptCardsOmitsPronunciationForKanaOnlyWords(t *testing.T) {
+func TestBuildPromptCardsOmitsPronunciationForHiraganaOnlyWords(t *testing.T) {
 	items := []int64{1, 2, 3}
 	meaningOnly := map[int64]bool{2: true}
 
@@ -65,14 +65,15 @@ func TestBuildPromptCardsOmitsPronunciationForKanaOnlyWords(t *testing.T) {
 	}
 }
 
-func TestKanaOnlyExpressions(t *testing.T) {
+func TestHiraganaOnlyExpressions(t *testing.T) {
 	for _, test := range []struct {
 		expression string
 		want       bool
 	}{
 		{expression: "ありがとう", want: true},
-		{expression: "コーヒー", want: true},
-		{expression: "カフェ・オレ", want: true},
+		{expression: "コーヒー", want: false},
+		{expression: "カフェ・オレ", want: false},
+		{expression: "ドキドキする", want: false},
 		{expression: " ひらがな ", want: true},
 		{expression: "食べる", want: false},
 		{expression: "ゲーム機", want: false},
@@ -80,13 +81,13 @@ func TestKanaOnlyExpressions(t *testing.T) {
 		{expression: "ー・", want: false},
 		{expression: "", want: false},
 	} {
-		if got := isKanaOnly(test.expression); got != test.want {
-			t.Errorf("isKanaOnly(%q) = %t, want %t", test.expression, got, test.want)
+		if got := isHiraganaOnly(test.expression); got != test.want {
+			t.Errorf("isHiraganaOnly(%q) = %t, want %t", test.expression, got, test.want)
 		}
 	}
 }
 
-func TestKanaOnlyVocabularyCreatesOnlyMeaningPrompts(t *testing.T) {
+func TestHiraganaOnlyVocabularyCreatesOnlyMeaningPrompts(t *testing.T) {
 	ctx, db := openReviewTestDatabase(t)
 	insertDueVocabularyWithExpression(t, db, "ありがとう")
 	insertDueVocabularyWithExpression(t, db, "コーヒー")
@@ -122,8 +123,8 @@ func TestKanaOnlyVocabularyCreatesOnlyMeaningPrompts(t *testing.T) {
 	if got := prompts["ありがとう"]; !slices.Equal(got, []string{"meaning"}) {
 		t.Fatalf("hiragana prompts = %v, want [meaning]", got)
 	}
-	if got := prompts["コーヒー"]; !slices.Equal(got, []string{"meaning"}) {
-		t.Fatalf("katakana prompts = %v, want [meaning]", got)
+	if got := prompts["コーヒー"]; !slices.Equal(got, []string{"pronunciation", "meaning"}) {
+		t.Fatalf("katakana prompts = %v, want [pronunciation meaning]", got)
 	}
 	if got := prompts["食べる"]; !slices.Equal(got, []string{"pronunciation", "meaning"}) {
 		t.Fatalf("kanji prompts = %v, want [pronunciation meaning]", got)
