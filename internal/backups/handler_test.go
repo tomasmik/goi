@@ -526,6 +526,27 @@ func TestDisconnectGoogleFailureStillLeavesSafeLocalDestination(t *testing.T) {
 	}
 }
 
+func TestGoogleCallbackEnablesDriveDestination(t *testing.T) {
+	handler, service, _, _, _ := newHandlerTest(t)
+	if err := service.config.Store.UpdateSettings(t.Context(), Settings{Enabled: true, Hour: 8, KeepLocal: true, RetentionDays: DefaultRetentionDays}); err != nil {
+		t.Fatal(err)
+	}
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/settings/backups/google/callback?state=s&code=c", nil))
+
+	if response.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d: %s", response.Code, http.StatusSeeOther, response.Body.String())
+	}
+	settings, err := service.config.Store.Settings(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.GoogleDrive || !settings.KeepLocal || !settings.Enabled || settings.Hour != 8 {
+		t.Fatalf("settings = %+v", settings)
+	}
+}
+
 func TestDisconnectGoogleWaitsForRunningBackup(t *testing.T) {
 	handler, service, drive, _, _ := newHandlerTest(t)
 	if err := service.config.Store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: DefaultRetentionDays}); err != nil {

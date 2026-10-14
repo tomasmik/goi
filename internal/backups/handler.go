@@ -303,6 +303,19 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 		h.render(w, r, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	settings, err := h.store.Settings(r.Context())
+	if err != nil {
+		internalweb.InternalError(w, r, "could not load backup settings", err)
+		return
+	}
+	if !settings.GoogleDrive {
+		settings.GoogleDrive = true
+		if err := h.store.UpdateSettings(r.Context(), settings); err != nil {
+			internalweb.InternalError(w, r, "could not save backup settings", err)
+			return
+		}
+		h.service.SignalSettingsChanged()
+	}
 	h.redirect(w, r, "google_connected")
 }
 
