@@ -110,6 +110,7 @@
   ];
   const PLAYER_SETTINGS_KEY = "goiLocalPlayerDisplayV1";
   const TRANSCRIPT_PAGE_SIZE = 200;
+  const TRANSCRIPT_FOLLOW_PAUSE_MS = 4000;
   const MAX_BATCH_CAPTURES = 100;
 
   function ignoreDictionaryPrefetchFailure() {}
@@ -149,6 +150,7 @@
   let coverageState = playerCoverageModel.emptyState();
   let selectedCueID;
   let currentCueIDs = new Set();
+  let transcriptScrolledAt = 0;
   let lastDialogueCueIDs = [];
   let pauseRevealCueIDs = [];
   let previousVideoMs = null;
@@ -1592,7 +1594,11 @@
       translation.hidden = true;
       translate.addEventListener("click", function (event) {
         event.stopPropagation();
-        lockSubtitleHoverPause();
+        lookupRuntime.hoverPauseLocked = false;
+        if (!elements.video.paused) {
+          lookupRuntime.hoverPausedVideo = true;
+          elements.video.pause();
+        }
         translationModel.translateInto(translator, cue.text, translation, translate);
       });
       line.appendChild(translate);
@@ -1628,6 +1634,9 @@
       renderOverlay();
       updateSelectedLineStyles();
       updateJumpCurrent();
+      if (active.length && !elements.video.paused && Date.now() - transcriptScrolledAt > TRANSCRIPT_FOLLOW_PAUSE_MS) {
+        followCurrentLine();
+      }
     }
   }
 
@@ -1875,10 +1884,10 @@
     }
   }
 
-  function jumpToCurrentLine() {
+  function currentLineItem() {
     const cueID = currentCueIDs.values().next().value;
     if (!cueID) {
-      return;
+      return undefined;
     }
     const visible = visibleCues();
     const index = visible.findIndex(function (cue) { return cue.id === cueID; });
@@ -1886,7 +1895,25 @@
       renderedLimit = Math.ceil((index + 1) / TRANSCRIPT_PAGE_SIZE) * TRANSCRIPT_PAGE_SIZE;
       renderTranscript();
     }
-    renderedLines.get(cueID)?.item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return renderedLines.get(cueID)?.item;
+  }
+
+  function jumpToCurrentLine() {
+    currentLineItem()?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function followCurrentLine() {
+    const item = currentLineItem();
+    if (!item) {
+      return;
+    }
+    const list = elements.subtitleLines;
+    const itemBox = item.getBoundingClientRect();
+    const listBox = list.getBoundingClientRect();
+    list.scrollTo({
+      top: list.scrollTop + itemBox.top - listBox.top - (list.clientHeight - itemBox.height) / 2,
+      behavior: "smooth",
+    });
   }
 
   function handleVideoMetadata() {
@@ -2201,7 +2228,15 @@
       renderedLimit += TRANSCRIPT_PAGE_SIZE;
       renderTranscript();
     });
-    elements.jumpCurrent.addEventListener("click", jumpToCurrentLine);
+    elements.jumpCurrent.addEventListener("click", function () {
+      transcriptScrolledAt = 0;
+      jumpToCurrentLine();
+    });
+    ["wheel", "touchmove", "pointerdown", "keydown"].forEach(function (type) {
+      elements.subtitleLines.addEventListener(type, function () {
+        transcriptScrolledAt = Date.now();
+      }, { passive: true });
+    });
     elements.coverageRetry.addEventListener("click", retryCoverage);
     elements.batchOneTarget.addEventListener("click", showBatchConfirmation);
     elements.batchConfirm.addEventListener("click", sendOneTargetBatch);

@@ -867,7 +867,11 @@ main {
 }
 
 .transcript-line.current {
-  box-shadow: inset 3px 0 0 var(--teal);
+  margin-inline: -5px;
+  padding-inline: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--teal) 22%, transparent);
+  box-shadow: inset 4px 0 0 var(--teal);
 }
 
 .line-time,
