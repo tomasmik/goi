@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tomasmik/goi/internal/database"
+	"github.com/tomasmik/goi/internal/dictionary/jmdict"
 	"github.com/tomasmik/goi/internal/vocabulary"
 )
 
@@ -214,6 +215,41 @@ func TestAnalyzeNormalizesPotentialKuru(t *testing.T) {
 	coming := tokenWithSurface(t, result.Blocks[0].Tokens, "来れたら")
 	if coming.Expression != "来る" || coming.Status != StatusKnown {
 		t.Fatalf("来れたら token = %#v, want known 来る", coming)
+	}
+}
+
+type fakeDictionary map[string]bool
+
+func (dictionary fakeDictionary) Lookup(_ context.Context, expression, _ string) (jmdict.Match, error) {
+	if dictionary[expression] {
+		return jmdict.Match{Candidates: []jmdict.Candidate{{Written: expression}}}, nil
+	}
+	return jmdict.Match{}, nil
+}
+
+func TestAnalyzeMapsPotentialVerbsToDictionaryForm(t *testing.T) {
+	ctx, db := openCoverageTestDatabase(t)
+	insertCoverageVocabulary(t, db, "許す", "active", false)
+
+	analyzer, err := NewAnalyzer(vocabulary.NewStore(db))
+	if err != nil {
+		t.Fatal(err)
+	}
+	analyzer.UseDictionary(fakeDictionary{"許す": true, "読む": true, "読める": true, "開く": true, "開ける": true})
+	result, err := analyzer.Analyze(ctx, []Block{{ID: 1, Text: "本当に許せません。本が読めない。窓を開けた。"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	forgiving := tokenWithSurface(t, result.Blocks[0].Tokens, "許せません")
+	if forgiving.Expression != "許す" || forgiving.Status != StatusKnown {
+		t.Fatalf("許せません token = %#v, want known 許す", forgiving)
+	}
+	if reading := tokenWithSurface(t, result.Blocks[0].Tokens, "読めない"); reading.Expression != "読める" {
+		t.Errorf("読めない expression = %q, want 読める", reading.Expression)
+	}
+	if opening := tokenWithSurface(t, result.Blocks[0].Tokens, "開けた"); opening.Expression != "開ける" {
+		t.Errorf("開けた expression = %q, want 開ける", opening.Expression)
 	}
 }
 

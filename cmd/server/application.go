@@ -151,6 +151,7 @@ func (app *application) initializeCore(ctx context.Context, cfg config.Config, l
 			logger.Warn("local dictionary is unavailable", "error", err)
 		}
 	}
+	app.coverage.UseDictionary(app.dictionary)
 	app.frequency, err = jiten.NewManager(jiten.ManagerConfig{Path: filepath.Join(cfg.DataDir, jiten.CacheFilename)})
 	if err != nil {
 		return fmt.Errorf("initialize Jiten: %w", err)

@@ -230,6 +230,15 @@ test("keeps unknown markup inert while normalizing recognized subtitle text", fu
   assert.equal(normalizeCueText("<script>do not run</script>"), "<script>do not run</script>");
 });
 
+test("removes inline furigana readings from cue text", function () {
+  assert.equal(
+    normalizeCueText("「ハレンチミラクルライフ２(ツー)」の\n黒江(くろえ) 雫（しずく）たん！"),
+    "「ハレンチミラクルライフ２」の\n黒江 雫たん！"
+  );
+  assert.equal(normalizeCueText("<ruby>黒江<rp>(</rp><rt>くろえ</rt><rp>)</rp></ruby>"), "黒江");
+  assert.equal(normalizeCueText("(ナレーター)何だよ(笑)"), "(ナレーター)何だよ(笑)");
+});
+
 test("reports unsupported files and files whose cues are all invalid", function () {
   expectCode(function () {
     parseSubtitleFile(utf8("ordinary text without timestamps"));

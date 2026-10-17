@@ -184,6 +184,8 @@
   function subtitlePlainText(value) {
     return value
       .replace(/<br\s*\/?\s*>/giu, "\n")
+      .replace(/<(rt|rp)>[^<]*<\/\1>/giu, "")
+      .replace(/(?<=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{N}\p{L}々〆ー])[(（][\p{Script=Hiragana}\p{Script=Katakana}ー・ 　]+[)）]/gu, "")
       .replace(/<\/?(?:b|i|u|ruby|rt)>/giu, "")
       .replace(/<c(?:\.[a-z0-9_-]+)*>|<\/c>/giu, "")
       .replace(/<v(?:[ \t]+[^>]*)?>|<\/v>/giu, "")

@@ -904,6 +904,10 @@ main {
   user-select: text;
 }
 
+.line-text .subtitle-word {
+  background: none;
+}
+
 .line-text[aria-disabled="true"] {
   cursor: default;
 }

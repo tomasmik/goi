@@ -12,6 +12,7 @@ import (
 
 	"github.com/ikawaha/kagome-dict/ipa"
 	"github.com/ikawaha/kagome/v2/tokenizer"
+	"github.com/tomasmik/goi/internal/dictionary/jmdict"
 	"github.com/tomasmik/goi/internal/kana"
 	"github.com/tomasmik/goi/internal/textnorm"
 )
@@ -56,6 +57,7 @@ type Result struct {
 
 type Analyzer struct {
 	known         knownVocabularySource
+	dictionary    dictionarySource
 	tokenizer     *tokenizer.Tokenizer
 	knownMu       sync.Mutex
 	knownCache    knownVocabulary
@@ -66,6 +68,10 @@ const knownVocabularyCacheTTL = time.Second
 
 type knownVocabularySource interface {
 	KnownExpressionStatuses(context.Context) (map[string]string, error)
+}
+
+type dictionarySource interface {
+	Lookup(ctx context.Context, expression, reading string) (jmdict.Match, error)
 }
 
 type knownVocabulary struct {
@@ -102,6 +108,10 @@ func NewAnalyzer(known knownVocabularySource) (*Analyzer, error) {
 	return &Analyzer{known: known, tokenizer: morphologicalAnalyzer}, nil
 }
 
+func (a *Analyzer) UseDictionary(dictionary dictionarySource) {
+	a.dictionary = dictionary
+}
+
 func (a *Analyzer) Analyze(ctx context.Context, blocks []Block) (Result, error) {
 	known, err := a.loadKnown(ctx)
 	if err != nil {
@@ -110,6 +120,7 @@ func (a *Analyzer) Analyze(ctx context.Context, blocks []Block) (Result, error) 
 
 	result := Result{Blocks: make([]BlockResult, 0, len(blocks))}
 	unknownExpressions := make(map[string]struct{})
+	dictionaryForms := make(map[string]string)
 	for _, block := range blocks {
 		if err := ctx.Err(); err != nil {
 			return Result{}, fmt.Errorf("analyze Japanese text: %w", err)
@@ -118,6 +129,9 @@ func (a *Analyzer) Analyze(ctx context.Context, blocks []Block) (Result, error) 
 		offsets := utf16Offsets(block.Text)
 		morphs := a.tokenizer.Tokenize(block.Text)
 		spans := buildLexicalSpans(morphs)
+		for index := range spans {
+			spans[index].expression = a.dictionaryForm(ctx, spans[index], dictionaryForms)
+		}
 		for index := 0; index < len(spans); index++ {
 			span := spans[index]
 			if span.excluded {
@@ -140,7 +154,7 @@ func (a *Analyzer) Analyze(ctx context.Context, blocks []Block) (Result, error) 
 			}
 
 			status := StatusUnknown
-			if knownStatus, ok := statusForMorph(span.morph, span.surface, known); ok {
+			if knownStatus, ok := statusForSpan(span, known); ok {
 				status = knownStatus
 				result.Summary.KnownOccurrences++
 			} else {
@@ -362,8 +376,8 @@ func (known knownVocabulary) hasPrefix(value string) bool {
 	return ok
 }
 
-func statusForMorph(morph tokenizer.Token, groupedSurface string, known knownVocabulary) (string, bool) {
-	candidates := []string{morph.Surface, groupedSurface, baseForm(morph)}
+func statusForSpan(span lexicalSpan, known knownVocabulary) (string, bool) {
+	candidates := []string{span.morph.Surface, span.surface, span.expression}
 	for _, candidate := range candidates {
 		if status, ok := known.status(candidate); ok {
 			return status, true
@@ -382,6 +396,43 @@ func baseForm(morph tokenizer.Token) string {
 		return base
 	}
 	return morph.Surface
+}
+
+var godanEndings = map[rune]rune{
+	'え': 'う', 'け': 'く', 'げ': 'ぐ', 'せ': 'す', 'て': 'つ',
+	'ね': 'ぬ', 'べ': 'ぶ', 'め': 'む', 'れ': 'る',
+}
+
+func (a *Analyzer) dictionaryForm(ctx context.Context, span lexicalSpan, cache map[string]string) string {
+	features := span.morph.Features()
+	if a.dictionary == nil || len(features) < 5 || features[0] != "動詞" || features[4] != "一段" {
+		return span.expression
+	}
+	runes := []rune(span.expression)
+	if len(runes) < 3 || runes[len(runes)-1] != 'る' {
+		return span.expression
+	}
+	ending, ok := godanEndings[runes[len(runes)-2]]
+	if !ok {
+		return span.expression
+	}
+	if cached, ok := cache[span.expression]; ok {
+		return cached
+	}
+	form := span.expression
+	if !a.hasDictionaryEntry(ctx, span.expression) {
+		godan := string(runes[:len(runes)-2]) + string(ending)
+		if a.hasDictionaryEntry(ctx, godan) {
+			form = godan
+		}
+	}
+	cache[span.expression] = form
+	return form
+}
+
+func (a *Analyzer) hasDictionaryEntry(ctx context.Context, expression string) bool {
+	match, err := a.dictionary.Lookup(ctx, expression, "")
+	return err == nil && len(match.Candidates) > 0
 }
 
 func isLexical(morph tokenizer.Token) bool {
