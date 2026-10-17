@@ -402,12 +402,12 @@ main {
   text-shadow: 0 1px 2px #000;
 }
 
-.subtitle-word {
+.goi-player .subtitle-word {
   display: inline;
   padding: 0;
   border: 0;
   border-radius: 0.08em;
-  background: linear-gradient(transparent 78%, rgb(255 198 74 / 85%) 78%);
+  background: none;
   color: inherit;
   font: inherit;
   font-weight: inherit;
@@ -416,8 +416,8 @@ main {
   text-shadow: inherit;
 }
 
-.subtitle-word:hover,
-.subtitle-word:focus-visible {
+.goi-player .subtitle-word:hover,
+.goi-player .subtitle-word:focus-visible {
   background: rgb(255 198 74 / 30%);
   outline-color: #ffd777;
 }
@@ -902,10 +902,6 @@ main {
   overflow-wrap: anywhere;
   cursor: pointer;
   user-select: text;
-}
-
-.line-text .subtitle-word {
-  background: none;
 }
 
 .line-text[aria-disabled="true"] {
