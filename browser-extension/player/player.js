@@ -111,6 +111,7 @@
   const PLAYER_SETTINGS_KEY = "goiLocalPlayerDisplayV1";
   const TRANSCRIPT_PAGE_SIZE = 200;
   const TRANSCRIPT_FOLLOW_PAUSE_MS = 4000;
+  const VIDEO_CONTROLS_HEIGHT = 48;
   const MAX_BATCH_CAPTURES = 100;
 
   function ignoreDictionaryPrefetchFailure() {}
@@ -1755,7 +1756,11 @@
     }
     const response = await message("goi.player.capture", {
       sessionID: currentSessionID(),
-      capture: captureInput(cue, target, captureOptions.batch ? undefined : workspaceRuntime.suggestedEntrySequence)
+      capture: captureInput(cue, target, captureOptions.batch
+        ? undefined
+        : "suggestedEntrySequence" in captureOptions
+          ? captureOptions.suggestedEntrySequence
+          : workspaceRuntime.suggestedEntrySequence)
     });
     if (!response.ok) {
       if (!captureOptions.quiet && workspaceRevision === workspaceRuntime.captureRevision) {
@@ -2006,14 +2011,24 @@
     elements.wordLookupClose.addEventListener("click", function () {
       closeWordLookup(true, true);
     });
-    elements.wordLookupMine.addEventListener("click", function () {
+    elements.wordLookupMine.addEventListener("click", async function () {
       const selection = lookupRuntime.selection;
       if (!selection) {
         return;
       }
       const suggestedEntrySequence = lookupRuntime.suggestedEntrySequence;
-      closeWordLookup(false);
-      selectWord(selection.cue, selection.word, suggestedEntrySequence);
+      const surface = selection.word.surface;
+      closeWordLookup(true);
+      showStatus(elements.pageStatus, "Adding 「" + surface + "」…", false);
+      const result = await captureCue(selection.cue, {
+        surface,
+        expression: selection.word.expression || surface
+      }, { quiet: true, suggestedEntrySequence });
+      if (!result.ok) {
+        showStatus(elements.pageStatus, "Could not add 「" + surface + "」", true);
+      } else {
+        showStatus(elements.pageStatus, (result.queued ? "Queued 「" : "Added 「") + surface + "」", false);
+      }
     });
     elements.wordLookupKnown.addEventListener("click", async function () {
       const selection = lookupRuntime.selection;
@@ -2069,6 +2084,15 @@
       }
     });
     document.addEventListener("keydown", function (event) {
+      if (event.key === " " && videoReady && !event.altKey && !event.ctrlKey && !event.metaKey &&
+          !event.target.closest?.("input, textarea, select, [contenteditable]")) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) {
+          togglePlayback();
+        }
+        return;
+      }
       const key = event.key.length === 1 ? event.key.toLocaleLowerCase() : event.key;
       const direction = { a: -1, ArrowLeft: -1, d: 1, ArrowRight: 1 }[key];
       if (!direction || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
@@ -2278,7 +2302,30 @@
     });
   }
 
+  function togglePlayback() {
+    if (!videoReady) {
+      return;
+    }
+    if (!elements.video.paused) {
+      elements.video.pause();
+      return;
+    }
+    elements.video.play().catch(function () {
+      showStatus(elements.pageStatus, "Playback blocked.", true);
+    });
+  }
+
   function bindVideoEvents() {
+    let videoPointerClosesPopup = false;
+    elements.video.addEventListener("pointerdown", function () {
+      videoPointerClosesPopup = !elements.wordLookup.hidden || lookupRuntime.hoverPauseLocked;
+    });
+    elements.video.addEventListener("click", function (event) {
+      if (videoPointerClosesPopup || event.offsetY > elements.video.clientHeight - VIDEO_CONTROLS_HEIGHT) {
+        return;
+      }
+      togglePlayback();
+    });
     elements.video.addEventListener("loadedmetadata", handleVideoMetadata);
     elements.video.addEventListener("durationchange", handleVideoMetadata);
     elements.video.addEventListener("error", handleVideoError);

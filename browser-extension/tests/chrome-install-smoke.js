@@ -91,7 +91,7 @@ test("Chrome installs the extension and runs local video and YouTube flows", {
     enabled: extension.enabled,
   }, {
     name: "Goi Capture",
-    version: "0.2.4",
+    version: "0.2.5",
     path: fs.realpathSync(extensionDirectory),
     enabled: true,
   });
@@ -109,7 +109,7 @@ test("Chrome installs the extension and runs local video and YouTube flows", {
     heading: "Goi Capture",
     extensionID: installed.id,
     manifestName: "Goi Capture",
-    manifestVersion: "0.2.4",
+    manifestVersion: "0.2.5",
     manifestIcon: "icons/icon128.png",
     analyzeDisabled: true,
     analyzeText: "This page can’t be analyzed",
@@ -774,16 +774,14 @@ async function exercisePlayerReliability(devTools, sessionID, fixture) {
       }
       document.querySelector("#subtitle-overlay .subtitle-word--unknown").click();
       document.getElementById("word-lookup-mine").click();
-      const panel = document.getElementById("workspace-panel");
-      const result = {
+      return {
         fullscreen: document.fullscreenElement?.id,
-        miningVisible: !panel.hidden && document.fullscreenElement?.contains(panel) && panel.getBoundingClientRect().width > 0
+        panelHidden: document.getElementById("workspace-panel").hidden,
+        sending: document.getElementById("page-status").textContent.startsWith("Adding 「")
       };
-      document.getElementById("panel-close").click();
-      return result;
     })()`, awaitPromise: true, returnByValue: true,
   }, sessionID);
-  assert.deepEqual(fullscreenMining.result.value, { fullscreen: "viewer-shell", miningVisible: true });
+  assert.deepEqual(fullscreenMining.result.value, { fullscreen: "viewer-shell", panelHidden: true, sending: true });
   await clickPageElement(devTools, sessionID, "#fullscreen");
 
   await devTools.send("Runtime.evaluate", {
