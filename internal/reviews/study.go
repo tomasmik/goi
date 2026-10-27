@@ -50,6 +50,16 @@ func (s *Store) StudyCounts(ctx context.Context) (StudyCounts, error) {
 			   AND (
 			       mv.hidden_at IS NULL
 			       OR rr.created_at > mv.hidden_at
+			   )
+			   AND NOT EXISTS (
+			       SELECT 1
+			       FROM review_results later
+			       JOIN review_session_items later_item ON later_item.id = later.session_item_id
+			       WHERE later_item.vocabulary_id = rsi.vocabulary_id
+			         AND later.outcome = 'success'
+			         AND later.voided_at IS NULL
+			         AND later.id > rr.id
+			         AND later_item.session_id <> rsi.session_id
 			   )`,
 			arguments: []any{now.Add(-24 * time.Hour).Unix()},
 		},
@@ -146,6 +156,16 @@ func (s *Store) studyIDs(ctx context.Context, source string, selected []int64, l
 			  AND (
 			      mv.hidden_at IS NULL
 			      OR rr.created_at > mv.hidden_at
+			  )
+			  AND NOT EXISTS (
+			      SELECT 1
+			      FROM review_results later
+			      JOIN review_session_items later_item ON later_item.id = later.session_item_id
+			      WHERE later_item.vocabulary_id = rsi.vocabulary_id
+			        AND later.outcome = 'success'
+			        AND later.voided_at IS NULL
+			        AND later.id > rr.id
+			        AND later_item.session_id <> rsi.session_id
 			  )
 			GROUP BY rsi.vocabulary_id
 			ORDER BY MAX(rr.created_at) DESC

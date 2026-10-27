@@ -378,3 +378,53 @@ func insertNormalFailure(t *testing.T, db *sql.DB, vocabularyID, createdAt int64
 		t.Fatal(err)
 	}
 }
+
+func TestRecentMistakesClearAfterLaterSuccess(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "cleared-mistakes.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	vocabularyID := insertMistakeVocabulary(t, db, "cleared")
+	insertNormalFailure(t, db, vocabularyID, now.Add(-2*time.Minute).Unix())
+	sessionResult, err := db.Exec(`INSERT INTO review_sessions (kind, status, completed_at) VALUES ('extra', 'completed', ?)`, now.Unix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID, _ := sessionResult.LastInsertId()
+	itemResult, err := db.Exec(`
+		INSERT INTO review_session_items (session_id, vocabulary_id, position, status)
+		VALUES (?, ?, 0, 'completed')`, sessionID, vocabularyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemID, _ := itemResult.LastInsertId()
+	if _, err := db.Exec(`
+		INSERT INTO review_results (session_item_id, outcome, created_at, srs_applied)
+		VALUES (?, 'success', ?, 0)`, itemID, now.Add(-time.Minute).Unix()); err != nil {
+		t.Fatal(err)
+	}
+
+	mistakes, err := NewStore(db, time.UTC).RecentMistakes(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mistakes) != 0 {
+		t.Fatalf("mistakes after later success = %+v, want none", mistakes)
+	}
+
+	insertNormalFailure(t, db, vocabularyID, now.Unix())
+	mistakes, err = NewStore(db, time.UTC).RecentMistakes(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mistakes) != 1 || mistakes[0].ID != vocabularyID {
+		t.Fatalf("mistakes after newer failure = %+v, want vocabulary %d", mistakes, vocabularyID)
+	}
+}

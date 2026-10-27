@@ -107,6 +107,16 @@ func (s *Store) RecentMistakesLimit(ctx context.Context, now time.Time, limit in
 		      mv.hidden_at IS NULL
 		      OR rr.created_at > mv.hidden_at
 		  )
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM review_results later
+		      JOIN review_session_items later_item ON later_item.id = later.session_item_id
+		      WHERE later_item.vocabulary_id = rsi.vocabulary_id
+		        AND later.outcome = 'success'
+		        AND later.voided_at IS NULL
+		        AND later.id > rr.id
+		        AND later_item.session_id <> rsi.session_id
+		  )
 		GROUP BY v.id
 		ORDER BY MAX(rr.created_at) DESC`
 	args := []any{now.UTC().Add(-24 * time.Hour).Unix()}
@@ -156,6 +166,16 @@ func (s *Store) HideMistake(ctx context.Context, id int64) error {
 			  AND (
 			      mv.hidden_at IS NULL
 			      OR rr.created_at > mv.hidden_at
+			  )
+			  AND NOT EXISTS (
+			      SELECT 1
+			      FROM review_results later
+			      JOIN review_session_items later_item ON later_item.id = later.session_item_id
+			      WHERE later_item.vocabulary_id = rsi.vocabulary_id
+			        AND later.outcome = 'success'
+			        AND later.voided_at IS NULL
+			        AND later.id > rr.id
+			        AND later_item.session_id <> rsi.session_id
 			  )
 		  )
 		ON CONFLICT(vocabulary_id) DO UPDATE
