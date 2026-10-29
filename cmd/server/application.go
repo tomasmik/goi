@@ -263,6 +263,8 @@ func (app *application) registerRoutes(router chi.Router, cfg config.Config) {
 	)
 	router.Get("/", dashboardHandler.Dashboard)
 	router.Get("/dashboard", dashboardHandler.Dashboard)
+	router.Get("/dashboard/forecast", dashboardHandler.Forecast)
+	router.Get("/dashboard/stages", dashboardHandler.Stages)
 	router.Get("/dashboard/reviews/{date}", dashboardHandler.ReviewScheduleRedirect)
 	vocabulary.NewHandler(app.vocabulary, app.renderer, app.exampleGenerator).Routes(router)
 	examplegen.NewSettingsHandler(app.exampleGenerator, app.renderer).Routes(router)

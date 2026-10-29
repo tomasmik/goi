@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -141,6 +142,9 @@ func TestScheduleStagesAndLearningPeriods(t *testing.T) {
 	}
 	if len(summary.UpcomingReviews) != 1 || summary.UpcomingReviews[0].Label != "Tomorrow · 14:00" || summary.UpcomingReviews[0].Count != 1 {
 		t.Fatalf("upcoming reviews = %+v", summary.UpcomingReviews)
+	}
+	if summary.TomorrowReviews != 1 {
+		t.Fatalf("tomorrow reviews = %d", summary.TomorrowReviews)
 	}
 	if len(summary.StageCounts) != 5 ||
 		summary.StageCounts[0].Label != "New" || summary.StageCounts[0].Count != 2 ||
@@ -314,4 +318,34 @@ func newDashboardTestStore(db *sql.DB, location *time.Location) *Store {
 		reviews.NewStore(db),
 		statistics.NewStore(db, location),
 	)
+}
+
+func TestReviewForecastGroupsSevenLocalDays(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "forecast.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := database.Migrate(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
+	insertDashboardWord(t, db, "overdue", 1, now.Add(-48*time.Hour).Unix(), now)
+	insertDashboardWord(t, db, "tonight", 1, now.Add(13*time.Hour).Unix(), now)
+	insertDashboardWord(t, db, "midnight", 1, time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC).Unix(), now)
+	insertDashboardWord(t, db, "last", 1, time.Date(2026, 7, 30, 23, 0, 0, 0, time.UTC).Unix(), now)
+	insertDashboardWord(t, db, "later", 1, time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC).Unix(), now)
+
+	days, err := newDashboardTestStore(db, time.UTC).ReviewForecast(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := make([]int, 0, len(days))
+	for _, day := range days {
+		counts = append(counts, day.Count)
+	}
+	if fmt.Sprint(counts) != "[2 3 3 3 3 3 4]" || days[1].Label != "Tomorrow" || days[6].Label != "Thu 30" {
+		t.Fatalf("forecast = %+v", days)
+	}
 }

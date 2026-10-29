@@ -40,6 +40,7 @@ type Summary struct {
 	WeeklyTotal           int
 	MistakeItems          []MistakeItem
 	UpcomingReviews       []UpcomingReviewBatch
+	TomorrowReviews       int
 	StageCounts           []StageCount
 	BackupWarning         string
 }
@@ -56,6 +57,17 @@ type UpcomingReviewBatch struct {
 	DateTime string
 	Label    string
 	Count    int
+}
+
+type ForecastDay struct {
+	Date  string
+	Label string
+	Count int
+}
+
+type StageWords struct {
+	Label string
+	Words []MistakeItem
 }
 
 type StageCount struct {
@@ -208,6 +220,14 @@ func (s *Store) Summary(ctx context.Context, now time.Time) (Summary, error) {
 		return Summary{}, err
 	}
 	summary.UpcomingReviews = upcoming
+	if err := s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM srs_states ss
+		JOIN vocabulary v ON v.id = ss.vocabulary_id
+		WHERE v.status = 'active'
+		  AND ss.suspended_at IS NULL
+		  AND ss.due_at >= ? AND ss.due_at < ?`, dayStart.AddDate(0, 0, 1).Unix(), dayStart.AddDate(0, 0, 2).Unix()).Scan(&summary.TomorrowReviews); err != nil {
+		return Summary{}, fmt.Errorf("load tomorrow reviews: %w", err)
+	}
 	stageCounts, err := s.StageCounts(ctx)
 	if err != nil {
 		return Summary{}, err
@@ -311,6 +331,56 @@ func (s *Store) upcomingReviews(ctx context.Context, now time.Time, location *ti
 	return batches, nil
 }
 
+func (s *Store) ReviewForecast(ctx context.Context, now time.Time) ([]ForecastDay, error) {
+	location, err := s.currentLocation(ctx)
+	if err != nil {
+		return nil, err
+	}
+	today := localDayStart(now, location)
+	days := make([]ForecastDay, 7)
+	for index := range days {
+		day := today.AddDate(0, 0, index)
+		days[index].Date = day.Format("2006-01-02")
+		switch index {
+		case 0:
+			days[index].Label = "Today"
+		case 1:
+			days[index].Label = "Tomorrow"
+		default:
+			days[index].Label = day.Format("Mon 2")
+		}
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT ss.due_at FROM srs_states ss
+		JOIN vocabulary v ON v.id = ss.vocabulary_id
+		WHERE v.status = 'active'
+		  AND ss.suspended_at IS NULL
+		  AND ss.due_at IS NOT NULL
+		  AND ss.due_at < ?`, today.AddDate(0, 0, len(days)).Unix())
+	if err != nil {
+		return nil, fmt.Errorf("load review forecast: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var dueAt int64
+		if err := rows.Scan(&dueAt); err != nil {
+			return nil, fmt.Errorf("scan review forecast: %w", err)
+		}
+		index := 0
+		for index < len(days)-1 && dueAt >= today.AddDate(0, 0, index+1).Unix() {
+			index++
+		}
+		days[index].Count++
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate review forecast: %w", err)
+	}
+	for index := 1; index < len(days); index++ {
+		days[index].Count += days[index-1].Count
+	}
+	return days, nil
+}
+
 func (s *Store) currentLocation(ctx context.Context) (*time.Location, error) {
 	var timeZone string
 	err := s.db.QueryRowContext(ctx, "SELECT time_zone FROM user_settings WHERE id = 1").Scan(&timeZone)
@@ -325,6 +395,38 @@ func (s *Store) currentLocation(ctx context.Context) (*time.Location, error) {
 		return nil, fmt.Errorf("load configured time zone %q: %w", timeZone, err)
 	}
 	return location, nil
+}
+
+func (s *Store) StageWords(ctx context.Context) ([]StageWords, error) {
+	groups := make([]StageWords, len(stageGroups))
+	for index, group := range stageGroups {
+		groups[index].Label = group.label
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT v.id, v.expression, ss.stage FROM srs_states ss
+		JOIN vocabulary v ON v.id = ss.vocabulary_id
+		WHERE v.status = 'active' ORDER BY ss.stage, v.expression`)
+	if err != nil {
+		return nil, fmt.Errorf("load stage words: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var word MistakeItem
+		var stage int
+		if err := rows.Scan(&word.ID, &word.Expression, &stage); err != nil {
+			return nil, fmt.Errorf("scan stage word: %w", err)
+		}
+		for index, group := range stageGroups {
+			if srs.Stage(stage) >= group.first && srs.Stage(stage) <= group.last {
+				groups[index].Words = append(groups[index].Words, word)
+				break
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate stage words: %w", err)
+	}
+	return groups, nil
 }
 
 func (s *Store) StageCounts(ctx context.Context) ([]StageCount, error) {

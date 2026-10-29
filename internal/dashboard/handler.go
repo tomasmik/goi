@@ -46,6 +46,38 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	h.renderer.Render(w, "dashboard.html", page)
 }
 
+type ForecastPage struct {
+	Title     string
+	CSRFToken string
+	Days      []ForecastDay
+	Total     int
+}
+
+func (h *Handler) Forecast(w http.ResponseWriter, r *http.Request) {
+	days, err := h.store.ReviewForecast(r.Context(), time.Now().UTC())
+	if err != nil {
+		internalweb.InternalError(w, r, "could not load review forecast", err)
+		return
+	}
+	page := ForecastPage{Title: "Review forecast", CSRFToken: internalweb.CSRFToken(r), Days: days, Total: days[len(days)-1].Count}
+	h.renderer.Render(w, "review-forecast.html", page)
+}
+
+type StagesPage struct {
+	Title     string
+	CSRFToken string
+	Groups    []StageWords
+}
+
+func (h *Handler) Stages(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.store.StageWords(r.Context())
+	if err != nil {
+		internalweb.InternalError(w, r, "could not load memory stages", err)
+		return
+	}
+	h.renderer.Render(w, "memory-stages.html", StagesPage{Title: "Memory stages", CSRFToken: internalweb.CSRFToken(r), Groups: groups})
+}
+
 func (h *Handler) ReviewScheduleRedirect(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 	_, err := time.Parse("2006-01-02", date)

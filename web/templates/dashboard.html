@@ -41,7 +41,7 @@
   <article class="action-card action-card-review">
     <div class="action-card-copy">
       <span class="ui-icon icon-calendar action-card-icon" aria-hidden="true"></span>
-      {{if .Summary.ActiveReviewSessionID}}<h2>Reviews in progress</h2><strong class="action-count">{{.Summary.ActiveReviewCompleted}} / {{.Summary.ActiveReviewTotal}}</strong>{{else}}<h2>Reviews due</h2><strong class="action-count">{{.Summary.DueReviews}}</strong>{{end}}
+      {{if .Summary.ActiveReviewSessionID}}<h2>Reviews in progress</h2><strong class="action-count">{{.Summary.ActiveReviewCompleted}} / {{.Summary.ActiveReviewTotal}}</strong>{{else}}<h2>Reviews due</h2><strong class="action-count">{{.Summary.DueReviews}}</strong>{{if and (not .Summary.DueReviews) .Summary.UpcomingReviews}}<span class="action-card-state">next: {{(index .Summary.UpcomingReviews 0).Label}}</span>{{end}}{{end}}
     </div>
     {{if .Summary.ActiveReviewSessionID}}
     <div class="action-card-actions">
@@ -108,7 +108,8 @@
 {{if .Summary.UpcomingReviews}}
 <section id="upcoming-reviews" class="dashboard-section review-forecast" aria-labelledby="review-forecast-title">
   <div class="section-heading">
-    <h2 id="review-forecast-title">Next reviews</h2>
+    <h2 id="review-forecast-title"><a href="/dashboard/forecast">Next reviews <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a></h2>
+    <span class="section-note">{{.Summary.TomorrowReviews}} review{{if ne .Summary.TomorrowReviews 1}}s{{end}} tomorrow</span>
   </div>
   <ol class="review-forecast-list" role="list">
     {{range .Summary.UpcomingReviews}}
@@ -153,14 +154,14 @@
   <section class="dashboard-section dashboard-memory-stages">
     <div class="section-heading">
       <div>
-        <h2>Memory stages</h2>
+        <h2><a href="/dashboard/stages">Memory stages <span class="ui-icon icon-arrow-right" aria-hidden="true"></span></a></h2>
       </div>
       <span class="section-note">{{.Summary.ActiveWords}} active</span>
     </div>
     <div class="stage-list">
       {{range .Summary.StageCounts}}
       <div class="stage-row">
-        <span>{{.Label}}</span>
+        <a href="/dashboard/stages#stage-{{.Label}}">{{.Label}}</a>
         <span class="stage-bar">
           <span style="width: {{if $.Summary.ActiveWords}}{{percent .Count $.Summary.ActiveWords}}{{else}}0{{end}}%"></span>
         </span>

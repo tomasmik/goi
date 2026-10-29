@@ -1,0 +1,23 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>Review forecast</h1>
+    <p class="lede">{{.Total}} review{{if ne .Total 1}}s{{end}} over the next 7 days. Today includes reviews already due.</p>
+  </div>
+  <div class="page-heading-actions">
+    <a class="text-action" href="/dashboard">Back to dashboard</a>
+  </div>
+</section>
+
+<section class="dashboard-section">
+  <ol class="forecast-chart" role="list">
+    {{range .Days}}
+    <li class="forecast-day" title="{{.Label}}: {{.Count}} review{{if ne .Count 1}}s{{end}}">
+      <strong>{{.Count}}</strong>
+      <span class="forecast-bar"><span style="height: {{if $.Total}}{{percent .Count $.Total}}{{else}}0{{end}}%"></span></span>
+      <time datetime="{{.Date}}">{{.Label}}</time>
+    </li>
+    {{end}}
+  </ol>
+</section>
+{{template "footer" .}}

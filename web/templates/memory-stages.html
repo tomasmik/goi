@@ -1,0 +1,31 @@
+{{template "header" .}}
+<section class="page-heading">
+  <div>
+    <h1>Memory stages</h1>
+    <p class="lede">Active words grouped by how well you know them.</p>
+  </div>
+  <div class="page-heading-actions">
+    <a class="text-action" href="/dashboard">Back to dashboard</a>
+  </div>
+</section>
+
+{{range .Groups}}
+<section id="stage-{{.Label}}" class="dashboard-section">
+  <div class="section-heading">
+    <h2>{{.Label}}</h2>
+    <span class="section-note">{{len .Words}} word{{if ne (len .Words) 1}}s{{end}}</span>
+  </div>
+  {{if .Words}}
+  <div class="dashboard-mistake-list">
+    {{range .Words}}
+    <a class="dashboard-mistake-link" href="/vocabulary/{{.ID}}">
+      <strong class="jp-word" lang="ja">{{.Expression}}</strong>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="dashboard-empty-note">No words in this stage.</p>
+  {{end}}
+</section>
+{{end}}
+{{template "footer" .}}
