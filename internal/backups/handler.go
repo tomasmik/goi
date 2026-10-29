@@ -43,6 +43,7 @@ type Page struct {
 	DriveFiles              []FilePage
 	DriveConfigured         bool
 	DriveConnected          bool
+	DriveAuthExpired        bool
 	DriveCallbackURL        string
 	DriveEnvironmentManaged bool
 	BackupBusy              bool
@@ -440,7 +441,9 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, status int, mes
 		listContext, cancel := context.WithTimeout(r.Context(), h.driveListTimeout)
 		remoteFiles, listErr := h.drive.List(listContext)
 		cancel()
-		if listErr != nil {
+		if errors.Is(listErr, ErrDriveAuthorization) {
+			page.DriveAuthExpired = true
+		} else if listErr != nil {
 			if page.Error == "" {
 				page.Error = "Could not list Google Drive backups: " + listErr.Error()
 			}

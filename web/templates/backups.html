@@ -10,6 +10,11 @@
 {{if .Error}}
 <div class="alert alert-error" role="alert">{{.Error}}</div>
 {{end}}
+{{if .DriveAuthExpired}}
+<div class="alert alert-error" role="alert">
+  <strong>Google Drive is no longer authorized.</strong> Backups cannot reach Drive until you <a href="/settings/backups/google/connect">reconnect Google Drive</a>.
+</div>
+{{end}}
 {{if .Notice}}
 <div class="alert alert-success" role="status">{{.Notice}}</div>
 {{end}}
@@ -90,7 +95,7 @@
 </form>
 
 <details class="form-card form-details backup-google-setup" {{if or .DriveConnected .DriveConfigured}}open{{end}}>
-  <summary id="google-drive-title">Google Drive {{if .DriveConnected}}connected{{else}}setup{{end}}</summary>
+  <summary id="google-drive-title">Google Drive {{if .DriveAuthExpired}}needs reconnecting{{else if .DriveConnected}}connected{{else}}setup{{end}}</summary>
   <div class="details-body dictionary-settings">
   <div>
     <h2>Google Drive</h2>

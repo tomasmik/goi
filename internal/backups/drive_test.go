@@ -535,3 +535,28 @@ func TestGoogleDriveRefreshCannotReconnectAfterDisconnect(t *testing.T) {
 func serverURL(r *http.Request) string {
 	return "http://" + r.Host
 }
+
+func TestGoogleDriveRevokedRefreshTokenReportsAuthorizationError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":"invalid_grant","error_description":"Token has been expired or revoked."}`)
+	}))
+	defer server.Close()
+
+	credentialPath := filepath.Join(t.TempDir(), "google-drive.json")
+	if err := writeGoogleCredentials(credentialPath, storedGoogleCredentials{RefreshToken: "refresh"}); err != nil {
+		t.Fatal(err)
+	}
+	drive, err := NewGoogleDrive(GoogleDriveConfig{
+		ClientID: "client", ClientSecret: "secret", RedirectURL: "https://goi.example/callback",
+		CredentialPath: credentialPath, InstallationID: testInstallationID,
+		HTTPClient: server.Client(), TokenURL: server.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := drive.List(t.Context()); !errors.Is(err, ErrDriveAuthorization) {
+		t.Fatalf("list error = %v", err)
+	}
+}

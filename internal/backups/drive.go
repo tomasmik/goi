@@ -127,6 +127,8 @@ func NewGoogleDrive(config GoogleDriveConfig) (*GoogleDrive, error) {
 	return drive, nil
 }
 
+var ErrDriveAuthorization = errors.New("Google Drive access expired or was revoked; reconnect Google Drive in backup settings")
+
 func (g *GoogleDrive) Configured() bool {
 	return g.config.ClientID != "" && g.config.ClientSecret != "" && g.config.RedirectURL != "" &&
 		g.config.CredentialPath != "" && validInstallationID(g.config.InstallationID)
@@ -714,6 +716,9 @@ func (g *GoogleDrive) exchangeToken(ctx context.Context, values url.Values) (goo
 	var token googleTokenResponse
 	if err := decodeGoogleJSON(response, &token); err != nil {
 		return googleTokenResponse{}, err
+	}
+	if token.Error == "invalid_grant" && values.Get("grant_type") == "refresh_token" {
+		return googleTokenResponse{}, ErrDriveAuthorization
 	}
 	if response.StatusCode != http.StatusOK || token.AccessToken == "" || token.ExpiresIn < 1 {
 		message := token.Description
