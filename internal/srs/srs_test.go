@@ -12,6 +12,7 @@ func TestNextReview(t *testing.T) {
 		stage     Stage
 		success   bool
 		sixMonth  bool
+		due       time.Time
 		wantStage Stage
 		wantDue   time.Time
 	}{
@@ -28,10 +29,14 @@ func TestNextReview(t *testing.T) {
 		{name: "evergreen stays evergreen", stage: StageEvergreen, success: true, wantStage: StageEvergreen},
 		{name: "evergreen failure stays evergreen", stage: StageEvergreen, success: false, wantStage: StageEvergreen},
 		{name: "new failure stays new", stage: StageNew, success: false, wantStage: StageNew, wantDue: base.Add(4 * time.Hour)},
+		{name: "on time success advances one stage", stage: StageNew, success: true, due: base, wantStage: StageOne, wantDue: base.Add(8 * time.Hour)},
+		{name: "late success skips to stage covered by elapsed time", stage: StageNew, success: true, due: base.Add(-2 * 24 * time.Hour), wantStage: StageThree, wantDue: base.AddDate(0, 0, 2)},
+		{name: "late success never skips past one month", stage: StageTwo, success: true, due: base.AddDate(-1, 0, 0), wantStage: StageSix, wantDue: base.AddDate(0, 1, 0)},
+		{name: "late failure does not skip", stage: StageNew, success: false, due: base.Add(-2 * 24 * time.Hour), wantStage: StageNew, wantDue: base.Add(4 * time.Hour)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			stage, due := NextReview(tt.stage, tt.success, tt.sixMonth, base)
+			stage, due := NextReview(tt.stage, tt.success, tt.sixMonth, tt.due, base)
 			if stage != tt.wantStage {
 				t.Fatalf("stage = %d, want %d", stage, tt.wantStage)
 			}

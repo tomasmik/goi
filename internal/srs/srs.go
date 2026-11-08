@@ -68,7 +68,13 @@ func DueAt(stage Stage, from time.Time) time.Time {
 	}
 }
 
-func NextReview(stage Stage, success, sixMonthReviewEnabled bool, from time.Time) (Stage, time.Time) {
+func NextReview(stage Stage, success, sixMonthReviewEnabled bool, due, from time.Time) (Stage, time.Time) {
 	next := Advance(stage, success, sixMonthReviewEnabled)
+	if success && !due.IsZero() && next < StageSix {
+		start := due.Add(due.Sub(DueAt(stage, due)))
+		for next < StageSix && !DueAt(next+1, start).After(from) {
+			next++
+		}
+	}
 	return next, DueAt(next, from)
 }

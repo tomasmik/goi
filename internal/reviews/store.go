@@ -782,7 +782,11 @@ func (s *Store) finishItemTx(ctx context.Context, tx *sql.Tx, sessionID, itemID,
 		stageBefore = stage
 		dueBefore = nullableInt64(due)
 		lastReviewedBefore = nullableInt64(lastReviewed)
-		nextStage, nextDue := srs.NextReview(srs.Stage(stage), success, sixMonthReviewEnabled == 1, now)
+		var dueTime time.Time
+		if due.Valid {
+			dueTime = time.Unix(due.Int64, 0)
+		}
+		nextStage, nextDue := srs.NextReview(srs.Stage(stage), success, sixMonthReviewEnabled == 1, dueTime, now)
 		stageAfter = nextStage
 		if !nextDue.IsZero() {
 			dueAfter = nextDue.Unix()
