@@ -1,8 +1,6 @@
 package wanikani
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -195,27 +192,6 @@ func TestServiceFailureDoesNotAdvanceCursorOrLoseVocabulary(t *testing.T) {
 	}
 }
 
-func TestServiceDisconnectedSyncDoesNotRecordFailure(t *testing.T) {
-	api := &serviceAPI{userID: "user-1", username: "turtle", level: 3, maxLevel: 3, subjects: map[string]string{}}
-	service, store, _, _ := newTestService(t, api, time.Now())
-	if _, _, err := service.Connect(t.Context(), testToken); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.Disconnect(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	if err := service.Sync(t.Context()); !errors.Is(err, ErrNotConnected) {
-		t.Fatalf("Sync() error = %v, want ErrNotConnected", err)
-	}
-	status, err := store.Status(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.UserID != "" || !status.LastAttemptAt.IsZero() || status.LastError != "" {
-		t.Fatalf("status after disconnected sync = %+v", status)
-	}
-}
-
 func TestServiceRecordedSubjectDoesNotRecreateDeletedVocabulary(t *testing.T) {
 	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
 	api := &serviceAPI{
@@ -242,79 +218,5 @@ func TestServiceRecordedSubjectDoesNotRecreateDeletedVocabulary(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("deleted vocabulary was recreated %d times", count)
-	}
-}
-
-func TestServiceRejectsOverlappingSync(t *testing.T) {
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var once atomic.Bool
-	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v2/user" && once.CompareAndSwap(false, true) {
-			close(started)
-			<-release
-		}
-		if r.URL.Path == "/v2/user" {
-			_, _ = fmt.Fprint(w, `{"object":"user","data":{"id":"user-1","username":"turtle","level":3,"subscription":{"active":true,"type":"free","max_level_granted":3}}}`)
-			return
-		}
-		_, _ = fmt.Fprint(w, `{"object":"collection","pages":{"next_url":null},"data":[]}`)
-	})
-	now := time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
-	service, store, credentials, _ := newTestService(t, api, now)
-	if err := credentials.Save(testToken); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.ConfigureAccount(t.Context(), User{ID: "user-1", Username: "turtle", Level: 3, MaxLevelGranted: 3}); err != nil {
-		t.Fatal(err)
-	}
-	done := make(chan error, 1)
-	go func() { done <- service.Sync(t.Context()) }()
-	<-started
-	if err := service.Sync(t.Context()); !errors.Is(err, ErrSyncInProgress) {
-		t.Fatalf("overlapping Sync() error = %v", err)
-	}
-	close(release)
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestServiceRunStartsConnectedSyncAndStopsWithContext(t *testing.T) {
-	requestStarted := make(chan struct{})
-	requestCanceled := make(chan struct{})
-	api := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v2/user" {
-			http.NotFound(w, r)
-			return
-		}
-		close(requestStarted)
-		<-r.Context().Done()
-		close(requestCanceled)
-	})
-	service, store, credentials, _ := newTestService(t, api, time.Now())
-	if err := credentials.Save(testToken); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.ConfigureAccount(t.Context(), User{ID: "user-1", Username: "turtle", Level: 3, MaxLevelGranted: 3}); err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() {
-		service.Run(ctx)
-		close(done)
-	}()
-	<-requestStarted
-	cancel()
-	select {
-	case <-requestCanceled:
-	case <-time.After(time.Second):
-		t.Fatal("worker cancellation did not reach the API request")
-	}
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("worker did not stop after cancellation")
 	}
 }

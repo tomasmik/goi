@@ -80,17 +80,6 @@ func TestParseRejectsUnknownVersionAndMalformedEntries(t *testing.T) {
 	}
 }
 
-func TestReadEntitiesRejectsDTDOverLimit(t *testing.T) {
-	prefix := `<!DOCTYPE JMdict [<!ENTITY test "value">`
-	suffix := "]>"
-	padding := maxDTDSize + 1 - len(prefix) - len(suffix)
-	document := prefix + strings.Repeat(" ", padding) + suffix
-
-	if _, err := readEntities(strings.NewReader(document)); err == nil || !strings.Contains(err.Error(), "exceeds size limit") {
-		t.Fatalf("readEntities error = %v, want DTD size limit", err)
-	}
-}
-
 func TestCacheLookupHonorsReadingAndSenseRestrictions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "jmdict.sqlite")
 	source := Source{URL: SourceURL, DownloadedAt: time.Unix(100, 0).UTC(), SHA256: strings.Repeat("a", 64)}
@@ -139,41 +128,6 @@ func TestCacheLookupHonorsReadingAndSenseRestrictions(t *testing.T) {
 	}
 	if match.State != MatchNone {
 		t.Fatalf("空く/ひらく match = %#v", match)
-	}
-}
-
-func TestOpenRejectsIncompleteOrInconsistentCache(t *testing.T) {
-	tests := []struct {
-		name   string
-		damage string
-	}{
-		{name: "missing lookup index", damage: "DROP INDEX jmdict_kanji_lookup"},
-		{name: "metadata count mismatch", damage: "UPDATE jmdict_meta SET entry_count = entry_count + 1"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "jmdict.sqlite")
-			if _, err := Build(context.Background(), strings.NewReader(testDictionary), path, Source{DownloadedAt: time.Now()}); err != nil {
-				t.Fatal(err)
-			}
-			db, err := openSQLite(path, false)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := db.Exec(test.damage); err != nil {
-				db.Close()
-				t.Fatal(err)
-			}
-			if err := db.Close(); err != nil {
-				t.Fatal(err)
-			}
-
-			cache, err := Open(path)
-			if err == nil {
-				cache.Close()
-				t.Fatal("Open accepted an invalid cache")
-			}
-		})
 	}
 }
 

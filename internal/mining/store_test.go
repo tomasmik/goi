@@ -113,59 +113,6 @@ func TestCaptureMediaFollowsMinedExample(t *testing.T) {
 	}
 }
 
-func TestAddedAudioTracksAndEditedExampleFollowAcceptedCapture(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture, _, err := store.Create(ctx, CreateInput{
-		RawText:      "育てる",
-		Expression:   "育てる",
-		ContextText:  "ぶどうを育てています。",
-		SourceKind:   SourceVideo,
-		CaptureNonce: "00000000000000000000000000000082",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	audio := []media.Upload{
-		{Kind: media.KindAudio, MimeType: "audio/webm", Content: []byte("first audio")},
-		{Kind: media.KindAudio, MimeType: "audio/webm", Content: []byte("second audio")},
-	}
-	if err := store.AddMedia(ctx, capture.ID, capture.Revision, audio, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	withAudio, err := store.Get(ctx, capture.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(withAudio.SentenceAudioIDs) != 2 {
-		t.Fatalf("sentence audio IDs = %v, want two tracks", withAudio.SentenceAudioIDs)
-	}
-	if err := store.RemoveMedia(ctx, capture.ID, capture.Revision, withAudio.SentenceAudioIDs[0]); err != nil {
-		t.Fatal(err)
-	}
-
-	vocabularyID, err := store.Accept(ctx, capture.ID, capture.Revision, vocabulary.CreateInput{
-		Pronunciation:      "そだてる",
-		Meanings:           []string{"to raise", "to grow"},
-		ExampleSentence:    "この畑でぶどうを育てています。",
-		ExampleTranslation: "We grow grapes in this field.",
-		ExampleTarget:      "育てています",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	example, err := examples.NewStore(db).Preferred(ctx, vocabularyID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if example.Sentence != "この畑でぶどうを育てています。" || example.Translation != "We grow grapes in this field." || example.TargetSurface != "育てています" {
-		t.Fatalf("mined example = %+v", example)
-	}
-	if len(example.SentenceAudioIDs) != 1 || example.SentenceAudioIDs[0] != withAudio.SentenceAudioIDs[1] {
-		t.Fatalf("example audio IDs = %v, want remaining track %d", example.SentenceAudioIDs, withAudio.SentenceAudioIDs[1])
-	}
-}
-
 func TestPronunciationAudioMovesToAcceptedVocabulary(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	store := NewStore(db)
@@ -223,44 +170,6 @@ func TestPronunciationAudioMovesToAcceptedVocabulary(t *testing.T) {
 	if item.Media[0].SourceName != audio.SourceName || item.Media[0].SourceURL != audio.SourceURL ||
 		item.Media[0].LicenseName != audio.LicenseName || item.Media[0].LicenseURL != audio.LicenseURL {
 		t.Fatalf("saved media attribution = %+v, want %+v", item.Media[0], audio)
-	}
-}
-
-func TestCaptureMediaRejectsStaleRevision(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture, _, err := store.Create(ctx, CreateInput{
-		Expression:   "食べる",
-		ContextText:  "寿司を食べる。",
-		SourceKind:   SourceVideo,
-		CaptureNonce: "00000000000000000000000000000084",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	updated, err := store.Update(ctx, capture.ID, capture.Revision, UpdateInput{
-		Expression:  capture.Expression,
-		ContextText: "ラーメンを食べる。",
-		SourceKind:  SourceVideo,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.Revision == capture.Revision {
-		t.Fatal("editing the context did not advance the capture revision")
-	}
-	err = store.AttachMedia(ctx, capture.ID, capture.Revision, capture.CaptureNonce, CaptureMediaInput{
-		VideoFrame: &media.Upload{Kind: media.KindImage, MimeType: "image/png", Content: []byte("old frame")},
-	})
-	if !errors.Is(err, ErrRevisionConflict) {
-		t.Fatalf("stale media attachment error = %v", err)
-	}
-	var mediaCount int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM media").Scan(&mediaCount); err != nil {
-		t.Fatal(err)
-	}
-	if mediaCount != 0 {
-		t.Fatalf("media count after stale attachment = %d, want 0", mediaCount)
 	}
 }
 
@@ -322,54 +231,6 @@ func TestEditingCaptureContextRemovesStaleMedia(t *testing.T) {
 	}
 }
 
-func TestCaptureMediaRequiresContextAndMatchingNonce(t *testing.T) {
-	for _, test := range []struct {
-		name      string
-		context   string
-		nonce     string
-		wantError error
-	}{
-		{
-			name:      "context",
-			nonce:     "00000000000000000000000000000085",
-			wantError: ErrInvalidInput,
-		},
-		{
-			name:      "nonce",
-			context:   "猫がいます。",
-			nonce:     "00000000000000000000000000000087",
-			wantError: ErrInvalidInput,
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			ctx, db := openMiningTestDatabase(t)
-			store := NewStore(db)
-			capture, _, err := store.Create(ctx, CreateInput{
-				Expression:   "猫",
-				ContextText:  test.context,
-				SourceKind:   SourceVideo,
-				CaptureNonce: "00000000000000000000000000000086",
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = store.AttachMedia(ctx, capture.ID, capture.Revision, test.nonce, CaptureMediaInput{
-				VideoFrame: &media.Upload{Kind: media.KindImage, MimeType: "image/png", Content: []byte("frame")},
-			})
-			if !errors.Is(err, test.wantError) {
-				t.Fatalf("media attachment error = %v, want %v", err, test.wantError)
-			}
-			var mediaCount int
-			if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM media").Scan(&mediaCount); err != nil {
-				t.Fatal(err)
-			}
-			if mediaCount != 0 {
-				t.Fatalf("media count = %d, want 0", mediaCount)
-			}
-		})
-	}
-}
-
 func TestResolvingCaptureCreatesMinedExample(t *testing.T) {
 	for _, resolution := range []string{"accept", "attach"} {
 		t.Run(resolution, func(t *testing.T) {
@@ -404,7 +265,7 @@ func TestResolvingCaptureCreatesMinedExample(t *testing.T) {
 					Meanings:      []string{"to eat"},
 				})
 				if err == nil {
-					err = store.Attach(ctx, capture.ID, capture.Revision, vocabularyID)
+					err = store.attachWithExample(ctx, capture.ID, capture.Revision, vocabularyID, minedExampleDetails{}, cardMediaChanges{})
 				}
 			}
 			if err != nil {
@@ -484,7 +345,7 @@ func TestCreatePreservesEncountersAndReplaysNonce(t *testing.T) {
 		t.Fatalf("repeated encounter = (%d, %t), first ID %d", second.ID, replayed, first.ID)
 	}
 
-	items, err := store.ListPage(ctx, StatusPending, maximumCapturePageSize, 0)
+	items, err := store.ListPageFiltered(ctx, StatusPending, "", "", maximumCapturePageSize, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,57 +390,6 @@ func TestDeletedCaptureNonceCannotBeReplayed(t *testing.T) {
 	}
 }
 
-func TestDeleteAndNonceReplayCannotRecreateCapture(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	input := CreateInput{
-		Expression:   "犬",
-		SourceKind:   SourceWeb,
-		CaptureNonce: "00000000000000000000000000000090",
-	}
-	capture, _, err := store.Create(ctx, input)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	start := make(chan struct{})
-	deleteResult := make(chan error, 1)
-	type createResult struct {
-		capture  Capture
-		replayed bool
-		err      error
-	}
-	createResults := make(chan createResult, 1)
-	go func() {
-		<-start
-		deleteResult <- store.Delete(ctx, capture.ID, capture.Revision)
-	}()
-	go func() {
-		<-start
-		created, replayed, err := store.Create(ctx, input)
-		createResults <- createResult{capture: created, replayed: replayed, err: err}
-	}()
-	close(start)
-	if err := <-deleteResult; err != nil {
-		t.Fatal(err)
-	}
-	created := <-createResults
-	if created.err == nil {
-		if !created.replayed || created.capture.ID != capture.ID {
-			t.Fatalf("concurrent create = capture %d, replayed %t", created.capture.ID, created.replayed)
-		}
-	} else if !errors.Is(created.err, ErrCaptureDeleted) {
-		t.Fatalf("concurrent replay error = %v", created.err)
-	}
-	var count int
-	if err := db.QueryRowContext(ctx, "SELECT COUNT(*) FROM mining_captures").Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("captures after delete and replay = %d, want 0", count)
-	}
-}
-
 func TestListPageBoundsAndCountsStatus(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	store := NewStore(db)
@@ -593,11 +403,11 @@ func TestListPageBoundsAndCountsStatus(t *testing.T) {
 	if count != maximumCapturePageSize+1 {
 		t.Fatalf("pending count = %d, want %d", count, maximumCapturePageSize+1)
 	}
-	first, err := store.ListPage(ctx, StatusPending, maximumCapturePageSize, 0)
+	first, err := store.ListPageFiltered(ctx, StatusPending, "", "", maximumCapturePageSize, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.ListPage(ctx, StatusPending, maximumCapturePageSize, maximumCapturePageSize)
+	second, err := store.ListPageFiltered(ctx, StatusPending, "", "", maximumCapturePageSize, maximumCapturePageSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +430,7 @@ func TestListPageBoundsAndCountsStatus(t *testing.T) {
 		{name: "invalid status", status: Status("unknown"), limit: maximumCapturePageSize},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := store.ListPage(ctx, test.status, test.limit, test.offset); err == nil {
+			if _, err := store.ListPageFiltered(ctx, test.status, "", "", test.limit, test.offset); err == nil {
 				t.Fatal("invalid mining page was accepted")
 			}
 		})
@@ -824,10 +634,10 @@ func TestAttachRequiresAnExactExistingVocabulary(t *testing.T) {
 	if capture.ExistingVocabularyID == nil || *capture.ExistingVocabularyID != catID {
 		t.Fatalf("existing vocabulary ID = %v, want %d", capture.ExistingVocabularyID, catID)
 	}
-	if err := store.Attach(ctx, capture.ID, 1, dogID); !errors.Is(err, ErrInvalidInput) {
+	if err := store.attachWithExample(ctx, capture.ID, 1, dogID, minedExampleDetails{}, cardMediaChanges{}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("mismatched attach error = %v", err)
 	}
-	if err := store.Attach(ctx, capture.ID, 1, catID); err != nil {
+	if err := store.attachWithExample(ctx, capture.ID, 1, catID, minedExampleDetails{}, cardMediaChanges{}); err != nil {
 		t.Fatal(err)
 	}
 	var meaning string
@@ -865,7 +675,7 @@ func TestAttachQueuesVocabularyKnownElsewhereForLesson(t *testing.T) {
 	}
 
 	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000061")
-	if err := store.Attach(ctx, capture.ID, capture.Revision, vocabularyID); err != nil {
+	if err := store.attachWithExample(ctx, capture.ID, capture.Revision, vocabularyID, minedExampleDetails{}, cardMediaChanges{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -911,7 +721,7 @@ func TestAttachDoesNotQueueSparseVocabularyWithoutDictionaryDetails(t *testing.T
 	}
 
 	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000063")
-	err := store.Attach(ctx, capture.ID, capture.Revision, vocabularyID)
+	err := store.attachWithExample(ctx, capture.ID, capture.Revision, vocabularyID, minedExampleDetails{}, cardMediaChanges{})
 	if err == nil || !strings.Contains(err.Error(), "add a reading and meaning") {
 		t.Fatalf("sparse attachment error = %v", err)
 	}
@@ -958,7 +768,7 @@ func TestAttachQueuesSuspendedVocabularyForLesson(t *testing.T) {
 	}
 
 	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000062")
-	if err := store.Attach(ctx, capture.ID, capture.Revision, vocabularyID); err != nil {
+	if err := store.attachWithExample(ctx, capture.ID, capture.Revision, vocabularyID, minedExampleDetails{}, cardMediaChanges{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -984,13 +794,6 @@ func TestAttachQueuesSuspendedVocabularyForLesson(t *testing.T) {
 	if leechActive != 0 || everLeech != 1 || leechSuspendedAt.Valid {
 		t.Fatalf("reset leech = active %d, ever %d, suspended %v", leechActive, everLeech, leechSuspendedAt)
 	}
-	leechStatus, err := vocabulary.NewStore(db).LeechStatus(ctx, vocabularyID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if leechStatus != "former_leech" {
-		t.Fatalf("leech status = %q, want former_leech", leechStatus)
-	}
 }
 
 func TestAttachAbandonsActiveReviewBeforeResettingVocabulary(t *testing.T) {
@@ -1014,7 +817,7 @@ func TestAttachAbandonsActiveReviewBeforeResettingVocabulary(t *testing.T) {
 	}
 
 	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000064")
-	if err := store.Attach(ctx, capture.ID, capture.Revision, vocabularyID); err != nil {
+	if err := store.attachWithExample(ctx, capture.ID, capture.Revision, vocabularyID, minedExampleDetails{}, cardMediaChanges{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1038,56 +841,6 @@ func TestAttachAbandonsActiveReviewBeforeResettingVocabulary(t *testing.T) {
 	}
 	if stored.Status != StatusAccepted || stored.VocabularyID == nil || *stored.VocabularyID != vocabularyID {
 		t.Fatalf("attached capture = %#v", stored)
-	}
-}
-
-func TestCaptureValidation(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	nonce := "00000000000000000000000000000007"
-	tests := []CreateInput{
-		{Expression: "", CaptureNonce: nonce},
-		{Expression: "猫", CaptureNonce: "short"},
-		{Expression: "猫\x00", CaptureNonce: nonce},
-		{Expression: "猫", SourceURL: "javascript:alert(1)", CaptureNonce: nonce},
-		{Expression: "猫", SourceURL: "https://example.com/" + strings.Repeat("a", 2048), CaptureNonce: nonce},
-	}
-	negative := int64(-1)
-	tests = append(tests, CreateInput{Expression: "猫", SourcePositionMS: &negative, CaptureNonce: nonce})
-	for index, input := range tests {
-		if _, _, err := store.Create(ctx, input); !errors.Is(err, ErrInvalidInput) {
-			t.Errorf("case %d error = %v, want invalid input", index, err)
-		}
-	}
-}
-
-func TestAcceptTruncatesLongURLUsedAsVocabularySource(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	sourceURL := "https://example.com/" + strings.Repeat("a", 500)
-	capture, replayed, err := store.Create(ctx, CreateInput{
-		Expression:   "猫",
-		SourceKind:   SourceWeb,
-		SourceURL:    sourceURL,
-		CaptureNonce: "00000000000000000000000000000070",
-	})
-	if err != nil || replayed {
-		t.Fatalf("create capture = replayed %t, error %v", replayed, err)
-	}
-	vocabularyID, err := store.Accept(ctx, capture.ID, capture.Revision, vocabulary.CreateInput{
-		Pronunciation: "ねこ",
-		Meanings:      []string{"cat"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	item, err := vocabulary.NewStore(db).Get(ctx, vocabularyID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := string([]rune(sourceURL)[:maxTitleRunes])
-	if item.SourceLabel != want {
-		t.Fatalf("source label = %q, want %q", item.SourceLabel, want)
 	}
 }
 

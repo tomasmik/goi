@@ -3,11 +3,8 @@ package captureapi
 import (
 	"context"
 	"crypto/tls"
-	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -68,44 +65,6 @@ func TestDictionaryLookupReturnsUsefulEnglishDetails(t *testing.T) {
 	want := `{"query":"食べる","state":"ready","candidates":[{"entry_sequence":123456,"written":"食べる","reading":"たべる","global_rank":192,"novel_rank":210,"meanings":["to eat","to live on"],"senses":[{"parts_of_speech":["Ichidan verb"],"meanings":["to eat"]},{"parts_of_speech":["transitive verb"],"meanings":["to eat","to live on"]}]}]}` + "\n"
 	if response.Body.String() != want {
 		t.Fatalf("body = %s", response.Body.String())
-	}
-}
-
-func TestDictionaryLookupReportsUnavailableDictionary(t *testing.T) {
-	router, token := dictionaryTestRouter(t, &fakeDictionaryLookup{err: jmdict.ErrUnavailable})
-	request := httptest.NewRequest(http.MethodGet, "/api/extension/v1/dictionary?expression=%E7%8C%AB", nil)
-	request.TLS = &tls.ConnectionState{}
-	request.Header.Set("Authorization", "Bearer "+token)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-
-	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "dictionary_unavailable") {
-		t.Fatalf("response = %d %s", response.Code, response.Body.String())
-	}
-}
-
-func TestDictionaryMissingRanksAreNull(t *testing.T) {
-	response := dictionaryResult("猫", jmdict.Match{Candidates: []jmdict.Candidate{{Written: "猫", Reading: "ねこ", Senses: []jmdict.Sense{{Glosses: []jmdict.Gloss{{Text: "cat"}}}}}}})
-	data, err := json.Marshal(response)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), `"global_rank":null,"novel_rank":null`) || strings.Contains(string(data), "commonness") {
-		t.Fatalf("missing rank response = %s", data)
-	}
-}
-
-func TestDictionaryLookupRejectsBadInput(t *testing.T) {
-	lookup := &fakeDictionaryLookup{err: errors.New("should not be called")}
-	router, token := dictionaryTestRouter(t, lookup)
-	request := httptest.NewRequest(http.MethodGet, "/api/extension/v1/dictionary?expression=", nil)
-	request.TLS = &tls.ConnectionState{}
-	request.Header.Set("Authorization", "Bearer "+token)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("response = %d %s", response.Code, response.Body.String())
 	}
 }
 

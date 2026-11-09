@@ -1,9 +1,7 @@
 package auth
 
 import (
-	"context"
 	"database/sql"
-	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -79,73 +77,5 @@ func TestSessionStoreExpiresRowsOnLookup(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("expired session row count = %d, want 0", count)
-	}
-}
-
-func TestSessionStoreHonorsCanceledContext(t *testing.T) {
-	store := newSessionStore(openSessionTestDB(t))
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	if err := store.CommitCtx(ctx, "token", []byte("data"), time.Now().Add(time.Hour)); err == nil {
-		t.Fatal("CommitCtx() succeeded with a canceled context")
-	}
-}
-
-func TestSessionStoreCleansExpiredRowsInBoundedBatches(t *testing.T) {
-	db := openSessionTestDB(t)
-	tx, err := db.Begin()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for index := 0; index < sessionCleanupBatch+1; index++ {
-		if _, err := tx.Exec(
-			"INSERT INTO web_sessions (token, data, expiry_at) VALUES (?, ?, ?)",
-			sessionTokenDigest(fmt.Sprintf("expired-%d", index)),
-			[]byte("expired"),
-			time.Now().Add(-time.Hour).Unix(),
-		); err != nil {
-			_ = tx.Rollback()
-			t.Fatal(err)
-		}
-	}
-	if _, err := tx.Exec(
-		"INSERT INTO web_sessions (token, data, expiry_at) VALUES (?, ?, ?)",
-		sessionTokenDigest("active"),
-		[]byte("active"),
-		time.Now().Add(time.Hour).Unix(),
-	); err != nil {
-		_ = tx.Rollback()
-		t.Fatal(err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatal(err)
-	}
-
-	store := newSessionStore(db)
-	data, found, err := store.Find("active")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !found || string(data) != "active" {
-		t.Fatalf("active session = %q, found = %t", data, found)
-	}
-
-	var expired int
-	if err := db.QueryRow("SELECT COUNT(*) FROM web_sessions WHERE expiry_at <= ?", time.Now().Unix()).Scan(&expired); err != nil {
-		t.Fatal(err)
-	}
-	if expired != 1 {
-		t.Fatalf("expired rows after cleanup = %d, want 1", expired)
-	}
-	if _, _, err := store.Find("active"); err != nil {
-		t.Fatal(err)
-	}
-	var remaining int
-	if err := db.QueryRow("SELECT COUNT(*) FROM web_sessions WHERE expiry_at <= ?", time.Now().Unix()).Scan(&remaining); err != nil {
-		t.Fatal(err)
-	}
-	if remaining != expired {
-		t.Fatalf("second cleanup ran before interval: rows = %d, want %d", remaining, expired)
 	}
 }

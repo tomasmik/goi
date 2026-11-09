@@ -29,9 +29,7 @@ func (f *fakeDictionaryLookup) Lookup(_ context.Context, expression, reading str
 
 func TestLookupEnrichmentConvertsLiveDictionaryCandidates(t *testing.T) {
 	lookup := &fakeDictionaryLookup{match: jmdict.Match{
-		State:         jmdict.MatchReady,
-		SourceCreated: "2026-07-26",
-		SourceVersion: "1.10",
+		State: jmdict.MatchReady,
 		Candidates: []jmdict.Candidate{{
 			EntrySequence: 123,
 			Written:       "開ける",

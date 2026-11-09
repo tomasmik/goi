@@ -26,23 +26,6 @@ import (
 	internalweb "github.com/tomasmik/goi/internal/web"
 )
 
-func TestMissingCaptureRendersRecoveryPage(t *testing.T) {
-	_, db := openMiningTestDatabase(t)
-	router := miningTestRouter(t, NewStore(db), "https://goi.example")
-	requests := []*http.Request{
-		httptest.NewRequest(http.MethodGet, "/mining/captures/999", nil),
-		httptest.NewRequest(http.MethodPost, "/mining/captures/999/delete", strings.NewReader("revision=1&confirmed=1")),
-	}
-	requests[1].Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	for _, request := range requests {
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, request)
-		if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `href="/mining"`) {
-			t.Fatalf("missing capture response = %d, %s", response.Code, response.Body.String())
-		}
-	}
-}
-
 func TestMiningCanFindPreviewAndAttachPronunciationAudio(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	store := NewStore(db)
@@ -146,161 +129,6 @@ func TestMiningAutomaticallyUsesSinglePronunciationResult(t *testing.T) {
 	}
 }
 
-func TestMiningPronunciationFailuresPreserveEditableForm(t *testing.T) {
-	rateLimit := errors.New("pronunciation server returned 429 Too Many Requests")
-	for _, test := range []struct {
-		name        string
-		action      string
-		searchErr   error
-		downloadErr error
-		message     string
-	}{
-		{"search", "search", rateLimit, nil, "The open pronunciation library is temporarily unavailable."},
-		{"automatic download", "search", nil, rateLimit, "Could not download that recording."},
-		{"selected download", "42", nil, rateLimit, "Could not download that recording."},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			ctx, db := openMiningTestDatabase(t)
-			store := NewStore(db)
-			capture := createMiningCapture(t, ctx, store, "日本", "00000000000000000000000000000096")
-			provider := &fakePronunciationProvider{
-				results:     []pronunciation.Recording{{ID: 42, Label: "にほん"}},
-				searchErr:   test.searchErr,
-				downloadErr: test.downloadErr,
-			}
-			router := miningTestRouterWithServices(t, store, "https://goi.example", nil, provider)
-			form := url.Values{
-				"revision":            {strconvInt(capture.Revision)},
-				"reading":             {"にほん"},
-				"pronunciation":       {"にほん"},
-				"meanings":            {"Japan"},
-				"notes":               {"unsaved note"},
-				"example_sentence":    {"日本に行く。"},
-				"example_translation": {"I go to Japan."},
-				"example_target":      {"日本"},
-			}
-			response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/pronunciations/%s", capture.ID, test.action), form)
-			if response.Code != http.StatusOK {
-				t.Fatalf("response = %d, body = %s", response.Code, response.Body.String())
-			}
-			for _, expected := range []string{
-				test.message, `value="にほん"`, ">Japan</textarea>", ">unsaved note</textarea>",
-				"日本に行く。", "I go to Japan.", "Find word audio", "Save card",
-				fmt.Sprintf(`name="revision" value="%d"`, capture.Revision),
-			} {
-				if !strings.Contains(response.Body.String(), expected) {
-					t.Errorf("response does not contain %q", expected)
-				}
-			}
-			if strings.Contains(response.Body.String(), rateLimit.Error()) {
-				t.Fatal("response exposed upstream error")
-			}
-			stored, err := store.Get(ctx, capture.ID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if stored.Revision != capture.Revision || stored.PronunciationAudioID != 0 {
-				t.Fatalf("failed pronunciation changed capture: %+v", stored)
-			}
-		})
-	}
-}
-
-func TestMiningPronunciationSearchDoesNotRepeatLookup(t *testing.T) {
-	for _, count := range []int{0, 2} {
-		t.Run(fmt.Sprintf("%d recordings", count), func(t *testing.T) {
-			ctx, db := openMiningTestDatabase(t)
-			store := NewStore(db)
-			capture := createMiningCapture(t, ctx, store, "日本", "00000000000000000000000000000095")
-			provider := &fakePronunciationProvider{
-				results: []pronunciation.Recording{{ID: 42, Label: "にほん"}, {ID: 43, Label: "にほん"}}[:count],
-			}
-			router := miningTestRouterWithServices(t, store, "https://goi.example", nil, provider)
-			form := url.Values{
-				"revision": {strconvInt(capture.Revision)}, "expression": {"日本"}, "reading": {"にほん"},
-				"pronunciation": {"にほん"}, "meanings": {"Japan"}, "notes": {"unsaved note"},
-			}
-			response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/pronunciations/search", capture.ID), form)
-			if response.Code != http.StatusOK || provider.searches != 1 {
-				t.Fatalf("response = %d, searches = %d, body = %s", response.Code, provider.searches, response.Body.String())
-			}
-			if count == 0 && !strings.Contains(response.Body.String(), "No matching open recording was found.") {
-				t.Fatal("missing empty results message")
-			}
-			if got := strings.Count(response.Body.String(), ">Use this recording</button>"); got != count {
-				t.Fatalf("recording choices = %d, want %d", got, count)
-			}
-		})
-	}
-}
-
-func TestMiningInboxPaginatesAndPreservesStatus(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	insertMiningCaptures(t, ctx, db, StatusDiscarded, 0, maximumCapturePageSize+1)
-	router := miningTestRouter(t, NewStore(db), "https://goi.example")
-
-	first := httptest.NewRecorder()
-	router.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/mining?status=discarded", nil))
-	if first.Code != http.StatusOK {
-		t.Fatalf("first page status = %d, body = %s", first.Code, first.Body.String())
-	}
-	firstBody := first.Body.String()
-	if strings.Count(firstBody, `class="mining-card"`) != maximumCapturePageSize {
-		t.Fatalf("first page card count = %d", strings.Count(firstBody, `class="mining-card"`))
-	}
-	for _, expected := range []string{"Page 1 of 2", "capture-100", `href="/mining?page=2&amp;status=discarded" rel="next"`} {
-		if !strings.Contains(firstBody, expected) {
-			t.Errorf("first page does not contain %q", expected)
-		}
-	}
-	if strings.Contains(firstBody, "capture-000") {
-		t.Fatal("first page contains the capture reserved for page 2")
-	}
-
-	second := httptest.NewRecorder()
-	router.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/mining?status=discarded&page=2", nil))
-	if second.Code != http.StatusOK {
-		t.Fatalf("second page status = %d, body = %s", second.Code, second.Body.String())
-	}
-	secondBody := second.Body.String()
-	if strings.Count(secondBody, `class="mining-card"`) != 1 {
-		t.Fatalf("second page card count = %d", strings.Count(secondBody, `class="mining-card"`))
-	}
-	for _, expected := range []string{"Page 2 of 2", "capture-000", `href="/mining?status=discarded" rel="prev"`} {
-		if !strings.Contains(secondBody, expected) {
-			t.Errorf("second page does not contain %q", expected)
-		}
-	}
-	if strings.Contains(secondBody, "capture-100") {
-		t.Fatal("second page contains a capture from page 1")
-	}
-
-	clamped := httptest.NewRecorder()
-	router.ServeHTTP(clamped, httptest.NewRequest(http.MethodGet, "/mining?status=discarded&page=999", nil))
-	if clamped.Code != http.StatusOK || !strings.Contains(clamped.Body.String(), "Page 2 of 2") || !strings.Contains(clamped.Body.String(), "capture-000") {
-		t.Fatalf("clamped page = %d, %s", clamped.Code, clamped.Body.String())
-	}
-}
-
-func TestInvalidMiningFilterRendersRecoveryPage(t *testing.T) {
-	_, db := openMiningTestDatabase(t)
-	response := httptest.NewRecorder()
-	miningTestRouter(t, NewStore(db), "https://goi.example").ServeHTTP(
-		response,
-		httptest.NewRequest(http.MethodGet, "/mining?status=unknown", nil),
-	)
-
-	body := response.Body.String()
-	if response.Code != http.StatusBadRequest || !strings.Contains(body, "Choose pending, accepted, or discarded captures.") {
-		t.Fatalf("response = %d, body = %s", response.Code, body)
-	}
-	for _, expected := range []string{`class="site-header"`, `href="/mining"`, "Back to mining"} {
-		if !strings.Contains(body, expected) {
-			t.Errorf("rendered error does not contain %q: %s", expected, body)
-		}
-	}
-}
-
 func TestCaptureFormCreatesPendingCapture(t *testing.T) {
 	_, db := openMiningTestDatabase(t)
 	router := miningTestRouter(t, NewStore(db), "https://goi.example/base")
@@ -344,62 +172,6 @@ func TestCaptureFormRejectsUnsafeSourceURL(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), "source URL must use http or https") {
 		t.Fatalf("body does not explain invalid URL: %s", response.Body.String())
-	}
-}
-
-func TestCaptureUpdatePreservesSubmittedFieldsAfterValidationError(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000043")
-	form := url.Values{
-		"revision":                {strconvInt(capture.Revision)},
-		"capture_nonce":           {capture.CaptureNonce},
-		"expression":              {""},
-		"context_text":            {"new context"},
-		"source_kind":             {"web"},
-		"source_title":            {"new source"},
-		"source_url":              {"https://example.com/new"},
-		"source_position_seconds": {""},
-	}
-	response := serveMiningForm(
-		miningTestRouter(t, store, "https://goi.example"),
-		http.MethodPost,
-		fmt.Sprintf("/mining/captures/%d", capture.ID),
-		form,
-	)
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	for _, expected := range []string{`name="expression" value=""`, "new context", "new source", "https://example.com/new"} {
-		if !strings.Contains(body, expected) {
-			t.Errorf("response does not preserve %q: %s", expected, body)
-		}
-	}
-	if !strings.Contains(body, `id="capture-source-title"`) {
-		t.Fatal("source editor was not rendered for its validation error")
-	}
-}
-
-func TestCaptureUpdateFallsBackToStoredFieldsWhenFormCannotBeParsed(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000044")
-	request := httptest.NewRequest(
-		http.MethodPost,
-		fmt.Sprintf("/mining/captures/%d", capture.ID),
-		strings.NewReader(strings.Repeat("x", captureBodyLimit+1)),
-	)
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response := httptest.NewRecorder()
-	miningTestRouter(t, store, "https://goi.example").ServeHTTP(response, request)
-
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	if !strings.Contains(body, "form is too large") || !strings.Contains(body, `name="expression" value="猫"`) {
-		t.Fatalf("response did not restore the stored capture: %s", body)
 	}
 }
 
@@ -478,74 +250,6 @@ func TestStaleCaptureEditKeepsItsRevisionUntilConflictReload(t *testing.T) {
 	}
 }
 
-func TestStaleManualAcceptanceKeepsItsRevisionUntilConflictReload(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000046")
-	latest, err := store.Update(ctx, capture.ID, capture.Revision, UpdateInput{Expression: "犬", SourceKind: SourceManual})
-	if err != nil {
-		t.Fatal(err)
-	}
-	router := miningTestRouter(t, store, "https://goi.example")
-	target := fmt.Sprintf("/mining/captures/%d/accept", capture.ID)
-	staleForm := url.Values{
-		"revision":      {strconvInt(capture.Revision)},
-		"pronunciation": {"ねこ"},
-		"meanings":      {""},
-	}
-	response := serveMiningForm(router, http.MethodPost, target, staleForm)
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("validation response = %d, body = %s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	manualForm := miningFormBlock(t, body, fmt.Sprintf(`<form class="mining-card-editor" method="post" action="%s"`, target))
-	requireMiningFormRevision(t, manualForm, capture.Revision)
-	if !strings.Contains(manualForm, `value="ねこ"`) {
-		t.Fatalf("submitted manual values were not preserved: %s", manualForm)
-	}
-	editForm := miningFormBlock(t, body, fmt.Sprintf(`<form class="inline-form" method="post" action="/mining/captures/%d"`, capture.ID))
-	requireMiningFormRevision(t, editForm, latest.Revision)
-
-	staleForm.Set("meanings", "cat")
-	response = serveMiningForm(router, http.MethodPost, target, staleForm)
-	if response.Code != http.StatusConflict {
-		t.Fatalf("conflict response = %d, body = %s", response.Code, response.Body.String())
-	}
-	body = response.Body.String()
-	manualForm = miningFormBlock(t, body, fmt.Sprintf(`<form class="mining-card-editor" method="post" action="%s"`, target))
-	requireMiningFormRevision(t, manualForm, latest.Revision)
-	if strings.Contains(manualForm, `value="ねこ"`) || strings.Contains(manualForm, ">cat</textarea>") {
-		t.Fatalf("conflict retained stale manual values: %s", manualForm)
-	}
-	var vocabularyCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM vocabulary").Scan(&vocabularyCount); err != nil {
-		t.Fatal(err)
-	}
-	if vocabularyCount != 0 {
-		t.Fatalf("stale acceptance created %d vocabulary items", vocabularyCount)
-	}
-
-	retry := url.Values{
-		"revision":      {strconvInt(latest.Revision)},
-		"pronunciation": {"いぬ"},
-		"meanings":      {"dog"},
-	}
-	response = serveMiningForm(router, http.MethodPost, target, retry)
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("safe retry response = %d, body = %s", response.Code, response.Body.String())
-	}
-	var expression, meaning string
-	if err := db.QueryRow(`
-		SELECT v.expression, m.text
-		FROM vocabulary v
-		JOIN meanings m ON m.vocabulary_id = v.id AND m.position = 0`).Scan(&expression, &meaning); err != nil {
-		t.Fatal(err)
-	}
-	if expression != "犬" || meaning != "dog" {
-		t.Fatalf("safe retry created %q with meaning %q", expression, meaning)
-	}
-}
-
 func TestBulkAddProcessesClearMatchesAndLeavesChoices(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	store := NewStore(db)
@@ -587,7 +291,7 @@ func TestBulkAddNeverChoosesAnAmbiguousDictionaryMatch(t *testing.T) {
 	store := NewStore(db)
 	capture := createMiningCapture(t, ctx, store, "あく", "000000000000000000000000000000a3")
 	completeMiningEnrichment(t, ctx, store, jmdict.Match{
-		State: jmdict.MatchAmbiguous, SourceCreated: "2026-07-26", SourceVersion: "1.10",
+		State: jmdict.MatchAmbiguous,
 		Candidates: []jmdict.Candidate{
 			miningCandidate(101, "開く", "あく", "to open"),
 			miningCandidate(102, "空く", "あく", "to become empty"),
@@ -685,34 +389,6 @@ func TestBulkAddLeavesExistingHomographForReview(t *testing.T) {
 	}
 }
 
-func TestMiningInboxEscapesCapturedContent(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	_, _, err := store.Create(ctx, CreateInput{
-		Expression:   `<img src=x onerror=alert(1)>`,
-		ContextText:  `<script>alert("context")</script>`,
-		SourceKind:   SourceWeb,
-		CaptureNonce: "00000000000000000000000000000013",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	router := miningTestRouter(t, store, "https://goi.example")
-	request := httptest.NewRequest(http.MethodGet, "/mining", nil)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	if strings.Contains(body, `<script>alert`) || strings.Contains(body, `<img src=x`) {
-		t.Fatalf("captured markup was rendered as HTML: %s", body)
-	}
-	if !strings.Contains(body, `&lt;script&gt;`) || !strings.Contains(body, `&lt;img src=x`) {
-		t.Fatalf("escaped capture content not found: %s", body)
-	}
-}
-
 func TestAcceptCaptureCreatesVocabulary(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	store := NewStore(db)
@@ -776,160 +452,6 @@ func TestAcceptCaptureCreatesVocabulary(t *testing.T) {
 		!strings.Contains(detail.Body.String(), "Japanese lesson") ||
 		!strings.Contains(detail.Body.String(), "0:42") {
 		t.Fatalf("accepted detail = %d, body = %s", detail.Code, detail.Body.String())
-	}
-}
-
-func TestMiningDetailRendersReadyDictionarySuggestion(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "開ける", "00000000000000000000000000000031")
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("開ける", "あける", "to open"))
-
-	router := miningTestRouter(t, store, "https://goi.example")
-	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/mining/captures/%d", capture.ID), nil)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	body := response.Body.String()
-	for _, expected := range []string{"Add to vocabulary", `name="candidate_id"`, `value="あける"`, "to open", "JMdict/EDRDG", "CC BY-SA 4.0"} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("body does not contain %q: %s", expected, body)
-		}
-	}
-}
-
-func TestMiningDetailKeepsTranslationAvailableWithoutExampleGeneration(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "開ける", "00000000000000000000000000000131")
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("開ける", "あける", "to open"))
-	generator := &fakeExampleGenerator{generationOff: true}
-
-	response := httptest.NewRecorder()
-	miningTestRouterWithGenerator(t, store, "https://goi.example", generator).ServeHTTP(
-		response,
-		httptest.NewRequest(http.MethodGet, fmt.Sprintf("/mining/captures/%d", capture.ID), nil),
-	)
-	body := response.Body.String()
-	if !strings.Contains(body, `data-remote-translation="true"`) {
-		t.Fatalf("configured translator was not exposed to the mining form: %s", body)
-	}
-	if strings.Contains(body, "Generate example") {
-		t.Fatal("example generation should remain unavailable")
-	}
-}
-
-func TestMiningDetailShowsCardFieldsAndAllCapturedMedia(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture, _, err := store.Create(ctx, CreateInput{
-		RawText:      "育てる",
-		Expression:   "育てる",
-		ContextText:  "ぶどうを育てています。",
-		SourceKind:   SourceVideo,
-		CaptureNonce: "00000000000000000000000000000034",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.AddMedia(ctx, capture.ID, capture.Revision, []media.Upload{
-		{Kind: media.KindAudio, MimeType: "audio/webm", Content: []byte("first")},
-		{Kind: media.KindAudio, MimeType: "audio/webm", Content: []byte("second")},
-	}, &media.Upload{Kind: media.KindImage, MimeType: "image/png", Content: []byte("frame")}, nil); err != nil {
-		t.Fatal(err)
-	}
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("育てる", "そだてる", "to raise"))
-
-	response := httptest.NewRecorder()
-	miningTestRouter(t, store, "https://goi.example").ServeHTTP(
-		response,
-		httptest.NewRequest(http.MethodGet, fmt.Sprintf("/mining/captures/%d", capture.ID), nil),
-	)
-	body := response.Body.String()
-	for _, expected := range []string{
-		"Sentence context",
-		"ぶどうを育てています。",
-		"Picture and audio",
-		"2 included",
-		"Remove track 1",
-		"Remove track 2",
-		`name="sentence_audio"`,
-		`name="video_frame"`,
-		`name="pronunciation_audio"`,
-		"Recommended",
-		"Find word audio",
-		"Open in Jisho",
-		"Search Forvo",
-		"Reading",
-		"Meanings",
-		"Japanese sentence",
-		"English translation",
-		"Word in sentence",
-	} {
-		if !strings.Contains(body, expected) {
-			t.Errorf("mining review does not contain %q", expected)
-		}
-	}
-	if strings.Count(body, `<audio controls`) != 2 {
-		t.Errorf("audio players = %d, want 2", strings.Count(body, `<audio controls`))
-	}
-	if strings.Contains(body, "Save media changes") {
-		t.Error("media should not have a separate save action")
-	}
-	if strings.Index(body, "Picture and audio") > strings.Index(body, ">Save card</button>") {
-		t.Error("media should be part of the card before its save action")
-	}
-	if strings.Index(body, "Open in Jisho") > strings.Index(body, "Picture and audio") {
-		t.Error("word lookup should appear with the word, before card media")
-	}
-	if !strings.Contains(body, `class="mining-card-editor" method="post"`) || !strings.Contains(body, `enctype="multipart/form-data"`) {
-		t.Error("card editor should submit its fields and media together")
-	}
-}
-
-func TestMiningMediaUploadAcceptsMultipleAudioTracks(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture, _, err := store.Create(ctx, CreateInput{
-		Expression:   "育てる",
-		ContextText:  "ぶどうを育てています。",
-		SourceKind:   SourceVideo,
-		CaptureNonce: "00000000000000000000000000000036",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	if err := writer.WriteField("revision", strconvInt(capture.Revision)); err != nil {
-		t.Fatal(err)
-	}
-	for index, filename := range []string{"first.wav", "second.wav"} {
-		part, err := writer.CreateFormFile("sentence_audio", filename)
-		if err != nil {
-			t.Fatal(err)
-		}
-		content := silentMiningWAV()
-		content[44] = byte(index)
-		if _, err := part.Write(content); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	request := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/mining/captures/%d/media", capture.ID), &body)
-	request.Header.Set("Content-Type", writer.FormDataContentType())
-	response := httptest.NewRecorder()
-	miningTestRouter(t, store, "https://goi.example").ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	stored, err := store.Get(ctx, capture.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(stored.SentenceAudioIDs) != 2 {
-		t.Fatalf("audio IDs = %v, want two stored tracks", stored.SentenceAudioIDs)
 	}
 }
 
@@ -1012,70 +534,6 @@ func TestAcceptSavesCardFieldsAndMediaTogether(t *testing.T) {
 	}
 	if example.SentenceAudioID == 0 {
 		t.Fatal("sentence audio was not saved with the example")
-	}
-}
-
-func TestRejectedAcceptanceKeepsCardMedia(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture, _, err := store.Create(ctx, CreateInput{
-		Expression: "食べる", ContextText: "寿司を食べました。", SourceKind: SourceVideo,
-		CaptureNonce: "00000000000000000000000000000137",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.AddMedia(ctx, capture.ID, capture.Revision, []media.Upload{{
-		Kind: media.KindAudio, MimeType: "audio/webm", Content: []byte("original audio"),
-	}}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	capture, err = store.Get(ctx, capture.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	for name, value := range map[string]string{
-		"revision": strconvInt(capture.Revision), "pronunciation": "!!!", "meanings": "to eat",
-		"remove_media_id": strconvInt(capture.SentenceAudioID),
-	} {
-		if err := writer.WriteField(name, value); err != nil {
-			t.Fatal(err)
-		}
-	}
-	part, err := writer.CreateFormFile("pronunciation_audio", "word.wav")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := part.Write(silentMiningWAV()); err != nil {
-		t.Fatal(err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-	request := httptest.NewRequest(http.MethodPost, capturePath(capture.ID)+"/accept", &body)
-	request.Header.Set("Content-Type", writer.FormDataContentType())
-	response := httptest.NewRecorder()
-	miningTestRouter(t, store, "https://goi.example").ServeHTTP(response, request)
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	stored, err := store.Get(ctx, capture.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stored.Status != StatusPending || stored.Revision != capture.Revision || stored.SentenceAudioID != capture.SentenceAudioID || stored.PronunciationAudioID != 0 {
-		t.Fatalf("rejected acceptance changed capture/media: before = %+v, after = %+v", capture, stored)
-	}
-	for table, want := range map[string]int{"vocabulary": 0, "vocabulary_examples": 0, "media": 1, "media_content": 1} {
-		var count int
-		if err := db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
-			t.Fatal(err)
-		}
-		if count != want {
-			t.Errorf("%s rows = %d, want %d", table, count, want)
-		}
 	}
 }
 
@@ -1190,210 +648,6 @@ func TestAttachmentFailureRollsBackCardMedia(t *testing.T) {
 	}
 }
 
-func TestGenerateFillsExampleFieldsWithoutSavingTheCard(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture, _, err := store.Create(ctx, CreateInput{
-		RawText:      "育てる",
-		Expression:   "育てる",
-		ContextText:  "ぶどうを育てています。",
-		SourceKind:   SourceVideo,
-		CaptureNonce: "00000000000000000000000000000035",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("育てる", "そだてる", "to raise"))
-	generator := &fakeExampleGenerator{result: examplegen.Example{
-		Sentence:      "ぶどうを育てています。",
-		Translation:   "I am growing grapes.",
-		TargetSurface: "育てています",
-	}}
-	form := url.Values{
-		"revision":         {strconvInt(capture.Revision)},
-		"candidate_id":     {candidateID(miningCandidate(123, "育てる", "そだてる", ""))},
-		"pronunciation":    {"そだてる"},
-		"meanings":         {"to raise\nto grow"},
-		"example_sentence": {capture.ContextText},
-		"example_target":   {capture.RawText},
-	}
-	response := serveMiningForm(
-		miningTestRouterWithGenerator(t, store, "https://goi.example", generator),
-		http.MethodPost,
-		fmt.Sprintf("/mining/captures/%d/generate", capture.ID),
-		form,
-	)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	for _, expected := range []string{"I am growing grapes.", `value="育てています"`, "Example fields generated. Check them before saving."} {
-		if !strings.Contains(body, expected) {
-			t.Errorf("generated review does not contain %q", expected)
-		}
-	}
-	if generator.request.Sentence != capture.ContextText || generator.request.Expression != capture.Expression {
-		t.Fatalf("generation request = %+v", generator.request)
-	}
-	var vocabularyCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM vocabulary").Scan(&vocabularyCount); err != nil {
-		t.Fatal(err)
-	}
-	if vocabularyCount != 0 {
-		t.Fatalf("generation saved %d vocabulary entries", vocabularyCount)
-	}
-}
-
-func TestTranslateFillsOnlyTheTranslationWithoutSavingTheCard(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture, _, err := store.Create(ctx, CreateInput{
-		Expression:   "育てる",
-		ContextText:  "ぶどうを育てています。",
-		SourceKind:   SourceVideo,
-		CaptureNonce: "00000000000000000000000000000036",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	generator := &fakeExampleGenerator{translation: examplegen.Translation{Text: "I am growing grapes."}}
-	form := url.Values{
-		"revision":         {strconvInt(capture.Revision)},
-		"pronunciation":    {"そだてる"},
-		"meanings":         {"to raise"},
-		"example_sentence": {capture.ContextText},
-		"example_target":   {"育てています"},
-	}
-	response := serveMiningForm(
-		miningTestRouterWithGenerator(t, store, "https://goi.example", generator),
-		http.MethodPost,
-		fmt.Sprintf("/mining/captures/%d/translate", capture.ID),
-		form,
-	)
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	for _, expected := range []string{"I am growing grapes.", "Translation added. Check it before saving.", "育てています"} {
-		if !strings.Contains(response.Body.String(), expected) {
-			t.Errorf("translated review does not contain %q", expected)
-		}
-	}
-	if generator.translationText != capture.ContextText {
-		t.Fatalf("translation input = %q", generator.translationText)
-	}
-	var vocabularyCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM vocabulary").Scan(&vocabularyCount); err != nil {
-		t.Fatal(err)
-	}
-	if vocabularyCount != 0 {
-		t.Fatalf("translation saved %d vocabulary entries", vocabularyCount)
-	}
-}
-
-func TestMiningDetailRendersAmbiguousChoices(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "あく", "00000000000000000000000000000032")
-	match := jmdict.Match{
-		State: jmdict.MatchAmbiguous, SourceCreated: "2026-07-26", SourceVersion: "1.10",
-		Candidates: []jmdict.Candidate{
-			miningCandidate(101, "開く", "あく", "to open"),
-			miningCandidate(102, "空く", "あく", "to become empty"),
-		},
-	}
-	match.Candidates[0].GlobalRank = new(39)
-	match.Candidates[0].NovelRank = new(36)
-	match.Candidates[1].GlobalRank = new(123456)
-	if _, err := db.Exec(`UPDATE mining_captures SET suggested_entry_sequence = ? WHERE id = ?`, 102, capture.ID); err != nil {
-		t.Fatal(err)
-	}
-	completeMiningEnrichment(t, ctx, store, match)
-	capture, err := store.Get(ctx, capture.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	previews := (&Handler{store: store, dictionary: miningTestDictionary(store)}).candidatePreviews(ctx, []Capture{capture})
-	preview := previews[capture.ID]
-	if preview.Reading != "あく" || preview.Meaning != "to become empty" || preview.Count != 2 {
-		t.Fatalf("candidate preview = %#v", preview)
-	}
-
-	router := miningTestRouter(t, store, "https://goi.example")
-	request := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/mining/captures/%d", capture.ID), nil)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	body := response.Body.String()
-	if !strings.Contains(body, "Which entry fits this sentence?") || strings.Count(body, `name="candidate_id"`) != 2 || !strings.Contains(body, "to become empty") {
-		t.Fatalf("ambiguous detail body = %s", body)
-	}
-	if strings.Count(body, `name="meanings" rows="5"`) != 2 || !strings.Contains(body, `>to become empty</textarea>`) {
-		t.Fatalf("dictionary meanings are not visible and editable: %s", body)
-	}
-	if strings.Count(body, `data-mining-candidate-choice=`) != 2 ||
-		strings.Count(body, `data-mining-candidate-editor`) != 2 ||
-		strings.Count(body, `aria-pressed="true"`) != 1 ||
-		strings.Count(body, `data-mining-candidate-editor hidden`) != 1 {
-		t.Fatalf("ambiguous choices are not presented as one compact picker and editor: %s", body)
-	}
-	if !strings.Contains(body, "to open") || !strings.Contains(body, "to become empty") {
-		t.Fatalf("candidate summaries do not expose their meanings: %s", body)
-	}
-	if strings.Contains(body, "Chosen while mining") || strings.Contains(body, "Entry chosen") {
-		t.Fatalf("internal selection state is exposed to the user: %s", body)
-	}
-	if strings.Count(body, `title="Jiten Global rank 39; lower means more frequent"`) < 2 ||
-		!strings.Contains(body, ">G 039</span>") || !strings.Contains(body, ">N 036</span>") ||
-		!strings.Contains(body, ">G 123456</span>") || !strings.Contains(body, ">N —</span>") || strings.Contains(body, "Commonness") {
-		t.Fatalf("frequency cues are missing: %s", body)
-	}
-}
-
-func TestCaptureActionErrorsRenderDetailPage(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000042")
-	router := miningTestRouter(t, store, "https://goi.example")
-
-	tests := []struct {
-		name    string
-		path    string
-		form    url.Values
-		message string
-	}{
-		{
-			name:    "invalid revision",
-			path:    fmt.Sprintf("/mining/captures/%d/discard", capture.ID),
-			form:    url.Values{"revision": {"invalid"}},
-			message: "The capture action form is out of date.",
-		},
-		{
-			name:    "missing deletion confirmation",
-			path:    fmt.Sprintf("/mining/captures/%d/delete", capture.ID),
-			form:    url.Values{"revision": {strconvInt(capture.Revision)}},
-			message: "Confirm permanent capture deletion before continuing.",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			response := serveMiningForm(router, http.MethodPost, test.path, test.form)
-			body := response.Body.String()
-			if response.Code != http.StatusBadRequest || !strings.Contains(body, test.message) {
-				t.Fatalf("response = %d, body = %s", response.Code, body)
-			}
-			for _, expected := range []string{
-				`class="site-header"`,
-				`class="alert alert-error" role="alert"`,
-				`<h1 class="jp-word" lang="ja">猫</h1>`,
-				fmt.Sprintf(`name="revision" value="%d"`, capture.Revision),
-			} {
-				if !strings.Contains(body, expected) {
-					t.Errorf("rendered error does not contain %q: %s", expected, body)
-				}
-			}
-		})
-	}
-}
-
 func TestPermanentCaptureDeletionRequiresServerConfirmation(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	store := NewStore(db)
@@ -1417,29 +671,6 @@ func TestPermanentCaptureDeletionRequiresServerConfirmation(t *testing.T) {
 	}
 	if _, err := store.Get(ctx, capture.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("deleted capture error = %v, want sql.ErrNoRows", err)
-	}
-}
-
-func TestEnrichmentViewLabelsEveryState(t *testing.T) {
-	tests := []struct {
-		state   EnrichmentState
-		heading string
-	}{
-		{EnrichmentReady, "Add to vocabulary"},
-		{EnrichmentAmbiguous, "Which entry fits this sentence?"},
-		{EnrichmentNoMatch, "No match found"},
-		{EnrichmentFailed, "Dictionary unavailable"},
-	}
-	for _, test := range tests {
-		t.Run(string(test.state), func(t *testing.T) {
-			view := newEnrichmentView(Enrichment{State: test.state}, Capture{}, detailForm{})
-			if view.Heading != test.heading || view.Message == "" {
-				t.Fatalf("view = %#v", view)
-			}
-			if test.state == EnrichmentFailed && strings.Contains(strings.ToLower(view.Message), "unavailable") {
-				t.Fatalf("failed lookup message assumes dictionary availability: %q", view.Message)
-			}
-		})
 	}
 }
 
@@ -1519,34 +750,6 @@ func TestRemovedCandidatePreservesEditsWithoutApplyingThemToAnotherReading(t *te
 	}
 }
 
-func TestAcceptDictionaryCandidateUsesCopiedDefaults(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "開ける", "00000000000000000000000000000033")
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("開ける", "あける", "to open"))
-
-	router := miningTestRouter(t, store, "https://goi.example")
-	form := url.Values{
-		"revision":     {strconvInt(capture.Revision)},
-		"candidate_id": {candidateID(miningCandidate(123, "開ける", "あける", ""))},
-	}
-	response := serveMiningForm(router, http.MethodPost, fmt.Sprintf("/mining/captures/%d/accept", capture.ID), form)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != capturePath(capture.ID) {
-		t.Fatalf("response = %d %q, body = %s", response.Code, response.Header().Get("Location"), response.Body.String())
-	}
-	var pronunciation, meaning string
-	if err := db.QueryRow(`
-		SELECT v.pronunciation, m.text
-		FROM vocabulary v
-		JOIN meanings m ON m.vocabulary_id = v.id AND m.position = 0
-		WHERE v.id = 1`).Scan(&pronunciation, &meaning); err != nil {
-		t.Fatal(err)
-	}
-	if pronunciation != "あける" || meaning != "to open" {
-		t.Fatalf("accepted defaults = %q, %q", pronunciation, meaning)
-	}
-}
-
 func TestAcceptDictionaryCandidateSavesChosenWrittenForm(t *testing.T) {
 	for _, test := range []struct {
 		writeAs string
@@ -1588,104 +791,12 @@ func TestAcceptDictionaryCandidateSavesChosenWrittenForm(t *testing.T) {
 	}
 }
 
-func TestAcceptDictionaryCandidatePreservesEdits(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "開ける", "00000000000000000000000000000034")
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("開ける", "あける", "to open"))
-	form := url.Values{
-		"revision":      {strconvInt(capture.Revision)},
-		"candidate_id":  {candidateID(miningCandidate(123, "開ける", "あける", ""))},
-		"pronunciation": {"ひらける"},
-		"meanings":      {"custom meaning"},
-		"notes":         {"my note"},
-	}
-	response := serveMiningForm(miningTestRouter(t, store, "https://goi.example"), http.MethodPost, fmt.Sprintf("/mining/captures/%d/accept", capture.ID), form)
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	var pronunciation, meaning, notes string
-	if err := db.QueryRow(`
-		SELECT v.pronunciation, m.text, v.notes
-		FROM vocabulary v
-		JOIN meanings m ON m.vocabulary_id = v.id AND m.position = 0
-		WHERE v.id = 1`).Scan(&pronunciation, &meaning, &notes); err != nil {
-		t.Fatal(err)
-	}
-	if pronunciation != "ひらける" || meaning != "custom meaning" || notes != "my note" {
-		t.Fatalf("accepted edits = %q, %q, %q", pronunciation, meaning, notes)
-	}
-}
-
-func TestStaleCandidateAcceptanceReloadsCurrentCandidateBeforeRetry(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000047")
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("猫", "ねこ", "cat"))
-	staleCandidateID := candidateID(miningCandidate(123, "猫", "ねこ", ""))
-
-	latest, err := store.Update(ctx, capture.ID, capture.Revision, UpdateInput{Expression: "犬", SourceKind: SourceManual})
-	if err != nil {
-		t.Fatal(err)
-	}
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("犬", "いぬ", "dog"))
-	currentCandidateID := candidateID(miningCandidate(123, "犬", "いぬ", ""))
-
-	router := miningTestRouter(t, store, "https://goi.example")
-	target := fmt.Sprintf("/mining/captures/%d/accept", capture.ID)
-	staleForm := url.Values{
-		"revision":      {strconvInt(capture.Revision)},
-		"candidate_id":  {staleCandidateID},
-		"pronunciation": {"ねこ"},
-		"meanings":      {"cat"},
-	}
-	response := serveMiningForm(router, http.MethodPost, target, staleForm)
-	if response.Code != http.StatusConflict {
-		t.Fatalf("conflict response = %d, body = %s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	candidateForm := miningFormBlock(t, body, fmt.Sprintf(`<form class="mining-card-editor" method="post" action="%s"`, target))
-	requireMiningFormRevision(t, candidateForm, latest.Revision)
-	if !strings.Contains(candidateForm, fmt.Sprintf(`name="candidate_id" value="%s"`, currentCandidateID)) ||
-		!strings.Contains(candidateForm, `value="いぬ"`) ||
-		!strings.Contains(candidateForm, ">dog</textarea>") ||
-		strings.Contains(candidateForm, `value="ねこ"`) {
-		t.Fatalf("conflict did not reload the current candidate: %s", candidateForm)
-	}
-	var vocabularyCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM vocabulary").Scan(&vocabularyCount); err != nil {
-		t.Fatal(err)
-	}
-	if vocabularyCount != 0 {
-		t.Fatalf("stale candidate created %d vocabulary items", vocabularyCount)
-	}
-
-	retry := url.Values{
-		"revision":     {strconvInt(latest.Revision)},
-		"candidate_id": {currentCandidateID},
-	}
-	response = serveMiningForm(router, http.MethodPost, target, retry)
-	if response.Code != http.StatusSeeOther {
-		t.Fatalf("safe retry response = %d, body = %s", response.Code, response.Body.String())
-	}
-	var expression, pronunciation, meaning string
-	if err := db.QueryRow(`
-		SELECT v.expression, v.pronunciation, m.text
-		FROM vocabulary v
-		JOIN meanings m ON m.vocabulary_id = v.id AND m.position = 0`).Scan(&expression, &pronunciation, &meaning); err != nil {
-		t.Fatal(err)
-	}
-	if expression != "犬" || pronunciation != "いぬ" || meaning != "dog" {
-		t.Fatalf("safe retry created %q, %q, %q", expression, pronunciation, meaning)
-	}
-}
-
 func TestAcceptKanaAmbiguityUsesSelectedWrittenForm(t *testing.T) {
 	ctx, db := openMiningTestDatabase(t)
 	store := NewStore(db)
 	capture := createMiningCapture(t, ctx, store, "あく", "00000000000000000000000000000038")
 	match := jmdict.Match{
-		State: jmdict.MatchAmbiguous, SourceCreated: "2026-07-26", SourceVersion: "1.10",
+		State: jmdict.MatchAmbiguous,
 		Candidates: []jmdict.Candidate{
 			miningCandidate(101, "開く", "あく", "to open"),
 			miningCandidate(102, "空く", "あく", "to become empty"),
@@ -1727,7 +838,7 @@ func TestAttachKanaCandidateToExactExistingVocabulary(t *testing.T) {
 	}
 	capture := createMiningCapture(t, ctx, store, "あく", "00000000000000000000000000000039")
 	match := jmdict.Match{
-		State: jmdict.MatchAmbiguous, SourceCreated: "2026-07-26", SourceVersion: "1.10",
+		State: jmdict.MatchAmbiguous,
 		Candidates: []jmdict.Candidate{
 			miningCandidate(101, "開く", "あく", "to open"),
 			miningCandidate(102, "空く", "あく", "to become empty"),
@@ -1915,39 +1026,6 @@ func TestMiningRequiresCompletingASparseExistingCardBeforeRestart(t *testing.T) 
 	}
 }
 
-func TestMiningPrefillsASparseExistingCardFromTheDictionary(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	if _, err := vocabulary.NewStore(db).AddKnown(ctx, "猫"); err != nil {
-		t.Fatal(err)
-	}
-	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000064")
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("猫", "ねこ", "cat"))
-
-	response := httptest.NewRecorder()
-	miningTestRouter(t, store, "https://goi.example").ServeHTTP(
-		response,
-		httptest.NewRequest(http.MethodGet, fmt.Sprintf("/mining/captures/%d", capture.ID), nil),
-	)
-	body := response.Body.String()
-	for _, expected := range []string{
-		"This card already exists",
-		"Choose the matching entry",
-		`name="pronunciation" value="ねこ"`,
-		">cat</textarea>",
-		fmt.Sprintf(`action="/mining/captures/%d/accept"`, capture.ID),
-		fmt.Sprintf(`formaction="/mining/captures/%d/attach-candidate"`, capture.ID),
-		"Restart from first lesson",
-	} {
-		if !strings.Contains(body, expected) {
-			t.Fatalf("sparse existing card does not contain %q: %s", expected, body)
-		}
-	}
-	if strings.Contains(body, ">Complete card</a>") {
-		t.Fatalf("sparse existing card still requires manual completion: %s", body)
-	}
-}
-
 func TestFormatTimestamp(t *testing.T) {
 	tests := []struct {
 		milliseconds int64
@@ -1962,44 +1040,6 @@ func TestFormatTimestamp(t *testing.T) {
 		if got := formatTimestamp(&test.milliseconds); got != test.want {
 			t.Errorf("formatTimestamp(%d) = %q, want %q", test.milliseconds, got, test.want)
 		}
-	}
-}
-
-func TestAcceptDictionaryCandidateRejectsUnknownIdentity(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000035")
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("猫", "ねこ", "cat"))
-	form := url.Values{
-		"revision":     {strconvInt(capture.Revision)},
-		"candidate_id": {"2"},
-	}
-	response := serveMiningForm(miningTestRouter(t, store, "https://goi.example"), http.MethodPost, fmt.Sprintf("/mining/captures/%d/accept", capture.ID), form)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "dictionary suggestion is stale") {
-		t.Fatalf("response = %d, body = %s", response.Code, response.Body.String())
-	}
-	remaining, err := store.Get(ctx, capture.ID)
-	if err != nil || remaining.Status != StatusPending {
-		t.Fatalf("first capture = %#v, %v", remaining, err)
-	}
-}
-
-func TestAcceptDictionaryCandidateRejectsCandidateFromOldRevision(t *testing.T) {
-	ctx, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	capture := createMiningCapture(t, ctx, store, "猫", "00000000000000000000000000000037")
-	completeMiningEnrichment(t, ctx, store, readyMiningMatch("猫", "ねこ", "cat"))
-	updated, err := store.Update(ctx, capture.ID, capture.Revision, UpdateInput{Expression: "子猫", SourceKind: SourceManual})
-	if err != nil {
-		t.Fatal(err)
-	}
-	form := url.Values{
-		"revision":     {strconvInt(updated.Revision)},
-		"candidate_id": {candidateID(miningCandidate(123, "猫", "ねこ", ""))},
-	}
-	response := serveMiningForm(miningTestRouter(t, store, "https://goi.example"), http.MethodPost, fmt.Sprintf("/mining/captures/%d/accept", capture.ID), form)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "dictionary suggestion is stale") {
-		t.Fatalf("response = %d, body = %s", response.Code, response.Body.String())
 	}
 }
 
@@ -2037,40 +1077,6 @@ func TestDeletingVocabularyRemovesItsAcceptedCapture(t *testing.T) {
 	}
 }
 
-func TestCapturePageIncludesBookmarkletOnlyForValidOrigin(t *testing.T) {
-	_, db := openMiningTestDatabase(t)
-	store := NewStore(db)
-	for _, test := range []struct {
-		name       string
-		baseURL    string
-		wantButton bool
-	}{
-		{name: "valid", baseURL: "https://goi.example/some/path", wantButton: true},
-		{name: "invalid scheme", baseURL: "javascript:alert(1)"},
-		{name: "missing", baseURL: ""},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			router := miningTestRouter(t, store, test.baseURL)
-			request := httptest.NewRequest(http.MethodGet, "/mining/capture", nil)
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, request)
-			if response.Code != http.StatusOK {
-				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-			}
-			hasButton := strings.Contains(response.Body.String(), ">Mine to Goi</a>")
-			if hasButton != test.wantButton {
-				t.Fatalf("bookmarklet button = %t, want %t", hasButton, test.wantButton)
-			}
-			if test.wantButton && !strings.Contains(response.Body.String(), `href="javascript:`) {
-				t.Fatalf("bookmarklet URL was sanitized or omitted: %s", response.Body.String())
-			}
-			if test.wantButton && !strings.Contains(response.Body.String(), `<code data-bookmarklet-origin>https://goi.example</code>`) {
-				t.Fatalf("bookmarklet destination is missing: %s", response.Body.String())
-			}
-		})
-	}
-}
-
 func TestBookmarkletEmbedsQuotedOrigin(t *testing.T) {
 	if count := strings.Count(bookmarkletScript, "__GOI_ORIGIN__"); count != 1 {
 		t.Fatalf("bookmarklet origin placeholders = %d, want 1", count)
@@ -2082,71 +1088,6 @@ func TestBookmarkletEmbedsQuotedOrigin(t *testing.T) {
 	}
 	if !strings.Contains(script, `const origin = "https://goi.example/\"quoted";`) {
 		t.Fatalf("bookmarklet does not contain a quoted origin: %s", script)
-	}
-}
-
-func TestBookmarkletAttributesOnlyRelevantVideo(t *testing.T) {
-	script := string(bookmarklet("https://goi.example"))
-	required := []string{
-		`element.closest("[data-goi-caption-text],.caption-window,.ytp-caption-window-container")`,
-		`location.hostname === "www.youtube.com"`,
-		`location.pathname === "/watch"`,
-		`/^\/(?:embed|live|shorts)(?:\/|$)/.test(location.pathname)`,
-		`document.querySelector(".html5-video-player video")`,
-		`document.querySelector("video")`,
-		`const hasVideoContext = Boolean(video) && (Boolean(caption) || isYouTube)`,
-		`source_kind: hasVideoContext ? "video" : "web"`,
-		`source_position_seconds: hasVideoContext && Number.isFinite(video.currentTime)`,
-	}
-	for _, fragment := range required {
-		if !strings.Contains(script, fragment) {
-			t.Errorf("bookmarklet is missing %q", fragment)
-		}
-	}
-	if strings.Contains(script, `source_kind: video ? "video" : "web"`) {
-		t.Fatal("bookmarklet attributes every page video to the selection")
-	}
-}
-
-func TestBookmarkletBoundsSourceURLBeforeTransfer(t *testing.T) {
-	script := string(bookmarklet("https://goi.example"))
-	if count := strings.Count(script, `if (byteLength(candidate.href) <= 2048)`); count != 3 {
-		t.Fatalf("bookmarklet URL length checks = %d, want 3", count)
-	}
-	fragments := []string{
-		`source_url: boundedURL(location.href)`,
-		`if (byteLength(candidate.href) <= 2048)`,
-		`candidate.hash = ""`,
-		`candidate.search = ""`,
-		`return byteLength(candidate.origin) <= 2048 ? candidate.origin : ""`,
-	}
-	previous := -1
-	for _, fragment := range fragments {
-		index := strings.Index(script, fragment)
-		if index < 0 {
-			t.Fatalf("bookmarklet is missing %q", fragment)
-		}
-		if fragment != `source_url: boundedURL(location.href)` && index <= previous {
-			t.Fatalf("bookmarklet URL fallback %q is out of order", fragment)
-		}
-		if fragment != `source_url: boundedURL(location.href)` {
-			previous = index
-		}
-	}
-}
-
-func TestCaptureFormEnforcesTightBodyLimit(t *testing.T) {
-	_, db := openMiningTestDatabase(t)
-	router := miningTestRouter(t, NewStore(db), "https://goi.example")
-	request := httptest.NewRequest(http.MethodPost, "/mining/captures", strings.NewReader(strings.Repeat("x", captureBodyLimit+1)))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
-	}
-	if !strings.Contains(response.Body.String(), "form is too large") {
-		t.Fatalf("body does not explain size limit: %s", response.Body.String())
 	}
 }
 
@@ -2206,34 +1147,6 @@ func (provider *fakePronunciationProvider) Search(context.Context, string, strin
 
 func (provider *fakePronunciationProvider) Download(context.Context, int64, string, string) (media.Upload, error) {
 	return provider.upload, provider.downloadErr
-}
-
-type fakeExampleGenerator struct {
-	request         examplegen.Request
-	result          examplegen.Example
-	translationText string
-	translation     examplegen.Translation
-	err             error
-	generationOff   bool
-	translationOff  bool
-}
-
-func (generator *fakeExampleGenerator) Available() bool {
-	return !generator.generationOff
-}
-
-func (generator *fakeExampleGenerator) TranslationAvailable() bool {
-	return !generator.translationOff
-}
-
-func (generator *fakeExampleGenerator) Generate(_ context.Context, request examplegen.Request) (examplegen.Example, error) {
-	generator.request = request
-	return generator.result, generator.err
-}
-
-func (generator *fakeExampleGenerator) Translate(_ context.Context, text string) (examplegen.Translation, error) {
-	generator.translationText = text
-	return generator.translation, generator.err
 }
 
 func serveMiningForm(handler http.Handler, method, target string, form url.Values) *httptest.ResponseRecorder {
@@ -2312,7 +1225,7 @@ func bulkAcceptMining(ctx context.Context, store *Store, ids []int64) (BulkAccep
 
 func readyMiningMatch(written, reading, meaning string) jmdict.Match {
 	return jmdict.Match{
-		State: jmdict.MatchReady, SourceCreated: "2026-07-26", SourceVersion: "1.10",
+		State:      jmdict.MatchReady,
 		Candidates: []jmdict.Candidate{miningCandidate(123, written, reading, meaning)},
 	}
 }

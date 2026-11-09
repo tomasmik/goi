@@ -82,8 +82,6 @@ const (
 )
 
 type Match struct {
-	State         MatchState
-	SourceCreated string
-	SourceVersion string
-	Candidates    []Candidate
+	State      MatchState
+	Candidates []Candidate
 }

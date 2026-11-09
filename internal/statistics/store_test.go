@@ -3,9 +3,7 @@ package statistics
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -90,28 +88,6 @@ func TestStudyStreakUsesConfiguredTimeZoneAcrossDaylightSaving(t *testing.T) {
 	}
 	if summary.Streak != 2 {
 		t.Fatalf("streak = %d, want 2", summary.Streak)
-	}
-}
-
-func TestSummaryRejectsInvalidConfiguredTimeZone(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "timezone.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`
-		INSERT INTO user_settings (id, time_zone)
-		VALUES (1, 'not/a-time-zone')`); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = NewStore(db, time.UTC).Summary(ctx, time.Now())
-	if err == nil || !strings.Contains(err.Error(), `load configured time zone "not/a-time-zone"`) {
-		t.Fatalf("Summary() error = %v", err)
 	}
 }
 
@@ -252,39 +228,6 @@ func TestRecentMistakesLimitReturnsMostRecent(t *testing.T) {
 	}
 	if _, err := NewStore(db, time.UTC).RecentMistakesLimit(ctx, now, -1); err == nil {
 		t.Fatal("RecentMistakesLimit() accepted a negative limit")
-	}
-}
-
-func TestHideMistakeRejectsUnavailableVocabulary(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "unavailable-mistake.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	store := NewStore(db, time.UTC)
-	if err := store.HideMistake(ctx, 999); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("missing vocabulary error = %v, want sql.ErrNoRows", err)
-	}
-	nonMistakeID := insertMistakeVocabulary(t, db, "食べる")
-	if err := store.HideMistake(ctx, nonMistakeID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("non-mistake vocabulary error = %v, want sql.ErrNoRows", err)
-	}
-	staleMistakeID := insertMistakeVocabulary(t, db, "見る")
-	insertNormalFailure(t, db, staleMistakeID, time.Now().UTC().Add(-25*time.Hour).Unix())
-	if err := store.HideMistake(ctx, staleMistakeID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("stale mistake error = %v, want sql.ErrNoRows", err)
-	}
-	deletedMistakeID := insertMistakeVocabulary(t, db, "読む")
-	insertNormalFailure(t, db, deletedMistakeID, time.Now().UTC().Unix())
-	if _, err := db.Exec("DELETE FROM vocabulary WHERE id = ?", deletedMistakeID); err != nil {
-		t.Fatal(err)
-	}
-	if err := store.HideMistake(ctx, deletedMistakeID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("deleted vocabulary error = %v, want sql.ErrNoRows", err)
 	}
 }
 

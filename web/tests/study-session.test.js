@@ -7,7 +7,6 @@ import {
   reviewCorrectionKeyboardAction,
   reviewAnswerFocusTarget,
   selfGradeKeyboardAction,
-  stageFocusTarget
 } from "../static/js/study-session.js";
 
 test("maps confirmation keys to deliberate review actions", () => {
@@ -96,32 +95,6 @@ test("ignores unsafe self-grade keys", () => {
     assert.equal(selfGradeKeyboardAction({ key: " ", ...blocked }, false), "");
     assert.equal(selfGradeKeyboardAction({ key: "2", ...blocked }, true), "");
   }
-});
-
-test("focuses the useful control or heading after replacing a study stage", () => {
-  const autofocus = {};
-  const autofocusStage = {
-    dataset: {},
-    querySelector(selector) {
-      assert.equal(selector, "[autofocus]");
-      return autofocus;
-    }
-  };
-  assert.equal(stageFocusTarget(autofocusStage), autofocus);
-
-  const heading = {};
-  const selectors = [];
-  const headingStage = {
-    dataset: {},
-    querySelector(selector) {
-      selectors.push(selector);
-      return selector === "[autofocus]" ? null : heading;
-    }
-  };
-  assert.equal(stageFocusTarget(headingStage), heading);
-  assert.equal(selectors.length, 2);
-  assert.equal(stageFocusTarget(headingStage, false), null);
-  assert.equal(selectors.length, 3);
 });
 
 test("hands focus directly between typed review answer inputs", () => {

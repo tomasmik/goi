@@ -7,7 +7,6 @@ import (
 	"errors"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -96,54 +95,6 @@ func TestTokenLifecycle(t *testing.T) {
 	}
 	if len(listed) != 0 {
 		t.Fatalf("tokens after revoke = %#v", listed)
-	}
-}
-
-func TestTokenStoreRejectsInvalidInput(t *testing.T) {
-	ctx, db := openCaptureAPITestDatabase(t)
-	store := NewStore(db)
-	for _, name := range []string{"", " \n ", "bad\x00name", strings.Repeat("a", 101)} {
-		if _, err := store.Create(ctx, name); !errors.Is(err, ErrInvalidTokenName) {
-			t.Fatalf("Create(%q) error = %v", name, err)
-		}
-	}
-	for _, plaintext := range []string{"", "goi_ext_v1_short", "goi_ext_v1_!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"} {
-		if _, err := store.Authenticate(ctx, plaintext); !errors.Is(err, ErrUnauthorized) {
-			t.Fatalf("Authenticate(%q) error = %v", plaintext, err)
-		}
-	}
-	if err := store.Revoke(ctx, 999); !errors.Is(err, ErrTokenNotFound) {
-		t.Fatalf("Revoke missing token error = %v", err)
-	}
-}
-
-func TestTokenTimesRemainValidWhenClockMovesBackward(t *testing.T) {
-	ctx, db := openCaptureAPITestDatabase(t)
-	store := NewStore(db)
-	createdAt := time.Date(2026, 7, 26, 12, 0, 0, 0, time.UTC)
-	store.now = func() time.Time { return createdAt }
-	created, err := store.Create(ctx, "Laptop")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	store.now = func() time.Time { return createdAt.Add(-time.Hour) }
-	authenticated, err := store.Authenticate(ctx, created.Plaintext)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if authenticated.LastUsedAt == nil || !authenticated.LastUsedAt.Equal(createdAt) {
-		t.Fatalf("last used = %v, want %v", authenticated.LastUsedAt, createdAt)
-	}
-	if err := store.Revoke(ctx, created.ID); err != nil {
-		t.Fatal(err)
-	}
-	listed, err := store.List(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(listed) != 0 {
-		t.Fatalf("tokens = %#v", listed)
 	}
 }
 

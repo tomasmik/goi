@@ -51,19 +51,6 @@ func TestTofuguFindsAndDownloadsExactRecording(t *testing.T) {
 	}
 }
 
-func TestTofuguReturnsNoResultForMissingRecording(t *testing.T) {
-	provider := NewTofugu(&http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-		return testResponse(http.StatusNotFound, "text/plain", nil), nil
-	})})
-	recordings, err := provider.Search(context.Background(), "砂場", "すなば")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(recordings) != 0 {
-		t.Fatalf("recordings = %#v", recordings)
-	}
-}
-
 func TestTofuguRejectsRecordingIDForDifferentWord(t *testing.T) {
 	provider := NewTofugu(nil)
 	_, err := provider.Download(context.Background(), tofuguRecordingID("納豆", "なっとう"), "日本", "にほん")

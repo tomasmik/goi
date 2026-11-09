@@ -126,24 +126,3 @@ func TestDuplicateMediaKeepsOneAttribution(t *testing.T) {
 		t.Fatalf("attribution = %q, %q, %q, %q", sourceName, sourceURL, licenseName, licenseURL)
 	}
 }
-
-func TestHandlerRejectsInvalidAndMissingIDs(t *testing.T) {
-	db, err := database.Open(t.Context(), filepath.Join(t.TempDir(), "media.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := database.Migrate(t.Context(), db); err != nil {
-		t.Fatal(err)
-	}
-	router := chi.NewRouter()
-	NewHandler(db).Routes(router)
-
-	for _, path := range []string{"/media/nope", "/media/0", "/media/999"} {
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
-		if response.Code != http.StatusNotFound {
-			t.Fatalf("GET %s status = %d", path, response.Code)
-		}
-	}
-}

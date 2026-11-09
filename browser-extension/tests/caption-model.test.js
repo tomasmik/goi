@@ -3,7 +3,6 @@ const assert = require("node:assert/strict");
 
 const {
   captionFromSegmentGroups,
-  captureErrorMessage,
   directCaptureInput
 } = require("../shared/caption-model.js");
 
@@ -46,10 +45,4 @@ test("reconstructs the latest caption without dropping repeats or adding Japanes
     captionFromSegmentGroups([["面白いところがたくさんあります\n", "から、一緒に歩きましょう！"]]),
     "面白いところがたくさんあります\nから、一緒に歩きましょう！"
   );
-});
-
-test("gives a specific prompt when Goi is not connected", () => {
-  assert.equal(captureErrorMessage("not_connected"), "Connect Goi first");
-  assert.equal(captureErrorMessage("queue_full"), "Queue full — retry when Goi is reachable");
-  assert.equal(captureErrorMessage("network"), "Could not reach Goi");
 });

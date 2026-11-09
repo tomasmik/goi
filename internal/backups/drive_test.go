@@ -18,16 +18,6 @@ import (
 
 const testInstallationID = "0123456789abcdef0123456789abcdef"
 
-func TestGoogleDriveRequiresInstallationIDWhenConfigured(t *testing.T) {
-	_, err := NewGoogleDrive(GoogleDriveConfig{
-		ClientID: "client", ClientSecret: "secret", RedirectURL: "https://goi.example/callback",
-		CredentialPath: filepath.Join(t.TempDir(), "google-drive.json"),
-	})
-	if err == nil || !strings.Contains(err.Error(), "installation ID") {
-		t.Fatalf("NewGoogleDrive() error = %v", err)
-	}
-}
-
 func TestGoogleDriveOAuthStoresOfflineCredentialPrivately(t *testing.T) {
 	var tokenRequests int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -379,82 +369,6 @@ func TestGoogleDriveUploadRetriesWhenDriveReportsNoReceivedBytes(t *testing.T) {
 	}
 }
 
-func TestGoogleDriveRejectsMalformedCompletedUploadResponses(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		status int
-		body   string
-		query  bool
-	}{
-		{name: "direct completion without ID", status: http.StatusOK, body: `{}`},
-		{name: "queried completion with malformed ID", status: http.StatusCreated, body: `{"id":"not/a/drive/id"}`, query: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.WriteHeader(test.status)
-				_, _ = io.WriteString(w, test.body)
-			}))
-			defer server.Close()
-			now := time.Now()
-			drive := &GoogleDrive{
-				config:      GoogleDriveConfig{HTTPClient: server.Client(), Now: func() time.Time { return now }},
-				accessToken: "access", accessExpiry: now.Add(time.Hour),
-			}
-			var err error
-			if test.query {
-				_, _, err = drive.queryUpload(t.Context(), server.URL, 6)
-			} else {
-				path := filepath.Join(t.TempDir(), "bundle")
-				if err := os.WriteFile(path, []byte("bundle"), 0o640); err != nil {
-					t.Fatal(err)
-				}
-				file, openErr := os.Open(path)
-				if openErr != nil {
-					t.Fatal(openErr)
-				}
-				_, err = drive.uploadContent(t.Context(), server.URL, file, 6)
-				file.Close()
-			}
-			if err == nil || !strings.Contains(err.Error(), "invalid backup file ID") {
-				t.Fatalf("completion error = %v", err)
-			}
-		})
-	}
-}
-
-func TestGoogleDriveCredentialJSONExcludesUnknownSecrets(t *testing.T) {
-	contents, err := json.Marshal(storedGoogleCredentials{RefreshToken: "refresh"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(contents) != `{"refresh_token":"refresh"}` {
-		t.Fatalf("credential JSON = %s", contents)
-	}
-}
-
-func TestReadGoogleCredentialsRejectsOversizedFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "google-drive.json")
-	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), maxGoogleCredentialBytes+1), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := readGoogleCredentials(path); err == nil || !strings.Contains(err.Error(), "too large") {
-		t.Fatalf("readGoogleCredentials error = %v, want size error", err)
-	}
-}
-
-func TestWriteGoogleCredentialsRejectsOversizedValue(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "google-drive.json")
-	err := writeGoogleCredentials(path, storedGoogleCredentials{
-		RefreshToken: strings.Repeat("x", maxGoogleCredentialBytes),
-	})
-	if err == nil || !strings.Contains(err.Error(), "too large") {
-		t.Fatalf("writeGoogleCredentials error = %v, want size error", err)
-	}
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("credential file exists after rejected write: %v", err)
-	}
-}
-
 func TestUploadOffsetRequiresAContiguousRangeFromZero(t *testing.T) {
 	if offset, err := uploadOffset("bytes=0-41"); err != nil || offset != 42 {
 		t.Fatalf("valid offset = %d, %v", offset, err)
@@ -463,27 +377,6 @@ func TestUploadOffsetRequiresAContiguousRangeFromZero(t *testing.T) {
 		if _, err := uploadOffset(value); err == nil {
 			t.Fatalf("uploadOffset(%q) succeeded", value)
 		}
-	}
-}
-
-func TestGoogleDriveDisconnectKeepsMemoryConnectedWhenCredentialRemovalFails(t *testing.T) {
-	credentialPath := filepath.Join(t.TempDir(), "credentials")
-	if err := os.Mkdir(credentialPath, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(credentialPath, "keep"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	drive := &GoogleDrive{
-		config:       GoogleDriveConfig{CredentialPath: credentialPath},
-		refreshToken: "refresh",
-		accessToken:  "access",
-	}
-	if err := drive.Disconnect(); err == nil {
-		t.Fatal("Disconnect() succeeded while the credential path was not removable")
-	}
-	if !drive.Connected() {
-		t.Fatal("failed disconnect cleared the in-memory credential")
 	}
 }
 

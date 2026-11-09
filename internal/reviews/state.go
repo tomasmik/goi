@@ -16,7 +16,6 @@ type State struct {
 	Kind            string
 	Total           int
 	Completed       int
-	Remaining       int
 	WordTotal       int
 	WordCompleted   int
 	WordsRemaining  int
@@ -24,7 +23,6 @@ type State struct {
 	ActiveRetry     bool
 	FirstTryCorrect int
 	PromptCount     int
-	FirstTryMisses  int
 	RetriesComplete int
 	VocabularyID    int64
 	Expression      string
@@ -125,7 +123,6 @@ func (s *Store) loadSessionSummary(ctx context.Context, sessionID int64, state *
 		  )`, sessionID).Scan(&state.Total, &state.Completed); err != nil {
 		return fmt.Errorf("count review items: %w", err)
 	}
-	state.Remaining = state.Total - state.Completed
 	if err := s.db.QueryRowContext(ctx, `
 		SELECT COUNT(*), COALESCE(SUM(completed), 0)
 		FROM (
@@ -165,7 +162,6 @@ func (s *Store) loadSessionSummary(ctx context.Context, sessionID int64, state *
 		); err != nil {
 			return fmt.Errorf("load review accuracy: %w", err)
 		}
-		state.FirstTryMisses = state.PromptCount - state.FirstTryCorrect
 		state.RetriesComplete = state.Total - state.WordTotal
 		if state.Kind == "normal" || state.LessonSessionID > 0 {
 			var dueAt sql.NullInt64

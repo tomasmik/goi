@@ -142,10 +142,6 @@ func (s *Store) ListCountFiltered(ctx context.Context, status Status, search, so
 	return count, nil
 }
 
-func (s *Store) ListPage(ctx context.Context, status Status, limit, offset int) ([]Capture, error) {
-	return s.ListPageFiltered(ctx, status, "", "", limit, offset)
-}
-
 func (s *Store) ListPageFiltered(ctx context.Context, status Status, search, source string, limit, offset int) ([]Capture, error) {
 	if limit <= 0 || limit > maximumCapturePageSize {
 		return nil, fmt.Errorf("mining page size must be between 1 and %d", maximumCapturePageSize)
@@ -455,10 +451,6 @@ func (s *Store) attachInTx(ctx context.Context, tx *sql.Tx, id, expectedRevision
 		return fmt.Errorf("create example from mining capture: %w", err)
 	}
 	return nil
-}
-
-func (s *Store) Attach(ctx context.Context, id, expectedRevision, vocabularyID int64) error {
-	return s.attachWithExample(ctx, id, expectedRevision, vocabularyID, minedExampleDetails{}, cardMediaChanges{})
 }
 
 func (s *Store) attachWithExample(ctx context.Context, id, expectedRevision, vocabularyID int64, example minedExampleDetails, changes cardMediaChanges) error {

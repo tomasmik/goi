@@ -11,8 +11,6 @@ type EnrichmentView struct {
 	State          EnrichmentState
 	Heading        string
 	Message        string
-	SourceCreated  string
-	SourceVersion  string
 	Candidates     []CandidateView
 	StaleCandidate bool
 }
@@ -50,11 +48,7 @@ type WriteAsOption struct {
 }
 
 func newEnrichmentView(enrichment Enrichment, capture Capture, form detailForm) EnrichmentView {
-	view := EnrichmentView{
-		State:         enrichment.State,
-		SourceCreated: enrichment.SourceCreated,
-		SourceVersion: enrichment.SourceVersion,
-	}
+	view := EnrichmentView{State: enrichment.State}
 	switch enrichment.State {
 	case EnrichmentReady:
 		view.Heading = "Add to vocabulary"

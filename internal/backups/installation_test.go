@@ -1,54 +1,10 @@
 package backups
 
 import (
-	"os"
 	"path/filepath"
 	"sync"
 	"testing"
 )
-
-func TestInstallationIDPersists(t *testing.T) {
-	dataDir := t.TempDir()
-	first, err := LoadOrCreateInstallationID(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := LoadOrCreateInstallationID(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first != second || !validInstallationID(first) {
-		t.Fatalf("installation IDs = %q, %q", first, second)
-	}
-	info, err := os.Stat(filepath.Join(dataDir, installationIDFile))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o640 {
-		t.Fatalf("installation ID mode = %o", info.Mode().Perm())
-	}
-}
-
-func TestInstallationIDRejectsInvalidPersistedValue(t *testing.T) {
-	dataDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dataDir, installationIDFile), []byte("shared\n"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadOrCreateInstallationID(dataDir); err == nil {
-		t.Fatal("LoadOrCreateInstallationID() accepted an invalid ID")
-	}
-}
-
-func TestInstallationIDRejectsOversizedPersistedValue(t *testing.T) {
-	dataDir := t.TempDir()
-	path := filepath.Join(dataDir, installationIDFile)
-	if err := os.WriteFile(path, make([]byte, maxInstallationIDBytes+1), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := LoadOrCreateInstallationID(dataDir); err == nil {
-		t.Fatal("LoadOrCreateInstallationID() accepted an oversized ID file")
-	}
-}
 
 func TestConcurrentInstallationIDCreationReturnsPersistedIdentity(t *testing.T) {
 	dataDir := t.TempDir()

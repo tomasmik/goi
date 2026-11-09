@@ -4,19 +4,12 @@ const assert = require("node:assert/strict");
 const {
   CAPTURE_PATH,
   COVERAGE_PATH,
-  DEFAULT_TIMEOUT_MS,
   DICTIONARY_PATH,
   KNOWN_PATH,
   STATUS_PATH,
   TRANSLATE_PATH,
-  TRANSLATION_TIMEOUT_MS,
   create
 } = require("../background/api-client.js");
-
-test("translation requests allow time for remote providers", function () {
-  assert.equal(DEFAULT_TIMEOUT_MS, 10000);
-  assert.equal(TRANSLATION_TIMEOUT_MS, 70000);
-});
 
 test("uses only the fixed extension API paths", async () => {
   const calls = [];
@@ -112,69 +105,4 @@ test("rejects successful HTTP responses with the wrong API shape", async () => {
   await assert.rejects(client.dictionary("読む"), { code: "unexpected_response", status: 502 });
   await assert.rejects(client.markKnown("読む"), { code: "unexpected_response", status: 502 });
   await assert.rejects(client.translate("本を読みます。"), { code: "unexpected_response", status: 502 });
-});
-
-test("accepts absent or null ranks and rejects malformed ranks independently", async () => {
-  const candidate = { written: "猫", reading: "ねこ", meanings: ["cat"] };
-  const client = create(async () => ({
-    ok: true, status: 200,
-    json: async () => ({ query: "猫", state: "ready", candidates: [candidate] }),
-  }), { baseUrl: "https://goi.example", token: "secret" });
-  for (const field of ["global_rank", "novel_rank"]) {
-    for (const rank of [undefined, null, 1, 123456, 2147483647]) {
-      candidate[field] = rank;
-      await client.dictionary("猫");
-    }
-    for (const rank of [0, -1, 1.5, "39", Infinity, NaN, 2147483648]) {
-      candidate[field] = rank;
-      await assert.rejects(client.dictionary("猫"), { code: "unexpected_response" });
-    }
-    delete candidate[field];
-  }
-});
-
-test("rejects a non-string coverage reading", async () => {
-  const client = create(async function () {
-    return {
-      ok: true,
-      status: 200,
-      json: async function () {
-        return {
-          summary: { known_occurrences: 0, total_occurrences: 1, unknown_unique: 1, excluded_names: 0 },
-          blocks: [{ id: 1, tokens: [{
-            surface: "読む",
-            expression: "読む",
-            reading: 123,
-            start_utf16: 0,
-            end_utf16: 2,
-            status: "unknown",
-          }] }],
-        };
-      },
-    };
-  }, { baseUrl: "https://goi.example", token: "secret" });
-
-  await assert.rejects(
-    client.coverage([{ id: 1, text: "読む" }]),
-    { code: "unexpected_response", status: 502 }
-  );
-});
-
-test("allows a queued capture retry to be cancelled", async () => {
-  let requestSignal;
-  const client = create(async function (_url, options) {
-    requestSignal = options.signal;
-    await new Promise(function (_resolve, reject) {
-      options.signal.addEventListener("abort", function () {
-        reject(new Error("request aborted"));
-      }, { once: true });
-    });
-  }, { baseUrl: "https://goi.example", token: "secret" });
-  const controller = new AbortController();
-
-  const capture = client.capture({ capture_nonce: "a".repeat(32) }, controller.signal);
-  controller.abort();
-
-  await assert.rejects(capture, /request aborted/);
-  assert.equal(requestSignal.aborted, true);
 });

@@ -34,12 +34,10 @@ type Client struct {
 }
 
 type User struct {
-	ID                 string
-	Username           string
-	Level              int
-	SubscriptionActive bool
-	SubscriptionType   string
-	MaxLevelGranted    int
+	ID              string
+	Username        string
+	Level           int
+	MaxLevelGranted int
 }
 
 type Assignment struct {
@@ -125,9 +123,7 @@ func (c *Client) User(ctx context.Context, token string) (User, error) {
 			Username     string `json:"username"`
 			Level        int    `json:"level"`
 			Subscription struct {
-				Active          bool   `json:"active"`
-				Type            string `json:"type"`
-				MaxLevelGranted int    `json:"max_level_granted"`
+				MaxLevelGranted int `json:"max_level_granted"`
 			} `json:"subscription"`
 		} `json:"data"`
 	}
@@ -135,12 +131,10 @@ func (c *Client) User(ctx context.Context, token string) (User, error) {
 		return User{}, err
 	}
 	user := User{
-		ID:                 strings.TrimSpace(response.Data.ID),
-		Username:           strings.TrimSpace(response.Data.Username),
-		Level:              response.Data.Level,
-		SubscriptionActive: response.Data.Subscription.Active,
-		SubscriptionType:   response.Data.Subscription.Type,
-		MaxLevelGranted:    response.Data.Subscription.MaxLevelGranted,
+		ID:              strings.TrimSpace(response.Data.ID),
+		Username:        strings.TrimSpace(response.Data.Username),
+		Level:           response.Data.Level,
+		MaxLevelGranted: response.Data.Subscription.MaxLevelGranted,
 	}
 	if response.Object != "user" || user.ID == "" || len(user.ID) > 200 ||
 		user.Username == "" || len(user.Username) > 200 ||

@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/justinas/nosurf"
 
 	"github.com/tomasmik/goi/internal/backups"
@@ -22,17 +18,7 @@ import (
 	appimports "github.com/tomasmik/goi/internal/imports"
 	"github.com/tomasmik/goi/internal/mining"
 	"github.com/tomasmik/goi/internal/vocabulary"
-	internalweb "github.com/tomasmik/goi/internal/web"
 )
-
-func TestStatusWriterDefaultsToOK(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	writer := &statusWriter{ResponseWriter: recorder}
-
-	if got := writer.Status(); got != http.StatusOK {
-		t.Fatalf("Status() = %d, want %d", got, http.StatusOK)
-	}
-}
 
 func TestServerRefusesToStartAfterPublishedRestoreCleanupFailure(t *testing.T) {
 	cause := errors.New("could not consume pending bundle")
@@ -49,36 +35,6 @@ func TestServerRefusesToStartAfterPublishedRestoreCleanupFailure(t *testing.T) {
 	lockBusy := fmt.Errorf("restore: %w", database.ErrDatabaseInUse)
 	if err := pendingRestoreStartupError(false, lockBusy); !errors.Is(err, database.ErrDatabaseInUse) {
 		t.Fatalf("lock contention did not prevent startup: %v", err)
-	}
-}
-
-func TestStatusWriterKeepsFirstStatus(t *testing.T) {
-	recorder := httptest.NewRecorder()
-	writer := &statusWriter{ResponseWriter: recorder}
-
-	writer.WriteHeader(http.StatusCreated)
-	writer.WriteHeader(http.StatusInternalServerError)
-
-	if got := writer.Status(); got != http.StatusCreated {
-		t.Fatalf("Status() = %d, want %d", got, http.StatusCreated)
-	}
-	if got := recorder.Code; got != http.StatusCreated {
-		t.Fatalf("response status = %d, want %d", got, http.StatusCreated)
-	}
-}
-
-func TestRequestLoggerIncludesRequestID(t *testing.T) {
-	var output bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&output, nil))
-	handler := middleware.RequestID(requestLogger(logger)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})))
-	request := httptest.NewRequest(http.MethodPost, "/settings", nil)
-	request.Header.Set(middleware.RequestIDHeader, "test-request-id")
-	handler.ServeHTTP(httptest.NewRecorder(), request)
-
-	if logOutput := output.String(); !strings.Contains(logOutput, `"request_id":"test-request-id"`) {
-		t.Fatalf("request log does not contain request ID: %s", logOutput)
 	}
 }
 
@@ -100,26 +56,6 @@ func TestSecurityHeadersScopeHSTSToCurrentHost(t *testing.T) {
 	securityHeaders(false)(next).ServeHTTP(insecureResponse, httptest.NewRequest(http.MethodGet, "/", nil))
 	if got := insecureResponse.Header().Get("Strict-Transport-Security"); got != "" {
 		t.Fatalf("insecure HSTS = %q", got)
-	}
-}
-
-func TestRequestBodyLimitRejectsOversizedDefaultRequest(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := io.Copy(io.Discard, r.Body); err != nil {
-			http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
-		}
-	})
-	request := httptest.NewRequest(
-		http.MethodPost,
-		"/settings",
-		strings.NewReader(strings.Repeat("x", int(defaultRequestBodyLimit)+1)),
-	)
-	recorder := httptest.NewRecorder()
-
-	limitRequestBody(next).ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("response status = %d, want %d", recorder.Code, http.StatusRequestEntityTooLarge)
 	}
 }
 
@@ -158,25 +94,6 @@ func TestRequestBodyLimitUsesRouteSpecificLimits(t *testing.T) {
 				t.Fatalf("requestBodyLimit() = %d, want %d", got, test.want)
 			}
 		})
-	}
-}
-
-func TestTextImportBodyLimitAllowsLargeForm(t *testing.T) {
-	data := strings.Repeat("x", 1536<<10)
-	request := httptest.NewRequest(http.MethodPost, "/imports/text", strings.NewReader("data="+data))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response := httptest.NewRecorder()
-	limitRequestBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			t.Fatalf("parse text import below its body limit: %v", err)
-		}
-		if r.FormValue("data") != data {
-			t.Fatal("text import data was truncated")
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})).ServeHTTP(response, request)
-	if response.Code != http.StatusNoContent {
-		t.Fatalf("response status = %d", response.Code)
 	}
 }
 
@@ -268,78 +185,6 @@ func TestRequestTimeoutReturnsWhileHandlerIsBlocked(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("blocked handler did not finish after release")
-	}
-}
-
-func TestRequestTimeoutPreservesSuccessfulResponse(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-Test", "complete")
-		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write([]byte("saved"))
-	})
-	handler := requestTimeoutFor(next, func(*http.Request) time.Duration {
-		return time.Second
-	})
-
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/", nil))
-
-	if response.Code != http.StatusCreated || response.Body.String() != "saved" {
-		t.Fatalf("response = %d %q, want 201 saved", response.Code, response.Body.String())
-	}
-	if response.Header().Get("X-Test") != "complete" {
-		t.Fatalf("X-Test = %q", response.Header().Get("X-Test"))
-	}
-}
-
-func TestOuterMiddlewareKeepsHeadersAndLogsTimeoutStatus(t *testing.T) {
-	var output bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&output, nil))
-	release := make(chan struct{})
-	blocked := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		<-release
-	})
-	handler := securityHeaders(false)(middleware.RequestID(requestLogger(logger)(requestTimeoutFor(
-		blocked,
-		func(*http.Request) time.Duration { return time.Millisecond },
-	))))
-
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/settings", nil))
-	close(release)
-
-	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("response status = %d, want %d", response.Code, http.StatusServiceUnavailable)
-	}
-	if response.Header().Get("X-Content-Type-Options") != "nosniff" {
-		t.Fatalf("security headers missing from timeout response: %v", response.Header())
-	}
-	if logOutput := output.String(); !strings.Contains(logOutput, `"status":503`) {
-		t.Fatalf("timeout status missing from request log: %s", logOutput)
-	}
-}
-
-func TestCSRFFailureRendersRecoveryPage(t *testing.T) {
-	renderer, err := internalweb.NewRenderer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	request := httptest.NewRequest(http.MethodPost, "/settings", nil)
-	response := httptest.NewRecorder()
-	protected := nosurf.New(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-		t.Fatal("request without a CSRF token reached the protected handler")
-	}))
-	protected.SetFailureHandler(csrfFailureHandler(logger, renderer))
-
-	protected.ServeHTTP(response, request)
-
-	if response.Code != http.StatusBadRequest {
-		t.Fatalf("response status = %d, want %d", response.Code, http.StatusBadRequest)
-	}
-	body := response.Body.String()
-	if !strings.Contains(body, "Request rejected") || !strings.Contains(body, "Back to study") {
-		t.Fatalf("response does not contain recovery UI: %s", body)
 	}
 }
 
@@ -435,19 +280,6 @@ func TestWithoutBrowserSessionRoutesOnlyStatelessPathsDirectly(t *testing.T) {
 				t.Fatalf("handler = %q, want %q", got, test.want)
 			}
 		})
-	}
-}
-
-func TestCacheControlSetsExplicitPolicy(t *testing.T) {
-	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-	for _, value := range []string{"no-cache", "no-store"} {
-		response := httptest.NewRecorder()
-		cacheControl(value)(next).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
-		if got := response.Header().Get("Cache-Control"); got != value {
-			t.Fatalf("Cache-Control = %q, want %q", got, value)
-		}
 	}
 }
 

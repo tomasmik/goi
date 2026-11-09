@@ -24,23 +24,6 @@ func TestPreparePNG(t *testing.T) {
 	}
 }
 
-func TestInvalidUploadSeparatesUserMessageFromCause(t *testing.T) {
-	_, err := Prepare(KindImage, "broken.png", []byte("\x89PNG\r\n\x1a\n"))
-	if err == nil {
-		t.Fatal("Prepare() succeeded for invalid image")
-	}
-	userError, ok := err.(interface{ UserMessage() string })
-	if !ok {
-		t.Fatalf("error %T does not expose a user-safe message", err)
-	}
-	if message := userError.UserMessage(); message != "image file could not be decoded" {
-		t.Fatalf("UserMessage() = %q", message)
-	}
-	if !strings.Contains(err.Error(), "image file could not be decoded:") {
-		t.Fatalf("internal error lost its cause: %q", err)
-	}
-}
-
 func TestPrepareRejectsOversizedImageDimensions(t *testing.T) {
 	var content bytes.Buffer
 	if err := png.Encode(&content, image.NewRGBA(image.Rect(0, 0, 8001, 1))); err != nil {

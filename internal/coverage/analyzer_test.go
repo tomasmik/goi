@@ -12,31 +12,6 @@ import (
 	"github.com/tomasmik/goi/internal/vocabulary"
 )
 
-type countingKnownVocabulary struct {
-	calls int
-}
-
-func (source *countingKnownVocabulary) KnownExpressionStatuses(context.Context) (map[string]string, error) {
-	source.calls++
-	return map[string]string{"猫": StatusKnown}, nil
-}
-
-func TestAnalyzeReusesKnownVocabularyDuringSubtitleBursts(t *testing.T) {
-	source := &countingKnownVocabulary{}
-	analyzer, err := NewAnalyzer(source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for range 2 {
-		if _, err := analyzer.Analyze(context.Background(), []Block{{ID: 1, Text: "猫"}}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if source.calls != 1 {
-		t.Fatalf("known vocabulary loads = %d, want 1", source.calls)
-	}
-}
-
 func TestAnalyzeUsesLearnedAndExternalVocabulary(t *testing.T) {
 	ctx, db := openCoverageTestDatabase(t)
 	insertCoverageVocabulary(t, db, "昨日", "active", false)

@@ -31,10 +31,8 @@ type DictionaryLookup interface {
 }
 
 type Enrichment struct {
-	State         EnrichmentState
-	SourceCreated string
-	SourceVersion string
-	Candidates    []jmdict.Candidate
+	State      EnrichmentState
+	Candidates []jmdict.Candidate
 }
 
 func lookupEnrichment(ctx context.Context, dictionary DictionaryLookup, capture Capture) Enrichment {
@@ -48,8 +46,6 @@ func lookupEnrichment(ctx context.Context, dictionary DictionaryLookup, capture 
 		result.State = EnrichmentFailed
 		return result
 	}
-	result.SourceCreated = match.SourceCreated
-	result.SourceVersion = match.SourceVersion
 	switch match.State {
 	case jmdict.MatchReady:
 		result.State = EnrichmentReady

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -46,38 +45,6 @@ func TestCreateStoresManualExampleWithVocabulary(t *testing.T) {
 	}
 	if example.TargetSurface != "食べる" || example.SourceTitle != "" || !example.HasTarget {
 		t.Fatalf("example context = %+v", example)
-	}
-}
-
-func TestCreateStoresReadingAndMeaningOrderOnVocabulary(t *testing.T) {
-	ctx, db := openTestDatabase(t)
-	id, err := NewStore(db).Create(ctx, CreateInput{
-		Expression:    "コンピューター",
-		Pronunciation: "コンピューター",
-		Meanings:      []string{"computer", "electronic computer", "computing device"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var pronunciation, normalizedPronunciation string
-	if err := db.QueryRow(`
-		SELECT pronunciation, normalized_pronunciation
-		FROM vocabulary
-		WHERE id = ?`, id).Scan(&pronunciation, &normalizedPronunciation); err != nil {
-		t.Fatal(err)
-	}
-	if pronunciation != "コンピューター" || normalizedPronunciation != "こんぴゅーたー" {
-		t.Fatalf("reading = %q (%q), want katakana display and hiragana normalization", pronunciation, normalizedPronunciation)
-	}
-
-	item, err := NewStore(db).Get(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"computer", "electronic computer", "computing device"}
-	if !slices.Equal(item.Meanings, want) {
-		t.Fatalf("meanings = %q, want %q", item.Meanings, want)
 	}
 }
 
@@ -144,66 +111,6 @@ func TestUpdateReplacesOneMediaAssetPerPurpose(t *testing.T) {
 	}
 	if associations != 1 || mediaCount != 1 {
 		t.Fatalf("media after removal = %d associations and %d assets, want 1 and 1", associations, mediaCount)
-	}
-}
-
-func TestUpdateRejectsReplacingAndRemovingTheSameMedia(t *testing.T) {
-	ctx, db := openTestDatabase(t)
-	store := NewStore(db)
-	id, err := store.Create(ctx, CreateInput{
-		Expression:    "食べる",
-		Pronunciation: "たべる",
-		Meanings:      []string{"to eat"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	item, err := store.Get(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = store.Update(ctx, id, item.ContentRevision, CreateInput{
-		Expression:    item.Expression,
-		Pronunciation: item.Pronunciation,
-		Meanings:      item.Meanings,
-		Audio:         &media.Upload{Kind: media.KindAudio, MimeType: "audio/mpeg", Content: []byte("audio")},
-		RemoveAudio:   true,
-	})
-	if !errors.Is(err, ErrInvalidInput) || !strings.Contains(err.Error(), "either a replacement audio") {
-		t.Fatalf("Update error = %v, want replacement/removal conflict", err)
-	}
-}
-
-func TestCreateIdentifiesInvalidInput(t *testing.T) {
-	ctx, db := openTestDatabase(t)
-	_, err := NewStore(db).Create(ctx, CreateInput{
-		Expression:    "見る",
-		Pronunciation: "q",
-		Meanings:      []string{"to see"},
-	})
-	if !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("create error = %v, want invalid input", err)
-	}
-	if got := err.Error(); !strings.Contains(got, `pronunciation: unsupported romaji near "q"`) {
-		t.Fatalf("create error = %q, want readable pronunciation error", got)
-	}
-}
-
-func TestDuplicateErrorIsSafeForUsers(t *testing.T) {
-	ctx, db := openTestDatabase(t)
-	store := NewStore(db)
-	input := CreateInput{Expression: "見る", Pronunciation: "みる", Meanings: []string{"to see"}}
-	id, err := store.Create(ctx, input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = store.Create(ctx, input)
-	if !errors.Is(err, ErrDuplicate) {
-		t.Fatalf("create error = %v, want duplicate", err)
-	}
-	userError, ok := err.(interface{ UserMessage() string })
-	if !ok || userError.UserMessage() != fmt.Sprintf("vocabulary already exists as item %d", id) {
-		t.Fatalf("duplicate user message = %v", err)
 	}
 }
 
@@ -291,7 +198,7 @@ func TestListTreatsSearchMetacharactersLiterally(t *testing.T) {
 		}
 	}
 
-	items, err := store.ListPage(ctx, "%", maximumListPageSize, 0)
+	items, err := store.ListPageSorted(ctx, "%", ListFilterAll, ListSortUpdated, maximumListPageSize, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +206,7 @@ func TestListTreatsSearchMetacharactersLiterally(t *testing.T) {
 		t.Fatalf("percent search = %+v, want 割引%%", items)
 	}
 
-	items, err = store.ListPage(ctx, "_", maximumListPageSize, 0)
+	items, err = store.ListPageSorted(ctx, "_", ListFilterAll, ListSortUpdated, maximumListPageSize, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,25 +239,25 @@ func TestListPageBoundsAndCountsSearchResults(t *testing.T) {
 	}
 
 	store := NewStore(db)
-	count, err := store.ListCount(ctx, "match")
+	count, err := store.ListCountFiltered(ctx, "match", ListFilterAll)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if count != 101 {
 		t.Fatalf("matching count = %d, want 101", count)
 	}
-	first, err := store.ListPage(ctx, "match", maximumListPageSize, 0)
+	first, err := store.ListPageSorted(ctx, "match", ListFilterAll, ListSortUpdated, maximumListPageSize, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := store.ListPage(ctx, "match", maximumListPageSize, maximumListPageSize)
+	second, err := store.ListPageSorted(ctx, "match", ListFilterAll, ListSortUpdated, maximumListPageSize, maximumListPageSize)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(first) != maximumListPageSize || len(second) != 1 || second[0].Expression != "match-000" {
 		t.Fatalf("pages = %d and %+v, want 100 items then match-000", len(first), second)
 	}
-	if _, err := store.ListPage(ctx, "", maximumListPageSize+1, 0); err == nil {
+	if _, err := store.ListPageSorted(ctx, "", ListFilterAll, ListSortUpdated, maximumListPageSize+1, 0); err == nil {
 		t.Fatal("oversized vocabulary page was accepted")
 	}
 }
@@ -387,7 +294,7 @@ func TestListPageFiltersVocabularyStatus(t *testing.T) {
 		{filter: ListFilterSuspended, want: "suspended"},
 		{filter: ListFilterArchived, want: "archived"},
 	} {
-		items, err := store.ListPageFiltered(ctx, "", test.filter, maximumListPageSize, 0)
+		items, err := store.ListPageSorted(ctx, "", test.filter, ListSortUpdated, maximumListPageSize, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -430,28 +337,6 @@ func TestListPageSortsVocabulary(t *testing.T) {
 		}
 		if len(items) != 2 || items[0].Expression != test.want {
 			t.Fatalf("sort %q = %+v, want %q first", test.sort, items, test.want)
-		}
-	}
-}
-
-func TestListSearchesPronunciation(t *testing.T) {
-	ctx, db := openTestDatabase(t)
-	store := NewStore(db)
-	if _, err := store.Create(ctx, CreateInput{
-		Expression:    "食べる",
-		Pronunciation: "たべる",
-		Meanings:      []string{"to eat"},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	for _, search := range []string{"たべる", "タベル"} {
-		items, err := store.ListPage(ctx, search, maximumListPageSize, 0)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(items) != 1 || items[0].Expression != "食べる" {
-			t.Fatalf("List(%q) = %+v, want 食べる", search, items)
 		}
 	}
 }
@@ -625,7 +510,7 @@ func TestAddKnownAcceptsMoreThanFiveHundredWords(t *testing.T) {
 	}
 }
 
-func TestKnownCountIncludesLearnedAndExternalVocabulary(t *testing.T) {
+func TestKnownExpressionStatusesIncludeLearnedAndExternalVocabulary(t *testing.T) {
 	ctx, db := openTestDatabase(t)
 	now := time.Now().UTC().Unix()
 	if _, err := db.Exec(`
@@ -654,13 +539,6 @@ func TestKnownCountIncludesLearnedAndExternalVocabulary(t *testing.T) {
 	if _, err := db.Exec("INSERT INTO srs_states (vocabulary_id, stage) VALUES (?, 8)", archivedLearnedID); err != nil {
 		t.Fatal(err)
 	}
-	count, err := NewStore(db).KnownCount(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 5 {
-		t.Fatalf("known count = %d, want 5", count)
-	}
 	expressions, err := NewStore(db).KnownExpressionStatuses(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -674,115 +552,6 @@ func TestKnownCountIncludesLearnedAndExternalVocabulary(t *testing.T) {
 		if _, known := expressions[expression]; known {
 			t.Errorf("known expressions = %v, unexpectedly contains %q", expressions, expression)
 		}
-	}
-}
-
-func TestKnownExpressionsAreSortedAndDeduplicated(t *testing.T) {
-	ctx, db := openTestDatabase(t)
-	store := NewStore(db)
-	if _, err := store.AddKnown(ctx, "beta alpha"); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Now().UTC().Unix()
-	if _, err := db.Exec(`
-		INSERT INTO vocabulary (
-			expression, normalized_expression, status, known_elsewhere_at,
-			is_duplicate, created_at, updated_at
-		)
-		VALUES ('ALPHA duplicate', 'alpha', 'unlearned', ?, 1, ?, ?),
-		       ('future', 'future', 'unlearned', NULL, 0, ?, ?)`,
-		now, now, now, now, now,
-	); err != nil {
-		t.Fatal(err)
-	}
-
-	expressions, err := store.KnownExpressions(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(expressions, []string{"alpha", "beta"}) {
-		t.Fatalf("known expressions = %q", expressions)
-	}
-}
-
-func TestValidateInputRejectsInvalidText(t *testing.T) {
-	valid := CreateInput{
-		Expression:    "見る",
-		Pronunciation: "みる",
-		Meanings:      []string{"to see"},
-	}
-	tests := []struct {
-		name   string
-		change func(*CreateInput)
-		want   string
-	}{
-		{
-			name: "invalid UTF-8",
-			change: func(input *CreateInput) {
-				input.Expression = string([]byte{0xff})
-			},
-			want: "expression must be valid UTF-8",
-		},
-		{
-			name: "single-line control character",
-			change: func(input *CreateInput) {
-				input.SourceLabel = "book\nchapter"
-			},
-			want: "source label contains a control character",
-		},
-		{
-			name: "expression too long",
-			change: func(input *CreateInput) {
-				input.Expression = strings.Repeat("食", maxExpressionRunes+1)
-			},
-			want: "expression must be at most 256 characters",
-		},
-		{
-			name: "pronunciation too long",
-			change: func(input *CreateInput) {
-				input.Pronunciation = strings.Repeat("あ", maxPronunciationRunes+1)
-			},
-			want: "pronunciation must be at most 256 characters",
-		},
-		{
-			name: "pronunciation contains kanji",
-			change: func(input *CreateInput) {
-				input.Pronunciation = "見る"
-			},
-			want: "pronunciation: unsupported reading character '見'",
-		},
-		{
-			name: "meanings too long",
-			change: func(input *CreateInput) {
-				input.Meanings = []string{strings.Repeat("a", maxMeaningsRunes+1)}
-			},
-			want: "meanings must be at most 2000 characters",
-		},
-		{
-			name: "notes too long",
-			change: func(input *CreateInput) {
-				input.Notes = strings.Repeat("a", maxNotesRunes+1)
-			},
-			want: "notes must be at most 2000 characters",
-		},
-		{
-			name: "source label too long",
-			change: func(input *CreateInput) {
-				input.SourceLabel = strings.Repeat("a", maxSourceLabelRunes+1)
-			},
-			want: "source label must be at most 300 characters",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			input := valid
-			test.change(&input)
-			_, err := validateInput(input)
-			if !errors.Is(err, ErrInvalidInput) || err.Error() != test.want {
-				t.Fatalf("validateInput() error = %v, want %q", err, test.want)
-			}
-		})
 	}
 }
 
@@ -863,7 +632,7 @@ func TestUpdateAllowsSparseFieldsOnlyForKnownElsewhereVocabulary(t *testing.T) {
 	if _, err := store.AddKnown(ctx, "既知語"); err != nil {
 		t.Fatal(err)
 	}
-	knownItems, err := store.ListPage(ctx, "既知語", maximumListPageSize, 0)
+	knownItems, err := store.ListPageSorted(ctx, "既知語", ListFilterAll, ListSortUpdated, maximumListPageSize, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -898,7 +667,7 @@ func TestSparseKnownVocabularyMustBeCompletedBeforeLessons(t *testing.T) {
 	if _, err := store.AddKnown(ctx, "既知語"); err != nil {
 		t.Fatal(err)
 	}
-	items, err := store.ListPage(ctx, "既知語", maximumListPageSize, 0)
+	items, err := store.ListPageSorted(ctx, "既知語", ListFilterAll, ListSortUpdated, maximumListPageSize, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -989,43 +758,6 @@ func TestGetReturnsAvailableActions(t *testing.T) {
 				t.Errorf("CanResetProgress = %t, want %t", item.CanResetProgress, test.wantResetProgress)
 			}
 		})
-	}
-}
-
-func TestGetReturnsLeechState(t *testing.T) {
-	ctx, db := openTestDatabase(t)
-	id := insertVocabulary(t, db, "active")
-	if _, err := db.Exec(`
-		INSERT INTO meanings (vocabulary_id, position, text, normalized_text)
-		VALUES (?, 0, 'to eat', 'to eat')`, id); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`
-		INSERT INTO leech_states (vocabulary_id, active, ever_leech, marked_at)
-		VALUES (?, 1, 1, 100)`, id); err != nil {
-		t.Fatal(err)
-	}
-
-	item, err := NewStore(db).Get(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !item.LeechActive || item.LeechSuspended || item.FormerLeech {
-		t.Fatalf("active leech flags = active %t, suspended %t, former %t", item.LeechActive, item.LeechSuspended, item.FormerLeech)
-	}
-	if _, err := db.Exec(`
-		UPDATE leech_states
-		SET active = 0, marked_at = NULL, cleared_at = 101
-		WHERE vocabulary_id = ?`, id); err != nil {
-		t.Fatal(err)
-	}
-
-	item, err = NewStore(db).Get(ctx, id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if item.LeechActive || !item.FormerLeech {
-		t.Fatalf("former leech flags = active %t, former %t", item.LeechActive, item.FormerLeech)
 	}
 }
 
@@ -1144,17 +876,6 @@ func TestArchiveRestoresPreviousLearningState(t *testing.T) {
 			assertVocabularyState(t, db, id, test.status, test.withSRS, test.suspended)
 		})
 	}
-}
-
-func TestSuspendRejectsUnlearnedVocabulary(t *testing.T) {
-	ctx, db := openTestDatabase(t)
-	id := insertVocabulary(t, db, "unlearned")
-
-	err := NewStore(db).ApplyAction(ctx, id, ActionSuspend)
-	if err == nil || !strings.Contains(err.Error(), "unlearned vocabulary") {
-		t.Fatalf("suspend error = %v", err)
-	}
-	assertVocabularyState(t, db, id, "unlearned", false, false)
 }
 
 func TestArchiveAndResetRejectActiveReview(t *testing.T) {

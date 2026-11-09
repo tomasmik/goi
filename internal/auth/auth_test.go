@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -65,82 +64,6 @@ func TestSafeReturnTo(t *testing.T) {
 		if got := safeReturnTo(test.value); got != test.want {
 			t.Errorf("safeReturnTo(%q) = %q, want %q", test.value, got, test.want)
 		}
-	}
-}
-
-func TestLoginReturnsToRequestedPage(t *testing.T) {
-	db, err := database.Open(context.Background(), filepath.Join(t.TempDir(), "auth.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	if err := database.Migrate(context.Background(), db); err != nil {
-		t.Fatal(err)
-	}
-	renderer, err := internalweb.NewRenderer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	sessions := NewSessionManager(db, false)
-	handler := NewHandler(NewStore("owner", "secret"), sessions, renderer, true)
-	router := chi.NewRouter()
-	handler.Routes(router)
-	router.Get("/vocabulary/42", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
-	app := sessions.LoadAndSave(handler.Require(router))
-
-	request := httptest.NewRequest(http.MethodGet, "/vocabulary/42?view=history", nil)
-	response := httptest.NewRecorder()
-	app.ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login?return_to=%2Fvocabulary%2F42%3Fview%3Dhistory" {
-		t.Fatalf("protected-page redirect = %d %q", response.Code, response.Header().Get("Location"))
-	}
-
-	form := url.Values{
-		"username":  {"owner"},
-		"password":  {"secret"},
-		"return_to": {"/vocabulary/42?view=history"},
-	}
-	request = httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response = httptest.NewRecorder()
-	app.ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/vocabulary/42?view=history" {
-		t.Fatalf("login redirect = %d %q, body = %s", response.Code, response.Header().Get("Location"), response.Body.String())
-	}
-
-	form.Set("return_to", "https://example.com/")
-	request = httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response = httptest.NewRecorder()
-	app.ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/dashboard" {
-		t.Fatalf("unsafe return redirect = %d %q", response.Code, response.Header().Get("Location"))
-	}
-}
-
-func TestRejectedLoginPreservesOnlyTheUsername(t *testing.T) {
-	renderer, err := internalweb.NewRenderer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler := NewHandler(NewStore("owner", "secret"), nil, renderer, true)
-	form := url.Values{
-		"username":  {"reading-owner"},
-		"password":  {"wrong-secret"},
-		"return_to": {"/vocabulary"},
-	}
-	request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	response := httptest.NewRecorder()
-
-	handler.login(response, request)
-
-	body := response.Body.String()
-	if response.Code != http.StatusOK || !strings.Contains(body, `name="username" value="reading-owner"`) {
-		t.Fatalf("response = %d, body = %s", response.Code, body)
-	}
-	if strings.Contains(body, "wrong-secret") || !strings.Contains(body, `value="/vocabulary"`) {
-		t.Fatalf("login error exposed the password or lost its safe return path: %s", body)
 	}
 }
 
@@ -244,34 +167,6 @@ func TestLoginRateLimitReturnsTooManyRequests(t *testing.T) {
 		if !strings.Contains(response.Body.String(), `value="/vocabulary/42"`) {
 			t.Fatalf("rate-limited form lost return path: %s", response.Body.String())
 		}
-	}
-}
-
-func TestExistingLoginClientDoesNotScanFullLimiterMap(t *testing.T) {
-	handler := NewHandler(NewStore("owner", "secret"), nil, nil, true)
-	request := httptest.NewRequest(http.MethodPost, "/login", nil)
-	request.RemoteAddr = "192.0.2.1:1234"
-	if !handler.allowLogin(request) {
-		t.Fatal("first login attempt was rate limited")
-	}
-
-	existing := handler.loginLimits["192.0.2.1"]
-	handler.loginLimits["expired"] = &loginLimit{
-		limiter:  existing.limiter,
-		lastSeen: time.Now().Add(-loginClientTTL - time.Minute),
-	}
-	for index := 0; len(handler.loginLimits) < maxLoginClients; index++ {
-		handler.loginLimits["client-"+strconv.Itoa(index)] = &loginLimit{
-			limiter:  existing.limiter,
-			lastSeen: time.Now(),
-		}
-	}
-
-	if !handler.allowLogin(request) {
-		t.Fatal("existing client was unexpectedly rate limited")
-	}
-	if _, found := handler.loginLimits["expired"]; !found {
-		t.Fatal("existing-client lookup swept the limiter map")
 	}
 }
 

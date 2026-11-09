@@ -184,15 +184,6 @@ func (s *Store) StartLesson(ctx context.Context, lessonSessionID int64, ids []in
 	return s.startSessionWithPreferences(ctx, "extra", ids, preferences, lessonSessionID)
 }
 
-func (s *Store) startSession(ctx context.Context, kind string, ids []int64, maxAttempts int, lessonSessionID int64) (int64, error) {
-	preferences, err := s.reviewPreferences(ctx)
-	if err != nil {
-		return 0, err
-	}
-	preferences.maxAttempts = maxAttempts
-	return s.startSessionWithPreferences(ctx, kind, ids, preferences, lessonSessionID)
-}
-
 func (s *Store) startSessionWithPreferences(ctx context.Context, kind string, ids []int64, preferences reviewPreferences, lessonSessionID int64) (int64, error) {
 	if kind != "normal" && kind != "extra" {
 		return 0, fmt.Errorf("unsupported review session kind %q", kind)

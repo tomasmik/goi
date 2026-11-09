@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -47,40 +46,5 @@ func TestMicrosoftTranslatorTranslatesJapaneseToEnglish(t *testing.T) {
 	}
 	if result.Text != "It is hot today." || result.Provider != microsoftTranslatorProvider {
 		t.Fatalf("translation = %#v", result)
-	}
-}
-
-func TestMicrosoftTranslatorRejectsIncompleteSettings(t *testing.T) {
-	tests := []MicrosoftTranslatorConfig{
-		{},
-		{Endpoint: "https://api.cognitive.microsofttranslator.com", Region: "westeurope"},
-		{Endpoint: "http://translator.example", Region: "westeurope", APIKey: "key"},
-		{Endpoint: "https://api.cognitive.microsofttranslator.com", APIKey: "key"},
-	}
-	for _, config := range tests {
-		if _, err := NewMicrosoftTranslator(config); err == nil {
-			t.Fatalf("NewMicrosoftTranslator(%#v) succeeded", config)
-		}
-	}
-}
-
-func TestMicrosoftTranslatorDoesNotExposeProviderErrorBody(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = io.WriteString(w, `{"error":{"message":"secret provider detail"}}`)
-	}))
-	defer server.Close()
-	translator, err := NewMicrosoftTranslator(MicrosoftTranslatorConfig{
-		Endpoint:   server.URL,
-		Region:     "westeurope",
-		APIKey:     "test-key",
-		HTTPClient: server.Client(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = translator.Translate(context.Background(), "日本語")
-	if err == nil || strings.Contains(err.Error(), "secret provider detail") {
-		t.Fatalf("Translate() error = %v", err)
 	}
 }

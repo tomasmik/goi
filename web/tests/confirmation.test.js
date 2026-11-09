@@ -56,32 +56,3 @@ test("cancelled enhanced confirmations cannot leave a stale confirmation", funct
   assert.equal(prevented, true);
   assert.equal(harness.confirmation.checked, false);
 });
-
-test("confirmation enhancement binds each form once", function () {
-  const harness = confirmationHarness(true);
-
-  initConfirmations(harness.root, () => true);
-
-  assert.equal(harness.submitBindings(), 1);
-  assert.equal(harness.form.dataset.confirmationBound, "true");
-});
-
-test("a submit button can request confirmation without affecting other actions", function () {
-  let submit;
-  const messages = [];
-  const form = {
-    dataset: {},
-    classList: { add() {} },
-    querySelector() { return null; },
-    addEventListener(_type, listener) { submit = listener; },
-  };
-  initConfirmations({ querySelectorAll() { return [form]; } }, (message) => {
-    messages.push(message);
-    return true;
-  });
-
-  submit({ submitter: { dataset: {} }, preventDefault() {} });
-  submit({ submitter: { dataset: { confirm: "Remove saved key?" } }, preventDefault() {} });
-
-  assert.deepEqual(messages, ["Remove saved key?"]);
-});

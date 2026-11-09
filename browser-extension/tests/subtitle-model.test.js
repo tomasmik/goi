@@ -162,29 +162,6 @@ test("keeps a known token's dictionary form when it is selected", function () {
   });
 });
 
-test("formats dictionary results and connection failures consistently", function () {
-  assert.equal(subtitleModel.dictionaryText({
-    ok: true,
-    result: { candidates: [{ reading: "よむ", meanings: ["to read", "to count"] }] },
-  }, 1), "よむ · to read");
-  assert.equal(
-    subtitleModel.dictionaryText({ ok: false, errorCode: "not_connected" }),
-    "Connect Goi to look up words.",
-  );
-  assert.equal(
-    subtitleModel.dictionaryText({ ok: true, result: { state: "no_match", candidates: [] } }),
-    "No dictionary match.",
-  );
-  assert.equal(
-    subtitleModel.dictionaryText({ ok: false, errorCode: "dictionary_unavailable" }),
-    "The dictionary is not ready. Check Goi Settings.",
-  );
-  assert.equal(
-    subtitleModel.dictionaryText({ ok: false, errorCode: "dictionary_api_unavailable" }),
-    "Restart Goi, then reload the extension.",
-  );
-});
-
 test("keeps dictionary candidates and senses structured for rich popovers", function () {
   assert.deepEqual(subtitleModel.dictionaryView({
     ok: true,
@@ -256,11 +233,6 @@ test("identifies a YouTube session without transient playback parameters", funct
     "https://www.youtube.com/shorts/abc123",
   );
   assert.equal(subtitleModel.sessionIdentity("not a URL"), "");
-});
-
-test("formats subtitle timestamps", function () {
-  assert.equal(subtitleModel.formatTimestamp(62400), "1:02");
-  assert.equal(subtitleModel.formatTimestamp(3723000), "1:02:03");
 });
 
 test("selects each unsent 1T line once and summarizes batch delivery", function () {

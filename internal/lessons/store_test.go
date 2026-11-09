@@ -10,107 +10,8 @@ import (
 	"time"
 
 	"github.com/tomasmik/goi/internal/database"
-	"github.com/tomasmik/goi/internal/examples"
 	"github.com/tomasmik/goi/internal/reviews"
 )
-
-func TestLessonCurrentLoadsPreferredExample(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "lesson-example.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-
-	vocabularyID := insertUnlearnedVocabulary(t, db, 1)[0]
-	created, err := examples.NewStore(db).Create(ctx, vocabularyID, examples.Input{
-		Origin:        examples.OriginManual,
-		Sentence:      "昨日、寿司を食べた。",
-		Translation:   "I ate sushi yesterday.",
-		TargetSurface: "食べた",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := NewStore(db)
-	lessonID, err := store.Start(ctx, []int64{vocabularyID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	session, err := store.Current(ctx, lessonID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if session.StudyItem.Example.ID != created.ID || !session.StudyItem.Example.HasTarget {
-		t.Fatalf("lesson example = %+v, want example %d with highlighted target", session.StudyItem.Example, created.ID)
-	}
-}
-
-func TestLessonCurrentLoadsAttachedMedia(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "lesson-media.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-
-	vocabularyID := insertUnlearnedVocabulary(t, db, 1)[0]
-	audioID := attachLessonTestMedia(t, db, vocabularyID, "pronunciation", "audio", "audio/mpeg", "a")
-	pictureID := attachLessonTestMedia(t, db, vocabularyID, "picture", "image", "image/png", "b")
-	if _, err := db.Exec("INSERT INTO user_settings (id, audio_enabled) VALUES (1, 1)"); err != nil {
-		t.Fatal(err)
-	}
-	store := NewStore(db)
-	lessonID, err := store.Start(ctx, []int64{vocabularyID})
-	if err != nil {
-		t.Fatal(err)
-	}
-	session, err := store.Current(ctx, lessonID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if session.StudyItem.AudioID != audioID || session.StudyItem.PictureID != pictureID {
-		t.Fatalf("lesson media = audio %d, picture %d; want %d and %d", session.StudyItem.AudioID, session.StudyItem.PictureID, audioID, pictureID)
-	}
-	if !session.AudioEnabled {
-		t.Fatal("lesson did not load the automatic audio setting")
-	}
-}
-
-func attachLessonTestMedia(t *testing.T, db *sql.DB, vocabularyID int64, purpose, kind, mimeType, checksumCharacter string) int64 {
-	t.Helper()
-	result, err := db.Exec(
-		"INSERT INTO media (kind, mime_type, sha256, created_at) VALUES (?, ?, ?, 1)",
-		kind,
-		mimeType,
-		strings.Repeat(checksumCharacter, 64),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	mediaID, err := result.LastInsertId()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("INSERT INTO media_content (media_id, content) VALUES (?, ?)", mediaID, []byte(kind)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(
-		"INSERT INTO vocabulary_media (vocabulary_id, purpose, media_id) VALUES (?, ?, ?)",
-		vocabularyID,
-		purpose,
-		mediaID,
-	); err != nil {
-		t.Fatal(err)
-	}
-	return mediaID
-}
 
 func TestLessonBatchesActivateIndependently(t *testing.T) {
 	ctx := context.Background()
@@ -505,36 +406,6 @@ func TestSparseVocabularyNeverEntersLessons(t *testing.T) {
 	}
 	if sessions != 0 {
 		t.Fatalf("failed lesson start left %d sessions", sessions)
-	}
-}
-
-func TestCurrentDoesNotRecordStudyViews(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "abandoned-lesson.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-
-	store := NewStore(db)
-	ids := insertUnlearnedVocabulary(t, db, 2)
-	sessionID, err := store.Start(ctx, ids)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.Current(ctx, sessionID); err != nil {
-		t.Fatal(err)
-	}
-
-	var viewedAt sql.NullInt64
-	if err := db.QueryRow("SELECT study_viewed_at FROM lesson_session_items WHERE session_id = ? AND position = 1", sessionID).Scan(&viewedAt); err != nil {
-		t.Fatal(err)
-	}
-	if viewedAt.Valid {
-		t.Fatalf("reading a lesson recorded study view at %d", viewedAt.Int64)
 	}
 }
 

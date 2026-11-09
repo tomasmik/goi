@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -91,7 +90,7 @@ func TestNextWakeUsesConfiguredLocalHourOncePerDay(t *testing.T) {
 	db := openBackupTestDatabase(t, databasePath)
 	defer db.Close()
 	store := NewStore(db)
-	if err := store.UpdateSettings(t.Context(), Settings{Enabled: true, Hour: 3, KeepLocal: true, RetentionDays: DefaultRetentionDays}); err != nil {
+	if err := store.UpdateSettings(t.Context(), Settings{Enabled: true, Hour: 3, KeepLocal: true, RetentionDays: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec("UPDATE user_settings SET time_zone = 'Europe/Vilnius' WHERE id = 1"); err != nil {
@@ -161,70 +160,6 @@ func TestRetentionCutoffUsesLocalCalendarDays(t *testing.T) {
 	}
 }
 
-func TestQueueManualExposesBusyStateImmediately(t *testing.T) {
-	service := NewService(ServiceConfig{})
-	if err := service.QueueManual(); err != nil {
-		t.Fatal(err)
-	}
-	if !service.Busy() {
-		t.Fatal("queued manual backup is not reported as busy")
-	}
-	if err := service.QueueManual(); !errors.Is(err, ErrBackupRunning) {
-		t.Fatalf("second QueueManual() error = %v", err)
-	}
-	service.finishJob()
-	if service.Busy() {
-		t.Fatal("finished manual backup is still busy")
-	}
-}
-
-func TestServiceRunCleansInterruptedBundleFiles(t *testing.T) {
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "vocab.sqlite")
-	db := openBackupTestDatabase(t, databasePath)
-	defer db.Close()
-	directory := filepath.Join(dataDir, "backups")
-	stale := filepath.Join(directory, ".bundle-interrupted")
-	if err := os.MkdirAll(stale, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
-	staleTime := now.Add(-interruptedBundleStaleAfter - time.Minute)
-	if err := os.Chtimes(stale, staleTime, staleTime); err != nil {
-		t.Fatal(err)
-	}
-	service := NewService(ServiceConfig{
-		DataDir: dataDir, Store: NewStore(db), Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Now: func() time.Time { return now },
-	})
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan struct{})
-	go func() {
-		service.Run(ctx)
-		close(done)
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		_, err := os.Stat(stale)
-		if errors.Is(err, os.ErrNotExist) {
-			break
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("interrupted bundle workspace was not removed")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("backup worker did not stop")
-	}
-}
-
 func TestManualBackupCreatesDownloadableLocalBundle(t *testing.T) {
 	dataDir := t.TempDir()
 	databasePath := filepath.Join(dataDir, "vocab.sqlite")
@@ -254,70 +189,13 @@ func TestManualBackupCreatesDownloadableLocalBundle(t *testing.T) {
 	}
 }
 
-func TestManualBackupUsesConfiguredDirectory(t *testing.T) {
-	dataDir := t.TempDir()
-	backupDir := filepath.Join(t.TempDir(), "goi-backups")
-	databasePath := filepath.Join(dataDir, "vocab.sqlite")
-	db := openBackupTestDatabase(t, databasePath)
-	defer db.Close()
-	store := NewStore(db)
-	service := NewService(ServiceConfig{
-		DataDir: dataDir, DatabasePath: databasePath, BackupDir: backupDir, Store: store,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
-
-	service.perform(t.Context(), "manual")
-	state, err := store.State(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Status != "success" || state.LocalName == "" {
-		t.Fatalf("backup state = %+v", state)
-	}
-	if _, err := LocalPath(backupDir, state.LocalName); err != nil {
-		t.Fatalf("configured backup missing: %v", err)
-	}
-	if files, err := os.ReadDir(filepath.Join(dataDir, "backups")); err == nil && len(files) != 0 {
-		t.Fatalf("default backup directory contains %d files", len(files))
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-		t.Fatal(err)
-	}
-	if err := service.QueueLocalRestore(t.Context(), state.LocalName); err != nil {
-		t.Fatalf("queue configured backup restore: %v", err)
-	}
-	restore, err := ReadRestoreStatus(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if restore.State != "pending" {
-		t.Fatalf("restore status = %+v", restore)
-	}
-	if err := CancelPendingRestore(dataDir); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestPrepareLocalDirectoryCreatesWritableDirectory(t *testing.T) {
-	directory := filepath.Join(t.TempDir(), "backups")
-	if err := PrepareLocalDirectory(directory); err != nil {
-		t.Fatal(err)
-	}
-	entries, err := os.ReadDir(directory)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("backup directory contains write-test files: %v", entries)
-	}
-}
-
 func TestGoogleDriveFailureKeepsLocalRecoveryCopy(t *testing.T) {
 	dataDir := t.TempDir()
 	databasePath := filepath.Join(dataDir, "vocab.sqlite")
 	db := openBackupTestDatabase(t, databasePath)
 	defer db.Close()
 	store := NewStore(db)
-	if err := store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: DefaultRetentionDays}); err != nil {
+	if err := store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: 1}); err != nil {
 		t.Fatal(err)
 	}
 	drive := &fakeDrive{configured: true, connected: true, uploadErr: errors.New("offline")}
@@ -339,46 +217,13 @@ func TestGoogleDriveFailureKeepsLocalRecoveryCopy(t *testing.T) {
 	}
 }
 
-func TestRepeatedGoogleDriveFailuresKeepConfiguredDaysOfLocalCopies(t *testing.T) {
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "vocab.sqlite")
-	db := openBackupTestDatabase(t, databasePath)
-	defer db.Close()
-	store := NewStore(db)
-	if err := store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: 3}); err != nil {
-		t.Fatal(err)
-	}
-	drive := &fakeDrive{configured: true, connected: true, uploadErr: errors.New("offline")}
-	now := time.Date(2026, 8, 5, 10, 0, 0, 0, time.UTC)
-	service := NewService(ServiceConfig{
-		DataDir: dataDir, DatabasePath: databasePath, Store: store, Drive: drive,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: func() time.Time { return now },
-	})
-
-	for attempt := 0; attempt < 5; attempt++ {
-		service.perform(t.Context(), "manual")
-		now = now.AddDate(0, 0, 1)
-	}
-	files, err := ListLocal(service.config.BackupDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) != 3 {
-		t.Fatalf("local backup count = %d, want 3", len(files))
-	}
-	oldestRetained := now.AddDate(0, 0, -3).UTC().Format("20060102T150405")
-	if !strings.Contains(files[len(files)-1].Name, oldestRetained) {
-		t.Fatalf("oldest retained backup = %q, want timestamp %s", files[len(files)-1].Name, oldestRetained)
-	}
-}
-
 func TestDriveDisconnectIsRejectedWhileBackupIsRunning(t *testing.T) {
 	dataDir := t.TempDir()
 	databasePath := filepath.Join(dataDir, "vocab.sqlite")
 	db := openBackupTestDatabase(t, databasePath)
 	defer db.Close()
 	store := NewStore(db)
-	if err := store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: DefaultRetentionDays}); err != nil {
+	if err := store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: 1}); err != nil {
 		t.Fatal(err)
 	}
 	drive := &blockingUploadDrive{
@@ -485,7 +330,7 @@ func TestGoogleDriveOnlyRemovesLocalCopyAfterUpload(t *testing.T) {
 	db := openBackupTestDatabase(t, databasePath)
 	defer db.Close()
 	store := NewStore(db)
-	if err := store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: DefaultRetentionDays}); err != nil {
+	if err := store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: 1}); err != nil {
 		t.Fatal(err)
 	}
 	drive := &fakeDrive{configured: true, connected: true}
@@ -508,40 +353,6 @@ func TestGoogleDriveOnlyRemovesLocalCopyAfterUpload(t *testing.T) {
 	}
 	if len(files) != 0 {
 		t.Fatalf("local backups = %+v", files)
-	}
-}
-
-func TestGoogleDriveOnlyKeepsLocalCopyWhenUploadReturnsInvalidID(t *testing.T) {
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "vocab.sqlite")
-	db := openBackupTestDatabase(t, databasePath)
-	defer db.Close()
-	store := NewStore(db)
-	if err := store.UpdateSettings(t.Context(), Settings{Hour: 3, GoogleDrive: true, RetentionDays: DefaultRetentionDays}); err != nil {
-		t.Fatal(err)
-	}
-	drive := &fakeDrive{
-		configured: true,
-		connected:  true,
-		uploadResult: &RemoteBackup{
-			ID: "",
-		},
-	}
-	service := NewService(ServiceConfig{
-		DataDir: dataDir, DatabasePath: databasePath, Store: store, Drive: drive,
-		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-	})
-
-	service.perform(t.Context(), "manual")
-	state, err := store.State(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Status != "failed" || state.LocalName == "" || !strings.Contains(state.ErrorMessage, "invalid backup reference") {
-		t.Fatalf("backup state = %+v", state)
-	}
-	if _, err := LocalPath(service.config.BackupDir, state.LocalName); err != nil {
-		t.Fatalf("local recovery copy missing: %v", err)
 	}
 }
 

@@ -26,7 +26,6 @@ type ListPage struct {
 	Filters             []ListFilterLink
 	Items               []ListItem
 	TotalCount          int
-	KnownCount          int
 	LearningCount       int
 	KnownElsewhereCount int
 	KnownWords          string
@@ -64,11 +63,6 @@ func (h *Handler) renderList(w http.ResponseWriter, r *http.Request, status int,
 		internalweb.InternalError(w, r, "could not load vocabulary", err)
 		return
 	}
-	knownCount, err := h.store.KnownCount(r.Context())
-	if err != nil {
-		internalweb.InternalError(w, r, "could not load known vocabulary count", err)
-		return
-	}
 	learningCount, err := h.store.StatusCount(r.Context(), ListFilterLearning)
 	if err != nil {
 		internalweb.InternalError(w, r, "could not load learning vocabulary count", err)
@@ -95,7 +89,6 @@ func (h *Handler) renderList(w http.ResponseWriter, r *http.Request, status int,
 		Filters:             h.vocabularyFilterLinks(r.Context(), search, filter, sort),
 		Items:               items,
 		TotalCount:          totalCount,
-		KnownCount:          knownCount,
 		LearningCount:       learningCount,
 		KnownElsewhereCount: knownElsewhereCount,
 		KnownWords:          knownWords,
@@ -210,10 +203,6 @@ func vocabularyPage(value string, total int) (int, int) {
 		page = pageCount
 	}
 	return page, pageCount
-}
-
-func vocabularyListURL(search string, filter ListFilter, page int) string {
-	return vocabularyListURLSorted(search, filter, ListSortUpdated, page)
 }
 
 func vocabularyListURLSorted(search string, filter ListFilter, sort ListSort, page int) string {

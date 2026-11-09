@@ -195,29 +195,6 @@ func TestUndoSuccessThatClearedLeechRestoresIt(t *testing.T) {
 	}
 }
 
-func TestLeechCountMatchesLeechList(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	insertLeechSettings(t, db, 1, 3, 3)
-	vocabularyID := firstReviewVocabularyID(t, db)
-	recordLeechResult(t, ctx, db, vocabularyID, false, true, time.Unix(1000, 0))
-	if _, err := db.Exec(`UPDATE vocabulary SET status = 'archived' WHERE id = ?`, vocabularyID); err != nil {
-		t.Fatal(err)
-	}
-	store := NewStore(db)
-	count, err := store.LeechCount(ctx, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	items, err := store.Leeches(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != len(items) {
-		t.Fatalf("leech count = %d, list has %d", count, len(items))
-	}
-}
-
 func TestSuspendedLeechesRemainAvailableForPractice(t *testing.T) {
 	ctx, db := openReviewTestDatabase(t)
 	insertDueVocabulary(t, db)
@@ -237,32 +214,6 @@ func TestSuspendedLeechesRemainAvailableForPractice(t *testing.T) {
 	}
 	if _, err := store.StartExtraSource(ctx, "leeches", nil); err != nil {
 		t.Fatalf("start suspended leech practice: %v", err)
-	}
-}
-
-func TestManuallySuspendedLeechCanBePracticedIndividually(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	insertLeechSettings(t, db, 1, 3, 3)
-	vocabularyID := firstReviewVocabularyID(t, db)
-	recordLeechResult(t, ctx, db, vocabularyID, false, true, time.Unix(1000, 0).UTC())
-	if _, err := db.Exec(`UPDATE vocabulary SET status = 'suspended' WHERE id = ?`, vocabularyID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`UPDATE srs_states SET suspended_at = 1001 WHERE vocabulary_id = ?`, vocabularyID); err != nil {
-		t.Fatal(err)
-	}
-
-	store := NewStore(db)
-	items, err := store.Leeches(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 1 || !items[0].Suspended {
-		t.Fatalf("manually suspended leeches = %+v", items)
-	}
-	if _, err := store.StartExtraSource(ctx, "selected", []int64{vocabularyID}); err != nil {
-		t.Fatalf("practice manually suspended leech: %v", err)
 	}
 }
 

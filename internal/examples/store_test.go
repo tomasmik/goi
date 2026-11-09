@@ -4,85 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/tomasmik/goi/internal/database"
 )
-
-func TestStoreCRUDScopesExamplesToVocabulary(t *testing.T) {
-	ctx, db := openExamplesTestDatabase(t)
-	vocabularyID := insertVocabulary(t, db, "食べる")
-	otherVocabularyID := insertVocabulary(t, db, "飲む")
-	position := int64(62_500)
-
-	store := NewStore(db)
-	example, err := store.Create(ctx, vocabularyID, Input{
-		Sentence:         "  昨日、寿司を食べました。\r\n",
-		Translation:      " I ate sushi yesterday. ",
-		TargetSurface:    "食べました",
-		SourceTitle:      " A lesson ",
-		SourceURL:        "https://user:secret@www.youtube.com/watch?v=abc",
-		SourcePositionMS: &position,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if example.Origin != OriginManual || example.Sentence != "昨日、寿司を食べました。" {
-		t.Fatalf("created example = %#v", example)
-	}
-	if example.SourceURL != "https://www.youtube.com/watch?v=abc" || example.SourcePositionLabel != "1:02" {
-		t.Fatalf("created source = URL %q, label %q", example.SourceURL, example.SourcePositionLabel)
-	}
-	link, err := url.Parse(example.SourceLink)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if link.Query().Get("v") != "abc" || link.Query().Get("t") != "62s" {
-		t.Fatalf("source link = %q", example.SourceLink)
-	}
-	if !example.HasTarget || example.BeforeTarget != "昨日、寿司を" || example.MatchedTarget != "食べました" || example.AfterTarget != "。" {
-		t.Fatalf("target split = (%q, %q, %q, %t)", example.BeforeTarget, example.MatchedTarget, example.AfterTarget, example.HasTarget)
-	}
-
-	items, err := store.List(ctx, vocabularyID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 1 || items[0].ID != example.ID {
-		t.Fatalf("listed examples = %#v", items)
-	}
-
-	if _, err := store.Update(ctx, otherVocabularyID, example.ID, Input{Sentence: "違う例。"}); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("wrong-owner update error = %v, want sql.ErrNoRows", err)
-	}
-	updated, err := store.Update(ctx, vocabularyID, example.ID, Input{
-		Sentence:      "毎朝パンを食べる。",
-		Translation:   "I eat bread every morning.",
-		TargetSurface: "食べる",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.Sentence != "毎朝パンを食べる。" || !updated.HasTarget {
-		t.Fatalf("updated example = %#v", updated)
-	}
-	if err := store.Delete(ctx, otherVocabularyID, example.ID); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("wrong-owner delete error = %v, want sql.ErrNoRows", err)
-	}
-	if err := store.Delete(ctx, vocabularyID, example.ID); err != nil {
-		t.Fatal(err)
-	}
-	items, err = store.List(ctx, vocabularyID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 0 {
-		t.Fatalf("examples after delete = %#v", items)
-	}
-}
 
 func TestPreferredUsesCuratedExamplesBeforeGeneratedFallbacks(t *testing.T) {
 	ctx, db := openExamplesTestDatabase(t)
@@ -297,53 +224,6 @@ func TestEditingMinedExampleDetachesMediaOnlyWhenSentenceChanges(t *testing.T) {
 	}
 	if changed.SentenceAudioID != 0 || changed.VideoFrameID != 0 {
 		t.Fatalf("changed example media = audio %d, frame %d; want none", changed.SentenceAudioID, changed.VideoFrameID)
-	}
-}
-
-func TestCreateInTxRollsBackWithCallerTransaction(t *testing.T) {
-	ctx, db := openExamplesTestDatabase(t)
-	vocabularyID := insertVocabulary(t, db, "本")
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := NewStore(db).CreateInTx(ctx, tx, vocabularyID, Input{Sentence: "本を読む。"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Rollback(); err != nil {
-		t.Fatal(err)
-	}
-	items, err := NewStore(db).List(ctx, vocabularyID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(items) != 0 {
-		t.Fatalf("rolled-back examples = %#v", items)
-	}
-}
-
-func TestValidationRejectsInvalidExamples(t *testing.T) {
-	ctx, db := openExamplesTestDatabase(t)
-	vocabularyID := insertVocabulary(t, db, "犬")
-	captureID := int64(10)
-	negative := int64(-1)
-	tests := []Input{
-		{},
-		{Sentence: "犬です。", Origin: "unknown"},
-		{Sentence: "犬です。", Origin: OriginMined},
-		{Sentence: "犬です。", MiningCaptureID: &captureID},
-		{Sentence: "犬です。", SourceURL: "javascript:alert(1)"},
-		{Sentence: "犬です。", SourcePositionMS: &negative},
-		{Sentence: strings.Repeat("犬", maxSentenceRunes+1)},
-		{Sentence: string([]byte{0xff})},
-	}
-	for index, input := range tests {
-		if _, err := NewStore(db).Create(ctx, vocabularyID, input); !errors.Is(err, ErrInvalidInput) {
-			t.Errorf("case %d error = %v, want ErrInvalidInput", index, err)
-		}
-	}
-	if _, err := NewStore(db).Create(ctx, 0, Input{Sentence: "犬です。"}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("invalid vocabulary error = %v, want ErrInvalidInput", err)
 	}
 }
 

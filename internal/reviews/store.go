@@ -271,10 +271,6 @@ func (s *Store) recordPromptResultTx(
 	return AnswerOutcome{Value: result, FinalFailure: result == Incorrect && attemptNumber >= prompt.maxAttempts}, nil
 }
 
-func (s *Store) AddSynonym(ctx context.Context, sessionID, promptID int64, submittedAnswer string) (string, error) {
-	return s.AddEditedSynonym(ctx, sessionID, promptID, submittedAnswer, submittedAnswer)
-}
-
 func (s *Store) AddEditedSynonym(ctx context.Context, sessionID, promptID int64, rejectedAnswer, submittedAnswer string) (string, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

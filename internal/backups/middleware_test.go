@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	internalweb "github.com/tomasmik/goi/internal/web"
@@ -45,24 +44,6 @@ func TestPendingRestoreGuardPausesChangesUntilRestartOrCancel(t *testing.T) {
 	}
 	if nextCalls != 4 {
 		t.Fatalf("next handler calls = %d, want 4", nextCalls)
-	}
-}
-
-func TestPendingRestoreGuardReturnsExtensionError(t *testing.T) {
-	dataDir := t.TempDir()
-	if err := writeTestPendingRestore(dataDir); err != nil {
-		t.Fatal(err)
-	}
-	renderer, err := internalweb.NewRenderer()
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler := PendingRestoreGuard(dataDir, renderer)(http.NotFoundHandler())
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/extension/v1/captures", nil))
-
-	if response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "60" || !strings.Contains(response.Body.String(), `"code":"restore_pending"`) {
-		t.Fatalf("response = %d, %s", response.Code, response.Body.String())
 	}
 }
 

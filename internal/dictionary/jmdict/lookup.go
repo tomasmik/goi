@@ -11,7 +11,7 @@ import (
 )
 
 func (c *Cache) Lookup(ctx context.Context, expression, reading string) (Match, error) {
-	match := Match{SourceCreated: c.metadata.Created, SourceVersion: c.metadata.Version}
+	var match Match
 	normalizedExpression := textnorm.Normalize(expression)
 	if normalizedExpression == "" {
 		match.State = MatchNone

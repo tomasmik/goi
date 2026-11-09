@@ -286,20 +286,7 @@ func ValidateBundle(ctx context.Context, bundlePath string) error {
 	return classifyBundleDatabaseError(err)
 }
 
-func RestoreBundle(ctx context.Context, bundlePath, databasePath, importsPath string) error {
-	return restoreBundle(ctx, bundlePath, databasePath, importsPath, nil, false)
-}
-
 func restoreBundleUnderLock(
-	ctx context.Context,
-	bundlePath, databasePath, importsPath string,
-	lock *database.Lock,
-	preservePrevious bool,
-) error {
-	return restoreBundle(ctx, bundlePath, databasePath, importsPath, lock, preservePrevious)
-}
-
-func restoreBundle(
 	ctx context.Context,
 	bundlePath, databasePath, importsPath string,
 	lock *database.Lock,
@@ -314,11 +301,7 @@ func restoreBundle(
 	if err != nil {
 		return err
 	}
-	if lock == nil {
-		err = database.RestoreWithImports(ctx, databaseBackup, databasePath, importsPath)
-	} else {
-		err = database.RestoreWithImportsUnderLock(ctx, databaseBackup, databasePath, importsPath, lock, preservePrevious)
-	}
+	err = database.RestoreWithImportsUnderLock(ctx, databaseBackup, databasePath, importsPath, lock, preservePrevious)
 	return classifyBundleDatabaseError(err)
 }
 

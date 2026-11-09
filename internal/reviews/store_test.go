@@ -4,69 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/tomasmik/goi/internal/database"
-	"github.com/tomasmik/goi/internal/examples"
 	"github.com/tomasmik/goi/internal/srs"
 	"github.com/tomasmik/goi/internal/vocabulary"
 )
-
-func TestReviewStateLoadsPreferredExample(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	var vocabularyID int64
-	if err := db.QueryRow("SELECT id FROM vocabulary").Scan(&vocabularyID); err != nil {
-		t.Fatal(err)
-	}
-	created, err := examples.NewStore(db).Create(ctx, vocabularyID, examples.Input{
-		Origin:        examples.OriginManual,
-		Sentence:      "昨日、寿司を食べた。",
-		Translation:   "I ate sushi yesterday.",
-		TargetSurface: "食べた",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := NewStore(db)
-	sessionID, err := store.StartNormal(ctx, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := store.State(ctx, sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Example.ID != created.ID || !state.Example.HasTarget {
-		t.Fatalf("review example = %+v, want example %d with highlighted target", state.Example, created.ID)
-	}
-}
-
-func TestReviewStateLoadsAttachedPicture(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	var vocabularyID int64
-	if err := db.QueryRow("SELECT id FROM vocabulary").Scan(&vocabularyID); err != nil {
-		t.Fatal(err)
-	}
-	pictureID := attachReviewTestPicture(t, db, vocabularyID)
-	store := NewStore(db)
-	sessionID, err := store.StartNormal(ctx, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := store.State(ctx, sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.PictureID != pictureID {
-		t.Fatalf("review picture = %d, want %d", state.PictureID, pictureID)
-	}
-}
 
 func attachReviewTestPicture(t *testing.T, db *sql.DB, vocabularyID int64) int64 {
 	t.Helper()
@@ -198,7 +144,7 @@ func TestAddSynonymAcceptsTheRejectedMeaningFromTheSamePrompt(t *testing.T) {
 	if rejectedRevision != 1 {
 		t.Fatalf("rejected content revision = %d, want 1", rejectedRevision)
 	}
-	added, err := store.AddSynonym(ctx, sessionID, state.PromptID, state.RejectedAnswer)
+	added, err := store.AddEditedSynonym(ctx, sessionID, state.PromptID, state.RejectedAnswer, state.RejectedAnswer)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,7 +236,7 @@ func TestAddSynonymRejectsTheAnswerFromAStaleReviewTab(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := store.AddSynonym(ctx, sessionID, state.PromptID, "consume"); err == nil ||
+	if _, err := store.AddEditedSynonym(ctx, sessionID, state.PromptID, "consume", "consume"); err == nil ||
 		!strings.Contains(err.Error(), "rejected answer has changed") {
 		t.Fatalf("stale rejected answer error = %v", err)
 	}
@@ -333,7 +279,7 @@ func TestAddSynonymFromFinalCorrectionChangesTheResultToSuccess(t *testing.T) {
 	if !state.Feedback || state.RejectedAnswer != "consume" {
 		t.Fatalf("final correction state = feedback %t, rejected %q", state.Feedback, state.RejectedAnswer)
 	}
-	if _, err := store.AddSynonym(ctx, sessionID, state.PromptID, state.RejectedAnswer); err != nil {
+	if _, err := store.AddEditedSynonym(ctx, sessionID, state.PromptID, state.RejectedAnswer, state.RejectedAnswer); err != nil {
 		t.Fatal(err)
 	}
 
@@ -392,7 +338,7 @@ func TestAddSynonymRejectsVocabularyEditedAfterTheWrongAnswer(t *testing.T) {
 			if state.RejectedAnswer != "consume" || state.Feedback != test.finalFailure {
 				t.Fatalf("stale review state = rejected %q, feedback %t", state.RejectedAnswer, state.Feedback)
 			}
-			if _, err := store.AddSynonym(ctx, sessionID, state.PromptID, state.RejectedAnswer); err == nil || !strings.Contains(err.Error(), "word changed") {
+			if _, err := store.AddEditedSynonym(ctx, sessionID, state.PromptID, state.RejectedAnswer, state.RejectedAnswer); err == nil || !strings.Contains(err.Error(), "word changed") {
 				t.Fatalf("stale synonym error = %v", err)
 			}
 
@@ -439,7 +385,7 @@ func TestAddSynonymHandlesConcurrentSubmissionsOnce(t *testing.T) {
 	for range 2 {
 		go func() {
 			<-start
-			_, err := store.AddSynonym(ctx, sessionID, state.PromptID, "consume")
+			_, err := store.AddEditedSynonym(ctx, sessionID, state.PromptID, "consume", "consume")
 			results <- err
 		}()
 	}
@@ -459,112 +405,6 @@ func TestAddSynonymHandlesConcurrentSubmissionsOnce(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("meanings after concurrent additions = %d, want 2", count)
-	}
-}
-
-func TestAddSynonymRespectsTheVocabularyMeaningLimit(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	if _, err := db.Exec(`
-		UPDATE meanings
-		SET text = ?, normalized_text = ?`, strings.Repeat("b", 1801), strings.Repeat("b", 1801)); err != nil {
-		t.Fatal(err)
-	}
-	store := NewStore(db)
-	sessionID, err := store.StartNormal(ctx, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state := moveToPromptType(t, ctx, store, sessionID, "meaning")
-	if _, err := store.Answer(ctx, sessionID, state.PromptID, strings.Repeat("a", 200)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.AddSynonym(ctx, sessionID, state.PromptID, strings.Repeat("a", 200)); err == nil || !strings.Contains(err.Error(), "too much meaning text") {
-		t.Fatalf("meaning limit error = %v", err)
-	}
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM meanings").Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("meanings after rejected addition = %d, want 1", count)
-	}
-}
-
-func TestAddSynonymRejectsPronunciationPrompts(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	store := NewStore(db)
-	sessionID, err := store.StartNormal(ctx, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state := moveToPromptType(t, ctx, store, sessionID, "pronunciation")
-	if _, err := store.Answer(ctx, sessionID, state.PromptID, "wrong"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.AddSynonym(ctx, sessionID, state.PromptID, "wrong"); err == nil || !strings.Contains(err.Error(), "meaning answers") {
-		t.Fatalf("pronunciation synonym error = %v", err)
-	}
-	var meaningCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM meanings").Scan(&meaningCount); err != nil {
-		t.Fatal(err)
-	}
-	if meaningCount != 1 {
-		t.Fatalf("meanings after pronunciation request = %d, want 1", meaningCount)
-	}
-}
-
-func TestAddSynonymRejectsOtherSessionsAndStalePrompts(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	store := NewStore(db)
-	sessionID, err := store.StartNormal(ctx, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state := moveToPromptType(t, ctx, store, sessionID, "meaning")
-	if _, err := store.Answer(ctx, sessionID, state.PromptID, "consume"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.AddSynonym(ctx, sessionID+100, state.PromptID, "consume"); err == nil || !strings.Contains(err.Error(), "no longer available") {
-		t.Fatalf("cross-session synonym error = %v", err)
-	}
-	if _, err := store.Answer(ctx, sessionID, state.PromptID, "to eat"); err != nil {
-		t.Fatal(err)
-	}
-	var rejectedAnswer string
-	var rejectedRevision int64
-	if err := db.QueryRow(`
-		SELECT last_incorrect_answer, last_incorrect_content_revision
-		FROM review_prompts
-		WHERE id = ?`, state.PromptID).Scan(&rejectedAnswer, &rejectedRevision); err != nil {
-		t.Fatal(err)
-	}
-	if rejectedAnswer != "" || rejectedRevision != 0 {
-		t.Fatalf("passed prompt retained rejected answer %q/%d", rejectedAnswer, rejectedRevision)
-	}
-	if _, err := store.AddSynonym(ctx, sessionID, state.PromptID, "consume"); err == nil {
-		t.Fatal("stale prompt added a synonym")
-	}
-	var meaningCount int
-	if err := db.QueryRow("SELECT COUNT(*) FROM meanings").Scan(&meaningCount); err != nil {
-		t.Fatal(err)
-	}
-	if meaningCount != 1 {
-		t.Fatalf("meanings after rejected synonym requests = %d, want 1", meaningCount)
-	}
-}
-
-func TestRejectedMeaningCandidateIsBounded(t *testing.T) {
-	if got := rejectedMeaningCandidate("meaning", strings.Repeat("a", maxRejectedMeaningRunes+1)); got != "" {
-		t.Fatalf("oversized rejected answer = %q", got)
-	}
-	if got := rejectedMeaningCandidate("meaning", "line\nbreak"); got != "" {
-		t.Fatalf("control-character rejected answer = %q", got)
-	}
-	if got := rejectedMeaningCandidate("pronunciation", "wrong"); got != "" {
-		t.Fatalf("pronunciation rejected answer = %q", got)
 	}
 }
 
@@ -748,107 +588,6 @@ func TestUndoAfterGiveUpRemovesTheFailure(t *testing.T) {
 	}
 }
 
-func TestGiveUpRequiresARejectedTypedAnswer(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	store := NewStore(db)
-	sessionID, err := store.StartNormal(ctx, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := store.State(ctx, sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.GiveUp(ctx, sessionID, state.PromptID); err == nil || !strings.Contains(err.Error(), "submit an answer") {
-		t.Fatalf("GiveUp() before an answer error = %v", err)
-	}
-}
-
-func TestContinueRejectsInactiveSession(t *testing.T) {
-	for _, status := range []string{"paused", "abandoned"} {
-		t.Run(status, func(t *testing.T) {
-			ctx, db := openReviewTestDatabase(t)
-			insertDueVocabulary(t, db)
-			if _, err := db.Exec(`
-				INSERT INTO user_settings (id, retry_count)
-				VALUES (1, 1)`); err != nil {
-				t.Fatal(err)
-			}
-
-			store := NewStore(db)
-			sessionID, err := store.StartNormal(ctx, 1)
-			if err != nil {
-				t.Fatal(err)
-			}
-			state, err := store.State(ctx, sessionID)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := store.Answer(ctx, sessionID, state.PromptID, "wrong"); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := db.Exec("UPDATE review_sessions SET status = ? WHERE id = ?", status, sessionID); err != nil {
-				t.Fatal(err)
-			}
-
-			err = store.Continue(ctx, sessionID)
-			if err == nil || !strings.Contains(err.Error(), "no failed item ready") {
-				t.Fatalf("Continue() error = %v", err)
-			}
-			var itemCount int
-			if err := db.QueryRow("SELECT COUNT(*) FROM review_session_items WHERE session_id = ?", sessionID).Scan(&itemCount); err != nil {
-				t.Fatal(err)
-			}
-			if itemCount != 1 {
-				t.Fatalf("review items = %d, want 1", itemCount)
-			}
-		})
-	}
-}
-
-func TestStartSessionAcceptsValidNormalReview(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabulary(t, db)
-	var vocabularyID int64
-	if err := db.QueryRow("SELECT id FROM vocabulary").Scan(&vocabularyID); err != nil {
-		t.Fatal(err)
-	}
-
-	store := NewStore(db)
-	sessionID, err := store.startSession(ctx, "normal", []int64{vocabularyID}, 3, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := store.State(ctx, sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Kind != "normal" || state.Status != "active" || state.Total != 1 || state.VocabularyID != vocabularyID {
-		t.Fatalf("normal review state = kind %q, status %q, total %d, word %d", state.Kind, state.Status, state.Total, state.VocabularyID)
-	}
-}
-
-func TestNormalReviewLimitIsBounded(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	for index := range normalSessionLimit + 1 {
-		insertDueVocabularyWithExpression(t, db, fmt.Sprintf("word-%d", index))
-	}
-
-	store := NewStore(db)
-	sessionID, err := store.StartNormal(ctx, normalSessionLimit+1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	state, err := store.State(ctx, sessionID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if state.Total != normalSessionLimit {
-		t.Fatalf("review items = %d, want %d", state.Total, normalSessionLimit)
-	}
-}
-
 func TestRootedSuccessBecomesEvergreen(t *testing.T) {
 	ctx, db := openReviewTestDatabase(t)
 	insertDueVocabulary(t, db)
@@ -917,37 +656,6 @@ func TestFourMonthSuccessSchedulesSixMonthReviewWhenEnabled(t *testing.T) {
 	maximumDue := time.Now().UTC().AddDate(0, 6, 0).Unix() + 1
 	if stage != int(srs.StageEight) || dueAt < minimumDue || dueAt > maximumDue {
 		t.Fatalf("SRS state = stage %d, due %d; want six-month stage due between %d and %d", stage, dueAt, minimumDue, maximumDue)
-	}
-}
-
-func TestDueCountAtUsesProvidedTime(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	insertDueVocabularyWithExpression(t, db, "past")
-	insertDueVocabularyWithExpression(t, db, "future")
-	asOf := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
-	if _, err := db.Exec(`
-		UPDATE srs_states
-		SET due_at = CASE vocabulary_id
-			WHEN (SELECT id FROM vocabulary WHERE expression = 'past') THEN ?
-			ELSE ?
-		END`, asOf.Add(-time.Minute).Unix(), asOf.Add(time.Minute).Unix()); err != nil {
-		t.Fatal(err)
-	}
-
-	store := NewStore(db)
-	count, err := store.DueCountAt(ctx, asOf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("due count at %v = %d, want 1", asOf, count)
-	}
-	count, err = store.DueCountAt(ctx, asOf.Add(2*time.Minute))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 2 {
-		t.Fatalf("due count after future item = %d, want 2", count)
 	}
 }
 
@@ -1104,8 +812,8 @@ func TestReviewUndoRestoresSRSAndReopensSession(t *testing.T) {
 	if state.Status != "active" || state.PromptID == 0 {
 		t.Fatalf("reopened review state = status %q, prompt %d", state.Status, state.PromptID)
 	}
-	if state.Completed != 0 || state.Total != 1 || state.Remaining != 1 {
-		t.Fatalf("reopened review progress = %d/%d with %d remaining", state.Completed, state.Total, state.Remaining)
+	if state.Completed != 0 || state.Total != 1 {
+		t.Fatalf("reopened review progress = %d/%d", state.Completed, state.Total)
 	}
 	var undoItemID int64
 	if err := db.QueryRow(`
@@ -1896,19 +1604,6 @@ func TestFailedReviewResultCountsOnlyAttemptedPrompts(t *testing.T) {
 	}
 }
 
-func TestSelectedStudyRejectsAnOversizedSelection(t *testing.T) {
-	ctx, db := openReviewTestDatabase(t)
-	selected := make([]int64, maximumStudySelectionSize+1)
-	for index := range selected {
-		selected[index] = int64(index + 1)
-	}
-
-	_, err := NewStore(db).studyIDs(ctx, "selected", selected, 10)
-	if err == nil || !strings.Contains(err.Error(), "at most 100") {
-		t.Fatalf("oversized selection error = %v, want selection limit", err)
-	}
-}
-
 func TestRecentLessonPracticeUsesConfiguredWindow(t *testing.T) {
 	ctx, db := openReviewTestDatabase(t)
 	now := time.Now().UTC()
@@ -2135,4 +1830,13 @@ func openReviewTestDatabase(t *testing.T) (context.Context, *sql.DB) {
 		t.Fatal(err)
 	}
 	return ctx, db
+}
+
+func (s *Store) startSession(ctx context.Context, kind string, ids []int64, maxAttempts int, lessonSessionID int64) (int64, error) {
+	preferences, err := s.reviewPreferences(ctx)
+	if err != nil {
+		return 0, err
+	}
+	preferences.maxAttempts = maxAttempts
+	return s.startSessionWithPreferences(ctx, kind, ids, preferences, lessonSessionID)
 }

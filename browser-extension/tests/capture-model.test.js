@@ -81,13 +81,6 @@ test("normalizes HTTP and HTTPS origins", () => {
   assert.throws(() => normalizeOrigin("https://user:secret@goi.example"), /credentials/);
 });
 
-test("preserves secure-transport errors for UI reporting", () => {
-  const error = new Error("Remote Goi servers must use HTTPS");
-  error.code = "insecure_transport";
-  assert.equal(classifyAPIError(error), "insecure_transport");
-  assert.equal(classifyAPIError({ status: 403, code: "secure_transport_required" }), "insecure_transport");
-});
-
 test("builds Chrome host patterns without origin ports", () => {
   assert.equal(permissionPattern("http://localhost:8080"), "http://localhost/*");
   assert.equal(permissionPattern("http://127.0.0.1:8080"), "http://127.0.0.1/*");
@@ -189,17 +182,6 @@ test("capture limits preserve complete Unicode and UTF-8 characters", () => {
   assert.ok(Buffer.byteLength(payload.source_url, "utf8") <= 2048);
   assert.equal(payload.source_position_ms, null);
   assert.equal(payload.source_kind, "web");
-});
-
-test("long source URLs remain valid after bounding", () => {
-  const payload = buildCapturePayload({
-    expression: "語彙",
-    source_url: `https://example.com/read?term=${"%E8%AA%9E".repeat(800)}`,
-  }, "a".repeat(32));
-
-  assert.doesNotThrow(() => new URL(payload.source_url));
-  assert.ok(Buffer.byteLength(payload.source_url, "utf8") <= 2048);
-  assert.equal(payload.source_url, "https://example.com/read");
 });
 
 test("classifies API and transport failures", () => {

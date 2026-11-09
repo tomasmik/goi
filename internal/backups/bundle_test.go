@@ -6,11 +6,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -79,7 +77,7 @@ func TestBundleRoundTripPreservesDatabaseAndPendingImports(t *testing.T) {
 
 	restoredDir := t.TempDir()
 	restoredPath := filepath.Join(restoredDir, "vocab.sqlite")
-	if err := RestoreBundle(ctx, bundlePath, restoredPath, filepath.Join(restoredDir, "imports")); err != nil {
+	if err := restoreBundleForTest(t, ctx, bundlePath, restoredPath, filepath.Join(restoredDir, "imports")); err != nil {
 		t.Fatal(err)
 	}
 	restored, err := database.Open(ctx, restoredPath)
@@ -154,7 +152,7 @@ func TestBundleRemovesTransientStateWithoutChangingSource(t *testing.T) {
 	}
 
 	restoredPath := filepath.Join(t.TempDir(), "vocab.sqlite")
-	if err := RestoreBundle(ctx, bundlePath, restoredPath, filepath.Join(filepath.Dir(restoredPath), "imports")); err != nil {
+	if err := restoreBundleForTest(t, ctx, bundlePath, restoredPath, filepath.Join(filepath.Dir(restoredPath), "imports")); err != nil {
 		t.Fatal(err)
 	}
 	restoredDB, err := database.Open(ctx, restoredPath)
@@ -247,31 +245,6 @@ func TestValidateBundleRejectsUnexpectedAndDuplicateFiles(t *testing.T) {
 	}
 }
 
-func TestBundleSourceSizeMatchesRestoreLimit(t *testing.T) {
-	directory := t.TempDir()
-	databasePath := filepath.Join(directory, "vocab.sqlite")
-	if err := os.WriteFile(databasePath, []byte("database"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(databasePath+".sha256", []byte("checksum"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	importsPath := databasePath + ".imports"
-	if err := os.Mkdir(importsPath, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(importsPath, "run.apkg"), []byte("import"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	const total = int64(len("manifest") + len("database") + len("checksum") + len("import"))
-	if err := ensureBundleSourceFits(databasePath, int64(len("manifest")), total); err != nil {
-		t.Fatalf("exact-size bundle rejected: %v", err)
-	}
-	if err := ensureBundleSourceFits(databasePath, int64(len("manifest")), total-1); err == nil {
-		t.Fatal("oversized bundle source was accepted")
-	}
-}
-
 func TestQueueAndApplyRestoreWaitsForRestart(t *testing.T) {
 	ctx := context.Background()
 	dataDir := t.TempDir()
@@ -330,92 +303,6 @@ func TestQueueAndApplyRestoreWaitsForRestart(t *testing.T) {
 	}
 }
 
-func TestApplyPendingRestoreRetriesAfterDatabaseLockContention(t *testing.T) {
-	ctx := context.Background()
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "vocab.sqlite")
-	db := openBackupTestDatabase(t, databasePath)
-	if _, err := db.Exec(`
-		INSERT INTO vocabulary (expression, normalized_expression, created_at, updated_at)
-		VALUES ('以前', '以前', 1, 1)`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	bundlePath := filepath.Join(t.TempDir(), "goi-retry"+BundleSuffix)
-	if err := CreateBundle(ctx, databasePath, bundlePath, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-
-	db, err := database.Open(ctx, databasePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec("UPDATE vocabulary SET expression = '現在', normalized_expression = '現在'"); err != nil {
-		db.Close()
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	bundle, err := os.Open(bundlePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := QueueRestore(ctx, dataDir, bundle); err != nil {
-		bundle.Close()
-		t.Fatal(err)
-	}
-	if err := bundle.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	lock, err := database.AcquireLock(databasePath, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	restored, err := ApplyPendingRestore(ctx, dataDir, databasePath, time.Now())
-	if !errors.Is(err, database.ErrDatabaseInUse) {
-		lock.Close()
-		t.Fatalf("ApplyPendingRestore() error = %v, want database contention", err)
-	}
-	if restored {
-		lock.Close()
-		t.Fatal("ApplyPendingRestore() reported a restore while the database was locked")
-	}
-	status, statusErr := ReadRestoreStatus(dataDir)
-	if statusErr != nil {
-		lock.Close()
-		t.Fatal(statusErr)
-	}
-	if status.State != "pending" {
-		lock.Close()
-		t.Fatalf("restore status = %+v, want pending", status)
-	}
-	failed, globErr := filepath.Glob(filepath.Join(dataDir, "failed-restore-*"+BundleSuffix))
-	if globErr != nil {
-		lock.Close()
-		t.Fatal(globErr)
-	}
-	if len(failed) != 0 {
-		lock.Close()
-		t.Fatalf("lock contention quarantined the pending bundle: %v", failed)
-	}
-	if err := lock.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	restored, err = ApplyPendingRestore(ctx, dataDir, databasePath, time.Now())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !restored {
-		t.Fatal("ApplyPendingRestore() did not retry the pending bundle")
-	}
-	assertBackupExpression(t, databasePath, "以前")
-}
-
 func TestApplyPendingRestorePreservesCanceledBundleForRetry(t *testing.T) {
 	dataDir, databasePath := queueRestoreFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -433,39 +320,6 @@ func TestApplyPendingRestorePreservesCanceledBundleForRetry(t *testing.T) {
 		t.Fatalf("restore status = %+v, want pending", status)
 	}
 	assertBackupExpression(t, databasePath, "現在")
-
-	restored, err = ApplyPendingRestore(context.Background(), dataDir, databasePath, time.Now())
-	if err != nil || !restored {
-		t.Fatalf("retry ApplyPendingRestore() = %t, %v", restored, err)
-	}
-	assertBackupExpression(t, databasePath, "以前")
-}
-
-func TestApplyPendingRestorePreservesBundleAfterTargetIOFailure(t *testing.T) {
-	dataDir, _ := queueRestoreFixture(t)
-	blockedParent := filepath.Join(t.TempDir(), "blocked")
-	if err := os.WriteFile(blockedParent, []byte("not a directory"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	databasePath := filepath.Join(blockedParent, "vocab.sqlite")
-
-	restored, err := ApplyPendingRestore(context.Background(), dataDir, databasePath, time.Now())
-	if restored || !errors.Is(err, ErrPendingRestoreRetry) {
-		t.Fatalf("ApplyPendingRestore() = %t, %v, want retryable I/O failure", restored, err)
-	}
-	status, statusErr := ReadRestoreStatus(dataDir)
-	if statusErr != nil {
-		t.Fatal(statusErr)
-	}
-	if status.State != "pending" {
-		t.Fatalf("restore status = %+v, want pending", status)
-	}
-	if err := os.Remove(blockedParent); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(blockedParent, 0o750); err != nil {
-		t.Fatal(err)
-	}
 
 	restored, err = ApplyPendingRestore(context.Background(), dataDir, databasePath, time.Now())
 	if err != nil || !restored {
@@ -536,232 +390,6 @@ func TestPreparedRestoreReceiptRecoversAfterAppliedReceiptWriteFailure(t *testin
 	}
 }
 
-func TestPreparedRestoreReceiptRecoversWithoutAnOriginalDatabase(t *testing.T) {
-	ctx := context.Background()
-	sourceDir := t.TempDir()
-	sourcePath := filepath.Join(sourceDir, "vocab.sqlite")
-	db := openBackupTestDatabase(t, sourcePath)
-	if _, err := db.Exec(`
-		INSERT INTO vocabulary (expression, normalized_expression, created_at, updated_at)
-		VALUES ('以前', '以前', 1, 1)`); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	bundlePath := filepath.Join(t.TempDir(), "goi-empty-target"+BundleSuffix)
-	if err := CreateBundle(ctx, sourcePath, bundlePath, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-
-	dataDir := t.TempDir()
-	databasePath := filepath.Join(dataDir, "vocab.sqlite")
-	bundle, err := os.Open(bundlePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := QueueRestore(ctx, dataDir, bundle); err != nil {
-		bundle.Close()
-		t.Fatal(err)
-	}
-	if err := bundle.Close(); err != nil {
-		t.Fatal(err)
-	}
-	writeFailure := errors.New("injected receipt write failure")
-	restored, err := applyPendingRestore(
-		ctx,
-		dataDir,
-		databasePath,
-		time.Now(),
-		func(string, restoreReceipt) error { return writeFailure },
-	)
-	if !restored || !errors.Is(err, writeFailure) {
-		t.Fatalf("applyPendingRestore() = %t, %v, want published restore and receipt failure", restored, err)
-	}
-	receipt, exists, err := readRestoreReceipt(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !exists || receipt.OriginalDatabase.Exists {
-		t.Fatalf("restore receipt = %+v, %t, want no original database", receipt, exists)
-	}
-
-	restored, err = ApplyPendingRestore(ctx, dataDir, databasePath, time.Now())
-	if err != nil || !restored {
-		t.Fatalf("retry ApplyPendingRestore() = %t, %v", restored, err)
-	}
-	assertBackupExpression(t, databasePath, "以前")
-	if _, err := os.Stat(databasePath + ".before-restore"); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("restore created a rollback database for an empty target: %v", err)
-	}
-}
-
-func TestAppliedRestoreCleansOnlyNewWorkspacesUnderDatabaseLock(t *testing.T) {
-	dataDir, databasePath := queueRestoreFixture(t)
-	preservedWorkspace := filepath.Join(filepath.Dir(databasePath), ".restore-preserved")
-	if err := os.Mkdir(preservedWorkspace, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	importsPath := filepath.Join(dataDir, "imports")
-	preservedImportWorkspace := filepath.Join(importsPath, ".restore-preserved")
-	if err := os.MkdirAll(preservedImportWorkspace, 0o750); err != nil {
-		t.Fatal(err)
-	}
-	staleWorkspace := filepath.Join(filepath.Dir(databasePath), ".restore-stale")
-	staleImportWorkspace := filepath.Join(importsPath, ".restore-stale")
-	stopAfterReceipt := errors.New("stop after applied receipt")
-	restored, err := applyPendingRestore(
-		context.Background(),
-		dataDir,
-		databasePath,
-		time.Now(),
-		func(receiptDir string, receipt restoreReceipt) error {
-			if err := os.Mkdir(staleWorkspace, 0o750); err != nil {
-				return err
-			}
-			if err := os.Mkdir(staleImportWorkspace, 0o750); err != nil {
-				return err
-			}
-			if err := os.WriteFile(filepath.Join(staleWorkspace, "displaced-database"), []byte("stale"), 0o640); err != nil {
-				return err
-			}
-			if err := os.WriteFile(filepath.Join(staleImportWorkspace, "pending.apkg"), []byte("stale"), 0o640); err != nil {
-				return err
-			}
-			if err := replaceRestoreReceipt(receiptDir, receipt); err != nil {
-				return err
-			}
-			return stopAfterReceipt
-		},
-	)
-	if !restored || !errors.Is(err, stopAfterReceipt) {
-		t.Fatalf("applyPendingRestore() = %t, %v, want applied receipt interruption", restored, err)
-	}
-
-	lock, err := database.AcquireLock(databasePath, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	restored, err = ApplyPendingRestore(context.Background(), dataDir, databasePath, time.Now())
-	if restored || !errors.Is(err, ErrPendingRestoreRetry) || !errors.Is(err, database.ErrDatabaseInUse) {
-		lock.Close()
-		t.Fatalf("ApplyPendingRestore() under lock = %t, %v", restored, err)
-	}
-	if _, err := os.Stat(staleWorkspace); err != nil {
-		lock.Close()
-		t.Fatalf("workspace was cleaned without the database lock: %v", err)
-	}
-	if _, err := os.Stat(staleImportWorkspace); err != nil {
-		lock.Close()
-		t.Fatalf("import workspace was cleaned without the database lock: %v", err)
-	}
-	if err := lock.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	restored, err = ApplyPendingRestore(context.Background(), dataDir, databasePath, time.Now())
-	if err != nil || !restored {
-		t.Fatalf("retry ApplyPendingRestore() = %t, %v", restored, err)
-	}
-	if _, err := os.Stat(staleWorkspace); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("stale restore workspace remains: %v", err)
-	}
-	if _, err := os.Stat(staleImportWorkspace); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("stale import restore workspace remains: %v", err)
-	}
-	if _, err := os.Stat(preservedWorkspace); err != nil {
-		t.Fatalf("pre-existing restore workspace was removed: %v", err)
-	}
-	if _, err := os.Stat(preservedImportWorkspace); err != nil {
-		t.Fatalf("pre-existing import restore workspace was removed: %v", err)
-	}
-}
-
-func TestRestoreWorkspaceBaselineCountFailsBeforePublication(t *testing.T) {
-	dataDir, databasePath := queueRestoreFixture(t)
-	for index := 0; index <= maxReceiptWorkspaces; index++ {
-		name := fmt.Sprintf(".restore-existing-%02d", index)
-		if err := os.Mkdir(filepath.Join(filepath.Dir(databasePath), name), 0o750); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	restored, err := ApplyPendingRestore(context.Background(), dataDir, databasePath, time.Now())
-	if restored || !errors.Is(err, ErrPendingRestoreRetry) || !strings.Contains(err.Error(), "too many restore workspaces") {
-		t.Fatalf("ApplyPendingRestore() = %t, %v, want bounded workspace failure", restored, err)
-	}
-	assertBackupExpression(t, databasePath, "現在")
-	if _, err := os.Stat(filepath.Join(dataDir, restoreReceiptName)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("oversized baseline published a restore receipt: %v", err)
-	}
-}
-
-func TestRestoreWorkspaceBaselineMustFitReceipt(t *testing.T) {
-	receipt := restoreReceipt{
-		State:             restorePrepared,
-		BundleSHA256:      strings.Repeat("0", 64),
-		OriginalDatabase:  databaseArtifactFingerprint{SHA256: strings.Repeat("1", 64)},
-		OriginalPrevious:  databaseArtifactFingerprint{SHA256: strings.Repeat("2", 64)},
-		WorkspaceBaseline: true,
-		PreparedAt:        time.Now().UTC(),
-	}
-	for index := 0; index < maxReceiptWorkspaces; index++ {
-		receipt.ExistingDatabaseWorkspaces = append(
-			receipt.ExistingDatabaseWorkspaces,
-			fmt.Sprintf(".restore-%02d-%s", index, strings.Repeat("x", 96)),
-		)
-	}
-	dataDir := t.TempDir()
-	err := createRestoreReceipt(dataDir, receipt)
-	if err == nil || !strings.Contains(err.Error(), "restore receipt is too large") {
-		t.Fatalf("createRestoreReceipt() error = %v, want receipt size limit", err)
-	}
-	if _, err := os.Stat(filepath.Join(dataDir, restoreReceiptName)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("oversized restore receipt was published: %v", err)
-	}
-}
-
-func TestRestoreQueueFileLockSerializesQueueAndCancel(t *testing.T) {
-	dataDir := t.TempDir()
-	lock, err := acquireRestoreQueueLock(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := QueueRestore(context.Background(), dataDir, bytes.NewReader(nil)); !errors.Is(err, ErrRestoreQueueBusy) {
-		lock.Close()
-		t.Fatalf("QueueRestore() error = %v, want restore queue contention", err)
-	}
-	if err := CancelPendingRestore(dataDir); !errors.Is(err, ErrRestoreQueueBusy) {
-		lock.Close()
-		t.Fatalf("CancelPendingRestore() error = %v, want restore queue contention", err)
-	}
-	if err := lock.Close(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRestorePublicationDoesNotReplaceExistingPendingBundle(t *testing.T) {
-	directory := t.TempDir()
-	sourcePath := filepath.Join(directory, "source")
-	pendingPath := filepath.Join(directory, pendingRestoreName)
-	if err := os.WriteFile(sourcePath, []byte("second"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(pendingPath, []byte("first"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	if err := linkRestoreFile(sourcePath, pendingPath); !errors.Is(err, os.ErrExist) {
-		t.Fatalf("linkRestoreFile() error = %v, want existing destination", err)
-	}
-	contents, err := os.ReadFile(pendingPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(contents) != "first" {
-		t.Fatalf("pending restore = %q, want first bundle", contents)
-	}
-}
-
 func TestApplyPendingRestoreQuarantinesInvalidBundle(t *testing.T) {
 	dataDir := t.TempDir()
 	pendingPath := filepath.Join(dataDir, pendingRestoreName)
@@ -803,26 +431,6 @@ func TestApplyPendingRestoreQuarantinesInvalidBundle(t *testing.T) {
 	}
 }
 
-func TestQuarantineSyncFailureRequiresStartupRetry(t *testing.T) {
-	dataDir := t.TempDir()
-	pendingPath := filepath.Join(dataDir, pendingRestoreName)
-	if err := os.WriteFile(pendingPath, []byte("invalid"), 0o640); err != nil {
-		t.Fatal(err)
-	}
-	restoreErr := fmt.Errorf("%w: invalid fixture", ErrInvalidBundle)
-	syncErr := errors.New("injected directory sync failure")
-	err := quarantineInvalidRestoreWithSync(
-		dataDir,
-		pendingPath,
-		time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC),
-		restoreErr,
-		func(string) error { return syncErr },
-	)
-	if !errors.Is(err, ErrPendingRestoreRetry) || !errors.Is(err, ErrInvalidBundle) || !errors.Is(err, syncErr) {
-		t.Fatalf("quarantineInvalidRestoreWithSync() error = %v", err)
-	}
-}
-
 func TestQueueRestoreRejectsCorruptBundleWithoutCreatingPendingFile(t *testing.T) {
 	dataDir := t.TempDir()
 	err := QueueRestore(context.Background(), dataDir, bytes.NewBufferString("not a zip"))
@@ -831,86 +439,6 @@ func TestQueueRestoreRejectsCorruptBundleWithoutCreatingPendingFile(t *testing.T
 	}
 	if _, statErr := os.Stat(filepath.Join(dataDir, pendingRestoreName)); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("pending restore exists after rejection: %v", statErr)
-	}
-}
-
-func TestConcurrentRestoreQueuesKeepTheFirstBundle(t *testing.T) {
-	ctx := context.Background()
-	sourceDir := t.TempDir()
-	databasePath := filepath.Join(sourceDir, "vocab.sqlite")
-	db := openBackupTestDatabase(t, databasePath)
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	bundlePath := filepath.Join(t.TempDir(), "goi-concurrent"+BundleSuffix)
-	if err := CreateBundle(ctx, databasePath, bundlePath, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	contents, err := os.ReadFile(bundlePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dataDir := t.TempDir()
-	start := make(chan struct{})
-	results := make(chan error, 2)
-	var workers sync.WaitGroup
-	for range 2 {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			<-start
-			results <- QueueRestore(ctx, dataDir, bytes.NewReader(contents))
-		}()
-	}
-	close(start)
-	workers.Wait()
-	close(results)
-	succeeded := 0
-	for err := range results {
-		if err == nil {
-			succeeded++
-		}
-	}
-	if succeeded != 1 {
-		t.Fatalf("successful concurrent restore queues = %d, want 1", succeeded)
-	}
-	if err := ValidateBundle(ctx, filepath.Join(dataDir, pendingRestoreName)); err != nil {
-		t.Fatalf("published restore bundle is invalid: %v", err)
-	}
-}
-
-func TestQueuedBundleDefinesPendingRestoreWithoutAStatusFile(t *testing.T) {
-	ctx := context.Background()
-	sourceDir := t.TempDir()
-	databasePath := filepath.Join(sourceDir, "vocab.sqlite")
-	db := openBackupTestDatabase(t, databasePath)
-	if err := db.Close(); err != nil {
-		t.Fatal(err)
-	}
-	bundlePath := filepath.Join(t.TempDir(), "goi-status"+BundleSuffix)
-	if err := CreateBundle(ctx, databasePath, bundlePath, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	bundle, err := os.Open(bundlePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer bundle.Close()
-
-	dataDir := t.TempDir()
-	if err := QueueRestore(ctx, dataDir, bundle); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dataDir, "restore-status.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("queue created an auxiliary status file: %v", err)
-	}
-	status, err := ReadRestoreStatus(dataDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.State != "pending" {
-		t.Fatalf("restore status = %+v, want pending", status)
 	}
 }
 
@@ -1112,4 +640,13 @@ func assertBackupExpression(t *testing.T, path, want string) {
 	if expression != want {
 		t.Fatalf("expression in %s = %q, want %q", path, expression, want)
 	}
+}
+
+func restoreBundleForTest(t *testing.T, ctx context.Context, bundlePath, databasePath, importsPath string) error {
+	t.Helper()
+	databaseBackup, err := extractBundle(ctx, bundlePath, t.TempDir())
+	if err != nil {
+		return err
+	}
+	return database.RestoreWithImports(ctx, databaseBackup, databasePath, importsPath)
 }

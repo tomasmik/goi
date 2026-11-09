@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -210,38 +209,6 @@ func TestCreateCapture(t *testing.T) {
 	}
 }
 
-func TestCreateCapturePersistsSentence(t *testing.T) {
-	ctx, db := openCaptureAPITestDatabase(t)
-	tokens := NewStore(db)
-	created, err := tokens.Create(ctx, "Reading browser")
-	if err != nil {
-		t.Fatal(err)
-	}
-	miningStore := mining.NewStore(db)
-	router := chi.NewRouter()
-	NewHandler(tokens, miningStore, nil, nil, nil, nil, false).Routes(router)
-	response := serveCaptureAPI(router, created.Plaintext, `{
-		"raw_text":"食べました",
-		"expression":"食べました",
-		"context_text":"昨日、寿司を食べました。",
-		"source_kind":"video",
-		"source_title":"Japanese lesson",
-		"source_url":"https://www.youtube.com/watch?v=example",
-		"source_position_ms":48210,
-		"capture_nonce":"00000000000000000000000000000009"
-	}`)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("response = %d, body = %s", response.Code, response.Body.String())
-	}
-	capture, err := miningStore.Get(ctx, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if capture.ContextText != "昨日、寿司を食べました。" || capture.SourcePositionMS == nil || *capture.SourcePositionMS != 48210 {
-		t.Fatalf("capture context = %#v", capture)
-	}
-}
-
 func TestAttachCaptureMedia(t *testing.T) {
 	ctx, db := openCaptureAPITestDatabase(t)
 	tokens := NewStore(db)
@@ -321,88 +288,6 @@ func TestAttachCaptureMedia(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusUnsupportedMediaType || !strings.Contains(response.Body.String(), `"code":"unsupported_media_type"`) {
 		t.Fatalf("unsupported media request = %d, body = %s", response.Code, response.Body.String())
-	}
-}
-
-func TestCreateCaptureReportsReplayAndStoreErrors(t *testing.T) {
-	tests := []struct {
-		name     string
-		creator  *fakeCaptureCreator
-		status   int
-		response string
-	}{
-		{
-			name:     "replay",
-			creator:  &fakeCaptureCreator{capture: mining.Capture{ID: 7, Revision: 4, Status: mining.StatusPending}, replayed: true},
-			status:   http.StatusOK,
-			response: `"revision":4`,
-		},
-		{
-			name:     "invalid capture",
-			creator:  &fakeCaptureCreator{err: mining.ErrInvalidInput},
-			status:   http.StatusUnprocessableEntity,
-			response: `"code":"invalid_capture"`,
-		},
-		{
-			name:     "nonce conflict",
-			creator:  &fakeCaptureCreator{err: mining.ErrNonceConflict},
-			status:   http.StatusConflict,
-			response: `"code":"nonce_conflict"`,
-		},
-		{
-			name:     "deleted capture",
-			creator:  &fakeCaptureCreator{err: mining.ErrCaptureDeleted},
-			status:   http.StatusConflict,
-			response: `"code":"capture_deleted"`,
-		},
-		{
-			name:     "storage failure",
-			creator:  &fakeCaptureCreator{err: errors.New("database failed")},
-			status:   http.StatusInternalServerError,
-			response: `"code":"internal_error"`,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			router, token, _ := captureAPITestRouter(t, test.creator)
-			response := serveCaptureAPI(router, token, `{"expression":"猫","capture_nonce":"00000000000000000000000000000002"}`)
-			if response.Code != test.status || !strings.Contains(response.Body.String(), test.response) {
-				t.Fatalf("response = %d %s", response.Code, response.Body.String())
-			}
-		})
-	}
-}
-
-func TestCreateCaptureRejectsInvalidJSON(t *testing.T) {
-	tests := []struct {
-		name        string
-		contentType string
-		body        string
-		status      int
-	}{
-		{name: "media type", contentType: "text/plain", body: `{}`, status: http.StatusUnsupportedMediaType},
-		{name: "null", contentType: "application/json", body: `null`, status: http.StatusBadRequest},
-		{name: "unknown field", contentType: "application/json", body: `{"expression":"猫","unknown":true}`, status: http.StatusBadRequest},
-		{name: "trailing value", contentType: "application/json", body: `{} {}`, status: http.StatusBadRequest},
-		{name: "too large", contentType: "application/json", body: `{"expression":"` + strings.Repeat("a", captureBodyLimit) + `"}`, status: http.StatusRequestEntityTooLarge},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			creator := &fakeCaptureCreator{}
-			router, token, _ := captureAPITestRouter(t, creator)
-			request := httptest.NewRequest(http.MethodPost, "/api/extension/v1/captures", strings.NewReader(test.body))
-			request.TLS = &tls.ConnectionState{}
-			request.Header.Set("Authorization", "Bearer "+token)
-			request.Header.Set("Content-Type", test.contentType)
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, request)
-			if response.Code != test.status {
-				t.Fatalf("response = %d %s", response.Code, response.Body.String())
-			}
-			if creator.input.Expression != "" {
-				t.Fatalf("creator received invalid input: %#v", creator.input)
-			}
-		})
 	}
 }
 

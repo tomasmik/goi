@@ -228,10 +228,6 @@ func NewStore(db *sql.DB) *Store {
 	return &Store{db: db, examples: examples.NewStore(db)}
 }
 
-func (s *Store) ListCount(ctx context.Context, search string) (int, error) {
-	return s.ListCountFiltered(ctx, search, ListFilterAll)
-}
-
 func (s *Store) ListCountFiltered(ctx context.Context, search string, status ListFilter) (int, error) {
 	filter, args := vocabularyListFilter(search, status)
 	var count int
@@ -239,14 +235,6 @@ func (s *Store) ListCountFiltered(ctx context.Context, search string, status Lis
 		return 0, fmt.Errorf("count vocabulary: %w", err)
 	}
 	return count, nil
-}
-
-func (s *Store) ListPage(ctx context.Context, search string, limit, offset int) ([]ListItem, error) {
-	return s.ListPageFiltered(ctx, search, ListFilterAll, limit, offset)
-}
-
-func (s *Store) ListPageFiltered(ctx context.Context, search string, status ListFilter, limit, offset int) ([]ListItem, error) {
-	return s.ListPageSorted(ctx, search, status, ListSortUpdated, limit, offset)
 }
 
 func (s *Store) ListPageSorted(ctx context.Context, search string, status ListFilter, sort ListSort, limit, offset int) ([]ListItem, error) {
@@ -358,14 +346,6 @@ func (s *Store) list(ctx context.Context, filter string, args []any, order strin
 	return items, nil
 }
 
-func (s *Store) KnownCount(ctx context.Context) (int, error) {
-	var count int
-	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM vocabulary "+knownVocabularyWhere).Scan(&count); err != nil {
-		return 0, fmt.Errorf("count known vocabulary: %w", err)
-	}
-	return count, nil
-}
-
 func (s *Store) KnownExpressions(ctx context.Context) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT expression, normalized_expression
@@ -394,29 +374,6 @@ func (s *Store) KnownExpressions(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("iterate known vocabulary expressions: %w", err)
 	}
 	return expressions, nil
-}
-
-func (s *Store) LeechStatus(ctx context.Context, id int64) (string, error) {
-	var active, everLeech, suspended bool
-	err := s.db.QueryRowContext(ctx, `
-		SELECT COALESCE(ls.active, 0), COALESCE(ls.ever_leech, 0),
-		       COALESCE(ls.active = 1 AND v.status = 'suspended', 0)
-		FROM vocabulary v
-		LEFT JOIN leech_states ls ON ls.vocabulary_id = v.id
-		WHERE v.id = ?`, id).Scan(&active, &everLeech, &suspended)
-	if err != nil {
-		return "", err
-	}
-	if active && suspended {
-		return "suspended_leech", nil
-	}
-	if active {
-		return "leech", nil
-	}
-	if everLeech {
-		return "former_leech", nil
-	}
-	return "", nil
 }
 
 func (s *Store) StatusCount(ctx context.Context, filter ListFilter) (int, error) {

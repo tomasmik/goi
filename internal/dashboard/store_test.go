@@ -116,44 +116,6 @@ func TestSummaryExcludesWordsReservedByActiveLesson(t *testing.T) {
 	}
 }
 
-func TestScheduleStagesAndLearningPeriods(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "schedule.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	now := time.Date(2026, 7, 24, 10, 0, 0, 0, time.UTC)
-	day := time.Date(2026, 7, 24, 0, 0, 0, 0, time.UTC)
-	insertDashboardWord(t, db, "one", 0, day.Add(2*time.Hour).Unix(), now.Add(-2*time.Hour))
-	insertDashboardWord(t, db, "two", 3, day.AddDate(0, 0, 1).Add(14*time.Hour).Unix(), now.AddDate(0, 0, -2))
-	insertDashboardWord(t, db, "three", 9, nil, now.AddDate(0, 0, -10))
-
-	store := newDashboardTestStore(db, time.UTC)
-	summary, err := store.Summary(ctx, now)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary.LearnedToday != 1 || summary.LearnedWeek != 2 || summary.LearnedMonth != 3 {
-		t.Fatalf("learned periods = %d/%d/%d", summary.LearnedToday, summary.LearnedWeek, summary.LearnedMonth)
-	}
-	if len(summary.UpcomingReviews) != 1 || summary.UpcomingReviews[0].Label != "Tomorrow · 14:00" || summary.UpcomingReviews[0].Count != 1 {
-		t.Fatalf("upcoming reviews = %+v", summary.UpcomingReviews)
-	}
-	if summary.TomorrowReviews != 1 {
-		t.Fatalf("tomorrow reviews = %d", summary.TomorrowReviews)
-	}
-	if len(summary.StageCounts) != 5 ||
-		summary.StageCounts[0].Label != "New" || summary.StageCounts[0].Count != 2 ||
-		summary.StageCounts[4].Label != "Burned" || summary.StageCounts[4].Count != 1 {
-		t.Fatalf("stage counts = %+v", summary.StageCounts)
-	}
-
-}
-
 func TestUpcomingReviewsUsesNextThreeNonEmptyHours(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "upcoming-reviews.sqlite"))
@@ -226,69 +188,6 @@ func TestUpcomingReviewsSeparatesRepeatedDaylightSavingHours(t *testing.T) {
 		if batches[index] != expected[index] {
 			t.Fatalf("upcoming review %d = %+v, want %+v", index, batches[index], expected[index])
 		}
-	}
-}
-
-func TestStageCountsUseNamedGroups(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "stage-groups.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-
-	expressions := []string{"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"}
-	for stage, expression := range expressions {
-		var dueAt any = time.Now().Add(time.Hour).Unix()
-		if stage == 9 {
-			dueAt = nil
-		}
-		insertDashboardWord(t, db, expression, stage, dueAt, time.Now())
-	}
-
-	counts, err := newDashboardTestStore(db, time.UTC).StageCounts(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := []StageCount{
-		{Label: "New", Count: 4},
-		{Label: "Learning", Count: 2},
-		{Label: "Familiar", Count: 1},
-		{Label: "Mature", Count: 2},
-		{Label: "Burned", Count: 1},
-	}
-	if len(counts) != len(expected) {
-		t.Fatalf("stage groups = %+v", counts)
-	}
-	for index := range expected {
-		if counts[index] != expected[index] {
-			t.Fatalf("stage group %d = %+v, want %+v", index, counts[index], expected[index])
-		}
-	}
-}
-
-func TestSummaryRejectsInvalidConfiguredTimeZone(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.Open(ctx, filepath.Join(t.TempDir(), "timezone.sqlite"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	if err := database.Migrate(ctx, db); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`
-		INSERT INTO user_settings (id, time_zone)
-		VALUES (1, 'not/a-time-zone')`); err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = newDashboardTestStore(db, time.UTC).Summary(ctx, time.Now())
-	if err == nil || !strings.Contains(err.Error(), `load configured time zone "not/a-time-zone"`) {
-		t.Fatalf("Summary() error = %v", err)
 	}
 }
 

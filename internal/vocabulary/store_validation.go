@@ -13,10 +13,6 @@ import (
 	"github.com/tomasmik/goi/internal/textnorm"
 )
 
-func validateInput(input CreateInput) (validatedInput, error) {
-	return validateInputMode(input, false)
-}
-
 func validateInputForUpdate(input CreateInput, allowSparse bool) (validatedInput, error) {
 	return validateInputMode(input, allowSparse)
 }

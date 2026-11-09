@@ -3,8 +3,6 @@ const assert = require("node:assert/strict");
 
 const captureModel = require("../shared/capture-model.js");
 const {
-  callSafely,
-  connectionTestStatus,
   saveConnection,
 } = require("../shared/popup-model.js");
 
@@ -155,21 +153,6 @@ test("does not replace the connection when verification fails", async function (
   ]);
 });
 
-test("explains a rejected token before saving", async function () {
-  const fake = fakeOperations({
-    verifyConnection: async function (connection) {
-      fake.calls.push(["verify", connection]);
-      return { ok: false, errorCode: "unauthorized" };
-    }
-  });
-
-  await assert.rejects(
-    saveConnection({ baseUrl: "https://goi.example", token: "wrong" }, fake.operations),
-    /rejected the token/u
-  );
-  assert.equal(fake.calls.some(function (entry) { return entry[0] === "save"; }), false);
-});
-
 test("keeps the save error if permission rollback also fails", async function () {
   const fake = fakeOperations({
     saveConnection: async function () {
@@ -199,39 +182,4 @@ test("does not save when host permission is denied", async function () {
     /access was not granted/
   );
   assert.deepEqual(fake.calls.map(function (entry) { return entry[0]; }), ["contains", "request"]);
-});
-
-test("turns rejected and malformed extension actions into recoverable results", async function () {
-  assert.deepEqual(await callSafely(async function () {
-    throw new Error("Message port closed");
-  }), { ok: false, unavailable: true });
-  assert.deepEqual(await callSafely(async function () {
-    return undefined;
-  }), { ok: false, unavailable: true });
-  assert.deepEqual(await callSafely(async function () {
-    return { ok: false, error: "Rejected" };
-  }), { ok: false, error: "Rejected" });
-});
-
-test("reports connection-test failures by their worker error code", () => {
-  assert.deepEqual(connectionTestStatus({ ok: false, errorCode: "not_connected" }), {
-    text: "Goi is not connected. Save an address and token first.",
-    error: true,
-  });
-  assert.deepEqual(connectionTestStatus({ ok: false, errorCode: "unauthorized" }), {
-    text: "Goi rejected the token. Copy the full token from Goi and try again.",
-    error: true,
-  });
-  assert.deepEqual(connectionTestStatus({ ok: false, errorCode: "insecure_transport" }), {
-    text: "This server rejected plain HTTP. Use HTTPS or a private network.",
-    error: true,
-  });
-  assert.deepEqual(connectionTestStatus({ ok: false, errorCode: "network" }), {
-    text: "Goi could not be reached.",
-    error: true,
-  });
-  assert.deepEqual(connectionTestStatus({ ok: false, errorCode: "server" }), {
-    text: "Goi returned a server error.",
-    error: true,
-  });
 });

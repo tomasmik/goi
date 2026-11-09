@@ -8,10 +8,7 @@ import (
 	"time"
 )
 
-const (
-	DefaultRetentionDays = 1
-	MaxRetentionDays     = 3
-)
+const MaxRetentionDays = 3
 
 type Settings struct {
 	Enabled       bool
