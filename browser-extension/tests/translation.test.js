@@ -107,6 +107,17 @@ test("reports why on-device translation failed before describing the Goi fallbac
     return true;
   });
 
+  const failed = translation.create({
+    async remote() {
+      return { errorCode: "translation_failed", error: translation.failureText("translation_failed") };
+    },
+  });
+  await assert.rejects(failed.translate("猫です"), function (error) {
+    assert.doesNotMatch(error.message, /not available in this browser/u);
+    assert.match(error.message, /returned an error/u);
+    return true;
+  });
+
   const needsClick = translation.create({
     translatorAPI: {
       async availability() { return "downloadable"; },

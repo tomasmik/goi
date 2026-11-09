@@ -91,9 +91,10 @@
       const translation = String(response?.translation || "").trim();
       if (!translation) {
         const remoteError = response?.error || failureText(response?.errorCode);
+        const remoteMissing = ["not_connected", "translation_unavailable"].includes(response?.errorCode);
         throw translationError(
           response?.errorCode || "translation_failed",
-          [localError?.message, remoteError].filter(Boolean).join(" ")
+          [remoteMissing && localError?.message, remoteError].filter(Boolean).join(" ")
         );
       }
       return { translation, provider: response.provider || "goi" };
@@ -156,6 +157,9 @@
     }
     if (code === "translation_unavailable") {
       return "Goi's translation provider is not configured.";
+    }
+    if (code === "translation_failed") {
+      return "Goi's translation provider returned an error. Check the Goi server log.";
     }
     if (code === "network") {
       return "Could not reach Goi's translation provider.";
