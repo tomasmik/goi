@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 var ErrBackupRunning = errors.New("a backup is already queued or running")
@@ -214,7 +216,7 @@ func (s *Service) perform(ctx context.Context, trigger string) {
 				s.fail(ctx, fmt.Errorf("remove uploaded local backup: %w", err), localName)
 				return
 			}
-			if err := syncDirectory(filepath.Dir(localPath)); err != nil {
+			if err := securefile.SyncDirectory(filepath.Dir(localPath)); err != nil {
 				s.fail(ctx, fmt.Errorf("sync local backup removal: %w", err), "")
 				return
 			}

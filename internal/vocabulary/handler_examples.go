@@ -15,7 +15,7 @@ import (
 )
 
 func (h *Handler) createExample(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -46,7 +46,7 @@ func (h *Handler) createExample(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateExample(w http.ResponseWriter, r *http.Request) {
-	vocabularyID, ok := vocabularyID(r)
+	vocabularyID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -93,7 +93,7 @@ func (h *Handler) updateExample(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteExample(w http.ResponseWriter, r *http.Request) {
-	vocabularyID, ok := vocabularyID(r)
+	vocabularyID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -126,7 +126,7 @@ func (h *Handler) deleteExample(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) generateExample(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -192,7 +192,7 @@ func (h *Handler) generateExample(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) generateExampleFields(w http.ResponseWriter, r *http.Request) {
-	vocabularyID, ok := vocabularyID(r)
+	vocabularyID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -218,7 +218,7 @@ func (h *Handler) generateExampleFields(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *Handler) generateExampleDraft(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return

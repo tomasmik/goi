@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tomasmik/goi/internal/contextio"
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 const (
@@ -284,7 +285,7 @@ func PruneBackups(directory string, keep int, protectedPath string) error {
 			pruneErrors = append(pruneErrors, fmt.Errorf("close old backup lock %q: %w", backup.path, err))
 		}
 	}
-	if err := syncDirectory(directory); err != nil {
+	if err := securefile.SyncDirectory(directory); err != nil {
 		pruneErrors = append(pruneErrors, fmt.Errorf("sync backup directory: %w", err))
 	}
 	return errors.Join(pruneErrors...)
@@ -446,7 +447,7 @@ func copyFile(ctx context.Context, sourcePath, destinationPath string) (checksum
 	if closeErr != nil {
 		return "", closeErr
 	}
-	if err := syncDirectory(filepath.Dir(destinationPath)); err != nil {
+	if err := securefile.SyncDirectory(filepath.Dir(destinationPath)); err != nil {
 		return "", err
 	}
 	complete = true

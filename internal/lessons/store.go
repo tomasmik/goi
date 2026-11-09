@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/tomasmik/goi/internal/examples"
+	"github.com/tomasmik/goi/internal/studyerror"
 )
 
 type Store struct {
@@ -15,19 +16,7 @@ type Store struct {
 	exampleStore *examples.Store
 }
 
-type stateError string
-
-func (err stateError) Error() string {
-	return string(err)
-}
-
-func (err stateError) UserMessage() string {
-	return string(err)
-}
-
-func stateErrorf(format string, args ...any) error {
-	return stateError(fmt.Sprintf(format, args...))
-}
+type stateError = studyerror.Error
 
 const (
 	BatchSize                = 5
@@ -187,7 +176,7 @@ func (s *Store) Start(ctx context.Context, vocabularyIDs []int64) (int64, error)
 		return 0, stateError("select at least one word")
 	}
 	if len(vocabularyIDs) > maximumAvailablePageSize {
-		return 0, stateErrorf("select at most %d words", maximumAvailablePageSize)
+		return 0, studyerror.Errorf("select at most %d words", maximumAvailablePageSize)
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -242,16 +231,16 @@ func (s *Store) Start(ctx context.Context, vocabularyIDs []int64) (int64, error)
 			FROM vocabulary v
 			WHERE v.id = ?`, vocabularyID).Scan(&status, &knownElsewhere, &complete, &activeSessionID)
 		if errors.Is(err, sql.ErrNoRows) {
-			return 0, stateErrorf("vocabulary %d is not available for a lesson", vocabularyID)
+			return 0, studyerror.Errorf("vocabulary %d is not available for a lesson", vocabularyID)
 		}
 		if err != nil {
 			return 0, fmt.Errorf("check lesson vocabulary %d: %w", vocabularyID, err)
 		}
 		if status != "unlearned" || knownElsewhere || !complete {
-			return 0, stateErrorf("vocabulary %d is not available for a lesson", vocabularyID)
+			return 0, studyerror.Errorf("vocabulary %d is not available for a lesson", vocabularyID)
 		}
 		if activeSessionID.Valid {
-			return 0, stateErrorf("vocabulary %d is already in lesson session %d", vocabularyID, activeSessionID.Int64)
+			return 0, studyerror.Errorf("vocabulary %d is already in lesson session %d", vocabularyID, activeSessionID.Int64)
 		}
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO lesson_session_items (

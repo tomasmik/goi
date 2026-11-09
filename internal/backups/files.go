@@ -18,6 +18,7 @@ import (
 
 	"github.com/tomasmik/goi/internal/contextio"
 	"github.com/tomasmik/goi/internal/database"
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 const (
@@ -177,7 +178,7 @@ func QueueRestore(ctx context.Context, dataDir string, source io.Reader) error {
 	if err := os.Chmod(temporaryPath, 0o640); err != nil {
 		return fmt.Errorf("secure restore upload: %w", err)
 	}
-	if err := syncFile(temporaryPath); err != nil {
+	if err := securefile.SyncFile(temporaryPath); err != nil {
 		return fmt.Errorf("sync restore upload: %w", err)
 	}
 	if err := ValidateBundle(ctx, temporaryPath); err != nil {
@@ -191,12 +192,12 @@ func QueueRestore(ctx context.Context, dataDir string, source io.Reader) error {
 	}
 	if err := os.Remove(temporaryPath); err != nil {
 		removeErr := os.Remove(pendingPath)
-		rollbackSyncErr := syncDirectory(dataDir)
+		rollbackSyncErr := securefile.SyncDirectory(dataDir)
 		return fmt.Errorf("remove restore upload workspace: %w", errors.Join(err, removeErr, rollbackSyncErr))
 	}
-	if err := syncDirectory(dataDir); err != nil {
+	if err := securefile.SyncDirectory(dataDir); err != nil {
 		removeErr := os.Remove(pendingPath)
-		rollbackSyncErr := syncDirectory(dataDir)
+		rollbackSyncErr := securefile.SyncDirectory(dataDir)
 		return fmt.Errorf("sync queued restore: %w", errors.Join(err, removeErr, rollbackSyncErr))
 	}
 	return nil
@@ -220,7 +221,7 @@ func CancelPendingRestore(dataDir string) error {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove pending restore: %w", err)
 	}
-	if err := syncDirectory(dataDir); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := securefile.SyncDirectory(dataDir); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("sync data directory: %w", err)
 	}
 	return writeRestoreStatus(dataDir, RestoreStatus{})
@@ -257,7 +258,7 @@ func applyPendingRestore(
 				return false, retryPendingRestore(errors.New("prepared restore receipt has no pending bundle"))
 			}
 		} else {
-			if err := syncDirectory(dataDir); err != nil {
+			if err := securefile.SyncDirectory(dataDir); err != nil {
 				return false, retryPendingRestore(fmt.Errorf("sync restore queue state: %w", err))
 			}
 			return false, nil
@@ -447,7 +448,7 @@ func cleanupNewRestoreWorkspaces(directory string, existing []string) error {
 		}
 	}
 	if changed {
-		if err := syncDirectory(directory); err != nil {
+		if err := securefile.SyncDirectory(directory); err != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("sync restore workspace directory: %w", err))
 		}
 	}
@@ -460,7 +461,7 @@ func validRestoreWorkspaceName(name string) bool {
 }
 
 func quarantineInvalidRestore(dataDir, pendingPath string, now time.Time, restoreErr error) error {
-	return quarantineInvalidRestoreWithSync(dataDir, pendingPath, now, restoreErr, syncDirectory)
+	return quarantineInvalidRestoreWithSync(dataDir, pendingPath, now, restoreErr, securefile.SyncDirectory)
 }
 
 func quarantineInvalidRestoreWithSync(
@@ -498,7 +499,7 @@ func finishAppliedRestore(dataDir, pendingPath string, receipt restoreReceipt) e
 	if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove applied restore bundle: %w", err)
 	}
-	if err := syncDirectory(dataDir); err != nil {
+	if err := securefile.SyncDirectory(dataDir); err != nil {
 		return fmt.Errorf("sync applied restore: %w", err)
 	}
 	if err := writeRestoreStatus(dataDir, RestoreStatus{
@@ -511,7 +512,7 @@ func finishAppliedRestore(dataDir, pendingPath string, receipt restoreReceipt) e
 	if err := os.Remove(filepath.Join(dataDir, restoreReceiptName)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove restore receipt: %w", err)
 	}
-	return syncDirectory(dataDir)
+	return securefile.SyncDirectory(dataDir)
 }
 
 func ReadRestoreStatus(dataDir string) (RestoreStatus, error) {
@@ -567,7 +568,7 @@ func PruneLocalBefore(backupDir string, cutoff time.Time) error {
 		removed = true
 	}
 	if removed {
-		if err := syncDirectory(backupDir); err != nil {
+		if err := securefile.SyncDirectory(backupDir); err != nil {
 			pruneErrors = append(pruneErrors, err)
 		}
 	}
@@ -580,7 +581,7 @@ func writeRestoreStatus(dataDir string, status RestoreStatus) error {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		return syncDirectory(dataDir)
+		return securefile.SyncDirectory(dataDir)
 	}
 	contents, err := json.Marshal(status)
 	if err != nil {
@@ -610,7 +611,7 @@ func writeRestoreStatus(dataDir string, status RestoreStatus) error {
 	if err := os.Rename(temporaryPath, path); err != nil {
 		return err
 	}
-	return syncDirectory(dataDir)
+	return securefile.SyncDirectory(dataDir)
 }
 
 func acquireRestoreQueueLock(dataDir string) (*database.Lock, error) {
@@ -767,12 +768,12 @@ func createRestoreReceipt(dataDir string, receipt restoreReceipt) error {
 	}
 	if err := os.Remove(temporaryPath); err != nil {
 		removeErr := os.Remove(receiptPath)
-		rollbackSyncErr := syncDirectory(dataDir)
+		rollbackSyncErr := securefile.SyncDirectory(dataDir)
 		return errors.Join(err, removeErr, rollbackSyncErr)
 	}
-	if err := syncDirectory(dataDir); err != nil {
+	if err := securefile.SyncDirectory(dataDir); err != nil {
 		removeErr := os.Remove(receiptPath)
-		rollbackSyncErr := syncDirectory(dataDir)
+		rollbackSyncErr := securefile.SyncDirectory(dataDir)
 		return errors.Join(err, removeErr, rollbackSyncErr)
 	}
 	return nil
@@ -787,7 +788,7 @@ func replaceRestoreReceipt(dataDir string, receipt restoreReceipt) error {
 	if err := os.Rename(temporaryPath, filepath.Join(dataDir, restoreReceiptName)); err != nil {
 		return err
 	}
-	return syncDirectory(dataDir)
+	return securefile.SyncDirectory(dataDir)
 }
 
 func writeRestoreReceiptTemporary(dataDir string, receipt restoreReceipt) (string, error) {
@@ -829,7 +830,7 @@ func removeRestoreReceipt(dataDir string) error {
 	if err := os.Remove(filepath.Join(dataDir, restoreReceiptName)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return syncDirectory(dataDir)
+	return securefile.SyncDirectory(dataDir)
 }
 
 func validLocalName(name string) bool {

@@ -42,11 +42,11 @@ func NewStore(db *sql.DB, location *time.Location) *Store {
 
 func (s *Store) Summary(ctx context.Context, now time.Time) (Summary, error) {
 	var summary Summary
-	location, err := s.currentLocation(ctx)
+	location, err := s.CurrentLocation(ctx)
 	if err != nil {
 		return Summary{}, err
 	}
-	weekly, err := s.weeklyActivity(ctx, localWeekStart(now, location))
+	weekly, err := s.weeklyActivity(ctx, LocalWeekStart(now, location))
 	if err != nil {
 		return Summary{}, err
 	}
@@ -61,11 +61,11 @@ func (s *Store) Summary(ctx context.Context, now time.Time) (Summary, error) {
 }
 
 func (s *Store) WeeklyActivity(ctx context.Context, now time.Time) (WeeklyActivity, error) {
-	location, err := s.currentLocation(ctx)
+	location, err := s.CurrentLocation(ctx)
 	if err != nil {
 		return WeeklyActivity{}, err
 	}
-	return s.weeklyActivity(ctx, localWeekStart(now, location))
+	return s.weeklyActivity(ctx, LocalWeekStart(now, location))
 }
 
 func (s *Store) weeklyActivity(ctx context.Context, weekStart time.Time) (WeeklyActivity, error) {
@@ -194,7 +194,7 @@ func (s *Store) HideMistake(ctx context.Context, id int64) error {
 }
 
 func (s *Store) studyStreak(ctx context.Context, now time.Time, location *time.Location) (int, error) {
-	dayStart := localDayStart(now, location)
+	dayStart := LocalDayStart(now, location)
 	for streak := 0; ; streak++ {
 		nextDay := dayStart.AddDate(0, 0, 1)
 		studied, err := s.studiedBetween(ctx, dayStart, nextDay)
@@ -230,7 +230,7 @@ func (s *Store) studiedBetween(ctx context.Context, start, end time.Time) (bool,
 	return studied, nil
 }
 
-func (s *Store) currentLocation(ctx context.Context) (*time.Location, error) {
+func (s *Store) CurrentLocation(ctx context.Context) (*time.Location, error) {
 	var timeZone string
 	err := s.db.QueryRowContext(ctx, "SELECT time_zone FROM user_settings WHERE id = 1").Scan(&timeZone)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -246,13 +246,13 @@ func (s *Store) currentLocation(ctx context.Context) (*time.Location, error) {
 	return location, nil
 }
 
-func localDayStart(now time.Time, location *time.Location) time.Time {
+func LocalDayStart(now time.Time, location *time.Location) time.Time {
 	local := now.In(location)
 	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
 }
 
-func localWeekStart(now time.Time, location *time.Location) time.Time {
-	local := localDayStart(now, location)
+func LocalWeekStart(now time.Time, location *time.Location) time.Time {
+	local := LocalDayStart(now, location)
 	daysSinceMonday := (int(local.Weekday()) + 6) % 7
 	return local.AddDate(0, 0, -daysSinceMonday)
 }

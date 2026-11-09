@@ -20,7 +20,7 @@ func TestDashboardWarnsOnlyForUnhealthyAutomaticBackups(t *testing.T) {
 	if err := database.Migrate(ctx, db); err != nil {
 		t.Fatal(err)
 	}
-	store := NewStore(db, time.UTC, nil, nil, nil)
+	store := NewStore(db, nil, nil, nil)
 	now := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
 
 	for _, test := range []struct {

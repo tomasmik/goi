@@ -218,7 +218,7 @@ func (g *GoogleDrive) Disconnect() error {
 			g.mu.Unlock()
 			return fmt.Errorf("remove Google Drive credentials: %w", err)
 		}
-		if err := syncDirectory(filepath.Dir(g.config.CredentialPath)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := securefile.SyncDirectory(filepath.Dir(g.config.CredentialPath)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			g.mu.Unlock()
 			return fmt.Errorf("sync Google Drive credential directory: %w", err)
 		}

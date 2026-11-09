@@ -321,8 +321,8 @@ func (h *Handler) attachCaptureMedia(w http.ResponseWriter, r *http.Request) {
 	if !h.authorize(w, r) {
 		return
 	}
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
+	id, ok := internalweb.PathID(r)
+	if !ok {
 		writeAPIError(w, http.StatusBadRequest, "invalid_capture", "capture ID is invalid")
 		return
 	}

@@ -158,7 +158,7 @@ func (a *Analyzer) Analyze(ctx context.Context, blocks []Block) (Result, error) 
 				status = knownStatus
 				result.Summary.KnownOccurrences++
 			} else {
-				unknownExpressions[comparisonForm(span.expression)] = struct{}{}
+				unknownExpressions[textnorm.Reading(span.expression)] = struct{}{}
 			}
 			result.Summary.TotalOccurrences++
 			blockResult.Tokens = append(blockResult.Tokens, Token{
@@ -281,7 +281,7 @@ func nextKnownExpressionCandidates(prefixes []string, connector string, span lex
 			if !known.hasPrefix(candidate) {
 				continue
 			}
-			normalized := comparisonForm(candidate)
+			normalized := textnorm.Reading(candidate)
 			if _, exists := seen[normalized]; exists {
 				continue
 			}
@@ -355,7 +355,7 @@ func (a *Analyzer) loadKnown(ctx context.Context) (knownVocabulary, error) {
 }
 
 func (known knownVocabulary) add(value, status string) {
-	normalized := comparisonForm(value)
+	normalized := textnorm.Reading(value)
 	if normalized == "" {
 		return
 	}
@@ -367,12 +367,12 @@ func (known knownVocabulary) add(value, status string) {
 }
 
 func (known knownVocabulary) status(value string) (string, bool) {
-	status, ok := known.expressions[comparisonForm(value)]
+	status, ok := known.expressions[textnorm.Reading(value)]
 	return status, ok
 }
 
 func (known knownVocabulary) hasPrefix(value string) bool {
-	_, ok := known.prefixes[comparisonForm(value)]
+	_, ok := known.prefixes[textnorm.Reading(value)]
 	return ok
 }
 
@@ -462,10 +462,6 @@ func containsJapanese(value string) bool {
 		}
 	}
 	return false
-}
-
-func comparisonForm(value string) string {
-	return kana.ToHiragana(textnorm.Normalize(value))
 }
 
 func utf16Offsets(value string) []int {

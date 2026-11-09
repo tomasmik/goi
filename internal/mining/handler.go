@@ -160,7 +160,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) detail(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -177,7 +177,7 @@ func (h *Handler) detail(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -201,7 +201,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) accept(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -246,7 +246,7 @@ func (h *Handler) accept(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -290,7 +290,7 @@ func (h *Handler) generate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) translate(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -319,7 +319,7 @@ func (h *Handler) translate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) attach(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -353,7 +353,7 @@ func (h *Handler) attach(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) attachCandidate(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -421,7 +421,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) transition(w http.ResponseWriter, r *http.Request, action func(context.Context, int64, int64) error, options transitionOptions) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return

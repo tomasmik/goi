@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/tomasmik/goi/internal/sqlvalue"
 )
 
 const MaxRetentionDays = 3
@@ -68,7 +70,7 @@ func (s *Store) UpdateSettings(ctx context.Context, values Settings) error {
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE backup_settings
 		SET enabled = ?, hour = ?, google_drive = ?, keep_local = ?, retention_days = ?
-		WHERE id = 1`, boolInt(values.Enabled), values.Hour, boolInt(values.GoogleDrive), boolInt(values.KeepLocal), values.RetentionDays)
+		WHERE id = 1`, sqlvalue.BoolInt(values.Enabled), values.Hour, sqlvalue.BoolInt(values.GoogleDrive), sqlvalue.BoolInt(values.KeepLocal), values.RetentionDays)
 	if err != nil {
 		return fmt.Errorf("update backup settings: %w", err)
 	}
@@ -171,11 +173,4 @@ func unixTime(value sql.NullInt64) time.Time {
 		return time.Time{}
 	}
 	return time.Unix(value.Int64, 0).UTC()
-}
-
-func boolInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }

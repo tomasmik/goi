@@ -16,8 +16,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/tomasmik/goi/internal/vocabulary"
 )
 
@@ -281,10 +279,6 @@ func newCaptureNonce() (string, error) {
 		return "", fmt.Errorf("generate capture nonce: %w", err)
 	}
 	return hex.EncodeToString(nonce[:]), nil
-}
-
-func captureID(r *http.Request) (int64, bool) {
-	return positiveInt64(chi.URLParam(r, "id"))
 }
 
 func positiveInt64(value string) (int64, bool) {

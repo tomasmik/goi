@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tomasmik/goi/internal/examples"
 	"github.com/tomasmik/goi/internal/media"
+	"github.com/tomasmik/goi/internal/sqlvalue"
 	"github.com/tomasmik/goi/internal/vocabulary"
 )
 
@@ -614,31 +614,16 @@ func scanCapture(scanner rowScanner) (Capture, error) {
 	if err != nil {
 		return Capture{}, err
 	}
-	capture.SourcePositionMS = nullableInt64(sourcePosition)
-	capture.SuggestedEntrySequence = nullableInt64(suggestedEntrySequence)
-	capture.VocabularyID = nullableInt64(vocabularyID)
-	capture.ExistingVocabularyID = nullableInt64(existingVocabularyID)
-	capture.SentenceAudioIDs = parseMediaIDs(sentenceAudioIDs)
+	capture.SourcePositionMS = sqlvalue.Int64Pointer(sourcePosition)
+	capture.SuggestedEntrySequence = sqlvalue.Int64Pointer(suggestedEntrySequence)
+	capture.VocabularyID = sqlvalue.Int64Pointer(vocabularyID)
+	capture.ExistingVocabularyID = sqlvalue.Int64Pointer(existingVocabularyID)
+	capture.SentenceAudioIDs = sqlvalue.IDList(sentenceAudioIDs)
 	if len(capture.SentenceAudioIDs) > 0 {
 		capture.SentenceAudioID = capture.SentenceAudioIDs[0]
 	}
 	capture.CreatedAt = time.Unix(createdAt, 0).UTC()
 	return capture, nil
-}
-
-func parseMediaIDs(value string) []int64 {
-	if value == "" {
-		return nil
-	}
-	parts := strings.Split(value, ",")
-	ids := make([]int64, 0, len(parts))
-	for _, part := range parts {
-		id, err := strconv.ParseInt(part, 10, 64)
-		if err == nil && id > 0 {
-			ids = append(ids, id)
-		}
-	}
-	return ids
 }
 
 func loadTransitionState(ctx context.Context, tx *sql.Tx, id int64) (transitionState, error) {
@@ -654,7 +639,7 @@ func loadTransitionState(ctx context.Context, tx *sql.Tx, id int64) (transitionS
 	if err != nil {
 		return transitionState{}, err
 	}
-	state.sourcePositionMS = nullableInt64(sourcePosition)
+	state.sourcePositionMS = sqlvalue.Int64Pointer(sourcePosition)
 	return state, nil
 }
 
@@ -697,14 +682,6 @@ func requireOneRow(result sql.Result, operation string) error {
 
 func validStatus(status Status) bool {
 	return status == StatusPending || status == StatusAccepted || status == StatusDiscarded
-}
-
-func nullableInt64(value sql.NullInt64) *int64 {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Int64
-	return &result
 }
 
 func equalInt64(left, right *int64) bool {

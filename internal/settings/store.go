@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/tomasmik/goi/internal/sqlvalue"
 )
 
 type Store struct {
@@ -121,9 +123,9 @@ func (s *Store) Update(ctx context.Context, values Values) error {
 		    leech_failure_threshold = ?, leech_suspend_threshold = ?, leech_recovery_streak = ?,
 		    six_month_review_enabled = ?, theme = ?, audio_enabled = ?
 		WHERE id = 1`, values.TimeZone, values.LessonWindowHours, values.ExtraStudyLimit, values.RetryCount,
-		values.ReviewMode, values.ReviewOrder, values.ReviewCardOrder, boolInt(values.ReviewAutoAdvance),
+		values.ReviewMode, values.ReviewOrder, values.ReviewCardOrder, sqlvalue.BoolInt(values.ReviewAutoAdvance),
 		values.LeechFailureCount, values.LeechSuspendCount, values.LeechRecoveryStreak,
-		boolInt(values.SixMonthReview), values.Theme, boolInt(values.AudioEnabled))
+		sqlvalue.BoolInt(values.SixMonthReview), values.Theme, sqlvalue.BoolInt(values.AudioEnabled))
 	if err != nil {
 		return fmt.Errorf("update user settings: %w", err)
 	}
@@ -135,11 +137,4 @@ func (s *Store) Update(ctx context.Context, values Values) error {
 		return errors.New("user settings do not exist")
 	}
 	return nil
-}
-
-func boolInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }

@@ -12,7 +12,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/tomasmik/goi/internal/examples"
+	"github.com/tomasmik/goi/internal/sqlvalue"
 	"github.com/tomasmik/goi/internal/srs"
+	"github.com/tomasmik/goi/internal/studyerror"
 	"github.com/tomasmik/goi/internal/textnorm"
 )
 
@@ -73,19 +75,7 @@ type rejectedMeaningPrompt struct {
 	srsApplied              bool
 }
 
-type stateError string
-
-func (err stateError) Error() string {
-	return string(err)
-}
-
-func (err stateError) UserMessage() string {
-	return string(err)
-}
-
-func stateErrorf(format string, args ...any) error {
-	return stateError(fmt.Sprintf(format, args...))
-}
+type stateError = studyerror.Error
 
 func NewStore(db *sql.DB) *Store {
 	return &Store{db: db, exampleStore: examples.NewStore(db)}
@@ -776,8 +766,8 @@ func (s *Store) finishItemTx(ctx context.Context, tx *sql.Tx, sessionID, itemID,
 			return fmt.Errorf("load SRS state: %w", err)
 		}
 		stageBefore = stage
-		dueBefore = nullableInt64(due)
-		lastReviewedBefore = nullableInt64(lastReviewed)
+		dueBefore = sqlvalue.Int64Arg(due)
+		lastReviewedBefore = sqlvalue.Int64Arg(lastReviewed)
 		var dueTime time.Time
 		if due.Valid {
 			dueTime = time.Unix(due.Int64, 0)
@@ -812,9 +802,9 @@ func (s *Store) finishItemTx(ctx context.Context, tx *sql.Tx, sessionID, itemID,
 		if err != nil {
 			return err
 		}
-		mistakeVisibilityExistedBefore = boolInt(visibility.exists)
-		mistakeHiddenBefore = nullableInt64(visibility.hiddenAt)
-		mistakeLeechHiddenBefore = nullableInt64(visibility.leechHiddenAt)
+		mistakeVisibilityExistedBefore = sqlvalue.BoolInt(visibility.exists)
+		mistakeHiddenBefore = sqlvalue.Int64Arg(visibility.hiddenAt)
+		mistakeLeechHiddenBefore = sqlvalue.Int64Arg(visibility.leechHiddenAt)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT INTO review_results (
@@ -827,7 +817,7 @@ func (s *Store) finishItemTx(ctx context.Context, tx *sql.Tx, sessionID, itemID,
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		itemID, status,
 		stageBefore, stageAfter, dueBefore, dueAfter, lastReviewedBefore,
-		now.Unix(), boolInt(applySRS), firstAttemptCorrect, promptCount,
+		now.Unix(), sqlvalue.BoolInt(applySRS), firstAttemptCorrect, promptCount,
 		mistakeVisibilityExistedBefore, mistakeHiddenBefore, mistakeLeechHiddenBefore,
 	); err != nil {
 		return fmt.Errorf("insert review result: %w", err)
@@ -932,18 +922,4 @@ func (s *Store) acceptedAnswers(ctx context.Context, tx *sql.Tx, vocabularyID in
 	default:
 		return nil, fmt.Errorf("unsupported prompt type %q", promptType)
 	}
-}
-
-func nullableInt64(value sql.NullInt64) any {
-	if !value.Valid {
-		return nil
-	}
-	return value.Int64
-}
-
-func boolInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }

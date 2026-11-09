@@ -131,7 +131,7 @@ func (h *Handler) upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) mapping(w http.ResponseWriter, r *http.Request) {
-	runID, ok := parseID(r)
+	runID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -166,7 +166,7 @@ func (h *Handler) renderMapping(w http.ResponseWriter, r *http.Request, runID in
 }
 
 func (h *Handler) apply(w http.ResponseWriter, r *http.Request) {
-	runID, ok := parseID(r)
+	runID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -213,7 +213,7 @@ func (h *Handler) redirectToResult(w http.ResponseWriter, r *http.Request, runID
 }
 
 func (h *Handler) result(w http.ResponseWriter, r *http.Request) {
-	runID, ok := parseID(r)
+	runID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -232,7 +232,7 @@ func (h *Handler) result(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) errorReport(w http.ResponseWriter, r *http.Request) {
-	runID, ok := parseID(r)
+	runID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -349,11 +349,6 @@ func mappingFromRequest(r *http.Request) (Mapping, error) {
 		*field.target = value
 	}
 	return mapping, nil
-}
-
-func parseID(r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	return id, err == nil && id > 0
 }
 
 func limitedPreviewNotes(notes []Note) ([]PreviewNote, int) {

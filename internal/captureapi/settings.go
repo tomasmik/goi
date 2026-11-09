@@ -10,7 +10,6 @@ import (
 	"errors"
 	"io/fs"
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -219,8 +218,8 @@ func (h *SettingsHandler) forgetCreatedToken(tokenID int64) string {
 }
 
 func (h *SettingsHandler) revoke(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id < 1 {
+	id, ok := internalweb.PathID(r)
+	if !ok {
 		h.renderer.NotFound(w, internalweb.NotFoundPage{
 			Title:       "Extension token not found",
 			Heading:     "Extension token not found",

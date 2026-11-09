@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/tomasmik/goi/internal/database"
+	"github.com/tomasmik/goi/internal/sqlvalue"
 	"github.com/tomasmik/goi/internal/srs"
 	"github.com/tomasmik/goi/internal/vocabulary"
 )
@@ -1351,8 +1352,8 @@ func TestReviewUndoRestoresMistakeVisibilitySnapshot(t *testing.T) {
 			if test.exists {
 				if _, err := db.Exec(`
 					INSERT INTO mistake_visibility (vocabulary_id, hidden_at, leech_hidden_at)
-					VALUES (?, ?, ?)`, vocabularyID, nullableInt64(test.hiddenAt),
-					nullableInt64(test.leechHiddenAt)); err != nil {
+					VALUES (?, ?, ?)`, vocabularyID, sqlvalue.Int64Arg(test.hiddenAt),
+					sqlvalue.Int64Arg(test.leechHiddenAt)); err != nil {
 					t.Fatal(err)
 				}
 			}

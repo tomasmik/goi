@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 func writeNewFileSynced(path string, data []byte, mode fs.FileMode) (returnErr error) {
@@ -40,33 +42,11 @@ func writeNewFileSynced(path string, data []byte, mode fs.FileMode) (returnErr e
 	if closeErr != nil {
 		return closeErr
 	}
-	if err := syncDirectory(filepath.Dir(path)); err != nil {
+	if err := securefile.SyncDirectory(filepath.Dir(path)); err != nil {
 		return err
 	}
 	complete = true
 	return nil
-}
-
-func syncFile(path string) error {
-	file, err := os.OpenFile(path, os.O_RDWR, 0)
-	if err != nil {
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		return errors.Join(err, file.Close())
-	}
-	return file.Close()
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	if err := directory.Sync(); err != nil {
-		return errors.Join(err, directory.Close())
-	}
-	return directory.Close()
 }
 
 func syncParentDirectories(paths ...string) error {
@@ -75,7 +55,7 @@ func syncParentDirectories(paths ...string) error {
 		directories[filepath.Dir(path)] = struct{}{}
 	}
 	for directory := range directories {
-		if err := syncDirectory(directory); err != nil {
+		if err := securefile.SyncDirectory(directory); err != nil {
 			return fmt.Errorf("sync directory %q: %w", directory, err)
 		}
 	}

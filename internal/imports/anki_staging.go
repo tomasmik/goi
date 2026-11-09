@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/tomasmik/goi/internal/contextio"
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 const MaxArchiveBytes int64 = 1 << 30
@@ -93,7 +94,7 @@ func (s *Store) Upload(ctx context.Context, file multipart.File, filename string
 			s.cleanupFailedUpload(ctx, runID, ""),
 		)
 	}
-	if err := syncDirectory(s.stagingDir); err != nil {
+	if err := securefile.SyncDirectory(s.stagingDir); err != nil {
 		return 0, Preview{}, errors.Join(
 			fmt.Errorf("sync Anki staging directory: %w", err),
 			s.cleanupFailedUpload(ctx, runID, finalPath),
@@ -284,17 +285,6 @@ func (s *Store) appliedArchives(ctx context.Context) ([]stagedArchive, error) {
 		return nil, fmt.Errorf("iterate applied Anki archives: %w", err)
 	}
 	return archives, nil
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	if err := directory.Sync(); err != nil {
-		return errors.Join(err, directory.Close())
-	}
-	return directory.Close()
 }
 
 func (s *Store) runPath(runID int64) string {

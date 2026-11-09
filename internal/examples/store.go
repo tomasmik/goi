@@ -5,9 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
+
+	"github.com/tomasmik/goi/internal/sqlvalue"
 )
 
 type Store struct {
@@ -320,39 +320,16 @@ func scanExample(scanner rowScanner) (Example, error) {
 	); err != nil {
 		return Example{}, err
 	}
-	example.MiningCaptureID = nullableInt64(miningCaptureID)
-	example.SentenceAudioIDs = parseMediaIDs(sentenceAudioIDs)
+	example.MiningCaptureID = sqlvalue.Int64Pointer(miningCaptureID)
+	example.SentenceAudioIDs = sqlvalue.IDList(sentenceAudioIDs)
 	if len(example.SentenceAudioIDs) > 0 {
 		example.SentenceAudioID = example.SentenceAudioIDs[0]
 	}
-	example.SourcePositionMS = nullableInt64(sourcePositionMS)
+	example.SourcePositionMS = sqlvalue.Int64Pointer(sourcePositionMS)
 	example.CreatedAt = time.Unix(createdAt, 0).UTC()
 	example.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 	example.SourceLink = LinkForSource(example.SourceURL, example.SourcePositionMS)
 	example.SourcePositionLabel = FormatSourcePosition(example.SourcePositionMS)
 	example.BeforeTarget, example.MatchedTarget, example.AfterTarget, example.HasTarget = SplitTarget(example.Sentence, example.TargetSurface)
 	return example, nil
-}
-
-func parseMediaIDs(value string) []int64 {
-	if value == "" {
-		return nil
-	}
-	parts := strings.Split(value, ",")
-	ids := make([]int64, 0, len(parts))
-	for _, part := range parts {
-		id, err := strconv.ParseInt(part, 10, 64)
-		if err == nil && id > 0 {
-			ids = append(ids, id)
-		}
-	}
-	return ids
-}
-
-func nullableInt64(value sql.NullInt64) *int64 {
-	if !value.Valid {
-		return nil
-	}
-	result := value.Int64
-	return &result
 }

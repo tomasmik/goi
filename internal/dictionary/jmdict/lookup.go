@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/tomasmik/goi/internal/kana"
+	"github.com/tomasmik/goi/internal/sqlvalue"
 	"github.com/tomasmik/goi/internal/textnorm"
 )
 
@@ -17,14 +17,14 @@ func (c *Cache) Lookup(ctx context.Context, expression, reading string) (Match, 
 		match.State = MatchNone
 		return match, nil
 	}
-	normalizedReading := normalizeReading(reading)
+	normalizedReading := textnorm.Reading(reading)
 
 	pairs := make(map[string]lookupPair)
 	if err := c.loadWrittenPairs(ctx, normalizedExpression, normalizedReading, pairs); err != nil {
 		return Match{}, err
 	}
 	if isKana(expression) {
-		if err := c.loadReadingPairs(ctx, normalizeReading(expression), normalizedReading, pairs); err != nil {
+		if err := c.loadReadingPairs(ctx, textnorm.Reading(expression), normalizedReading, pairs); err != nil {
 			return Match{}, err
 		}
 	}
@@ -188,7 +188,7 @@ func (c *Cache) loadSenses(ctx context.Context, pair lookupPair) ([]Sense, error
 		       OR EXISTS (
 		           SELECT 1 FROM jmdict_sense_reading sr WHERE sr.sense_id = s.id AND sr.reading_id = ?
 		       ))
-		ORDER BY s.position`, pair.sequence, nullableInt64(pair.kanjiID), nullableInt64(pair.kanjiID), pair.readingID)
+		ORDER BY s.position`, pair.sequence, sqlvalue.Int64Arg(pair.kanjiID), sqlvalue.Int64Arg(pair.kanjiID), pair.readingID)
 	if err != nil {
 		return nil, fmt.Errorf("load applicable JMdict senses: %w", err)
 	}
@@ -258,10 +258,6 @@ func (c *Cache) loadSenses(ctx context.Context, pair lookupPair) ([]Sense, error
 	return senses, nil
 }
 
-func normalizeReading(value string) string {
-	return kana.ToHiragana(textnorm.Normalize(value))
-}
-
 func isKana(value string) bool {
 	found := false
 	for _, character := range textnorm.Normalize(value) {
@@ -300,11 +296,4 @@ func mergeLookupPair(pairs map[string]lookupPair, pair lookupPair) {
 		pair.reading = existing.reading
 	}
 	pairs[key] = pair
-}
-
-func nullableInt64(value sql.NullInt64) any {
-	if !value.Valid {
-		return nil
-	}
-	return value.Int64
 }

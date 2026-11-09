@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/tomasmik/goi/internal/studyerror"
 )
 
 const maximumStudySelectionSize = 100
@@ -191,7 +193,7 @@ func (s *Store) studyIDs(ctx context.Context, source string, selected []int64, l
 		args = append(args, limit)
 	case "selected":
 		if len(selected) > maximumStudySelectionSize {
-			return nil, stateErrorf("select at most %d words", maximumStudySelectionSize)
+			return nil, studyerror.Errorf("select at most %d words", maximumStudySelectionSize)
 		}
 		seen := make(map[int64]struct{}, len(selected))
 		ids := make([]int64, 0, len(selected))

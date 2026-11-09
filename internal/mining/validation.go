@@ -3,13 +3,10 @@ package mining
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
-	"net/url"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
+	"github.com/tomasmik/goi/internal/inputcheck"
 	"github.com/tomasmik/goi/internal/textnorm"
 )
 
@@ -17,7 +14,6 @@ const (
 	maxExpressionRunes = 256
 	maxContextRunes    = 2000
 	maxTitleRunes      = 300
-	maxURLBytes        = 2048
 )
 
 type validatedCapture struct {
@@ -73,7 +69,7 @@ func validateCreate(input CreateInput) (validatedCapture, error) {
 	if input.SuggestedEntrySequence != nil && *input.SuggestedEntrySequence <= 0 {
 		return validatedCapture{}, validationError("suggested dictionary entry is invalid")
 	}
-	common.suggestedEntrySequence = cloneInt64(input.SuggestedEntrySequence)
+	common.suggestedEntrySequence = inputcheck.CopyInt64(input.SuggestedEntrySequence)
 	common.captureNonce = nonce
 	return common, nil
 }
@@ -119,45 +115,24 @@ func validateEditable(input UpdateInput) (validatedCapture, error) {
 		sourceKind:           sourceKind,
 		sourceTitle:          sourceTitle,
 		sourceURL:            sourceURL,
-		sourcePositionMS:     cloneInt64(input.SourcePositionMS),
+		sourcePositionMS:     inputcheck.CopyInt64(input.SourcePositionMS),
 	}, nil
 }
 
 func cleanText(value string, maxRunes int, name string) (string, error) {
-	if !utf8.ValidString(value) {
-		return "", validationError(name + " must be valid UTF-8")
+	cleaned, err := inputcheck.Text(value, maxRunes, name)
+	if err != nil {
+		return "", validationError(err.Error())
 	}
-	value = strings.ReplaceAll(value, "\r\n", "\n")
-	value = strings.ReplaceAll(value, "\r", "\n")
-	value = strings.TrimSpace(value)
-	for _, character := range value {
-		if unicode.IsControl(character) && character != '\n' && character != '\t' {
-			return "", validationError(name + " contains a control character")
-		}
-	}
-	if utf8.RuneCountInString(value) > maxRunes {
-		return "", validationError(fmt.Sprintf("%s must be at most %d characters", name, maxRunes))
-	}
-	return value, nil
+	return cleaned, nil
 }
 
 func cleanSourceURL(value string) (string, error) {
-	if !utf8.ValidString(value) {
-		return "", validationError("source URL must be valid UTF-8")
+	cleaned, err := inputcheck.SourceURL(value)
+	if err != nil {
+		return "", validationError(err.Error())
 	}
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", nil
-	}
-	if len(value) > maxURLBytes {
-		return "", validationError(fmt.Sprintf("source URL must be at most %d bytes", maxURLBytes))
-	}
-	parsed, err := url.Parse(value)
-	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-		return "", validationError("source URL must use http or https")
-	}
-	parsed.User = nil
-	return parsed.String(), nil
+	return cleaned, nil
 }
 
 func validateNonce(value string) (string, error) {
@@ -204,12 +179,4 @@ func requestHash(input validatedCapture) string {
 		hash.Write([]byte(field))
 	}
 	return hex.EncodeToString(hash.Sum(nil))
-}
-
-func cloneInt64(value *int64) *int64 {
-	if value == nil {
-		return nil
-	}
-	cloned := *value
-	return &cloned
 }

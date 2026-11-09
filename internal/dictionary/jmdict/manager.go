@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/tomasmik/goi/internal/contextio"
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 const (
@@ -141,7 +142,7 @@ func discardInvalidCache(path string) error {
 	if err := os.Remove(path); err != nil {
 		return fmt.Errorf("remove invalid JMdict cache: %w", err)
 	}
-	if err := syncDirectory(filepath.Dir(path)); err != nil {
+	if err := securefile.SyncDirectory(filepath.Dir(path)); err != nil {
 		return fmt.Errorf("sync JMdict cache directory: %w", err)
 	}
 	return nil
@@ -429,7 +430,7 @@ func (m *Manager) publish(stagingPath string, metadata Metadata) error {
 		m.mu.Unlock()
 		return fmt.Errorf("publish JMdict cache: %w", err)
 	}
-	if err := syncDirectory(filepath.Dir(m.path)); err != nil {
+	if err := securefile.SyncDirectory(filepath.Dir(m.path)); err != nil {
 		m.mu.Unlock()
 		return fmt.Errorf("sync JMdict cache directory: %w", err)
 	}
@@ -504,17 +505,6 @@ func reserveStagingPath(directory string) (string, error) {
 		return "", fmt.Errorf("release JMdict staging reservation: %w", err)
 	}
 	return path, nil
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	if err := directory.Sync(); err != nil {
-		return errors.Join(err, directory.Close())
-	}
-	return directory.Close()
 }
 
 func removeFile(path, description string) error {

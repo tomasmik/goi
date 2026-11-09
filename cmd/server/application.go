@@ -258,7 +258,7 @@ func (app *application) handler(cfg config.Config, logger *slog.Logger) http.Han
 
 func (app *application) registerRoutes(router chi.Router, cfg config.Config) {
 	dashboardHandler := dashboard.NewHandler(
-		dashboard.NewStore(app.db, cfg.TimeZone, app.lessons, app.reviews, app.statistics),
+		dashboard.NewStore(app.db, app.lessons, app.reviews, app.statistics),
 		app.renderer,
 	)
 	router.Get("/", dashboardHandler.Dashboard)

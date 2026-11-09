@@ -122,7 +122,7 @@ func (h *Handler) study(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) pause(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -135,7 +135,7 @@ func (h *Handler) pause(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -148,7 +148,7 @@ func (h *Handler) resume(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) undo(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -223,7 +223,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) session(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -269,7 +269,7 @@ func (h *Handler) notFound(w http.ResponseWriter) {
 }
 
 func (h *Handler) answer(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -344,7 +344,7 @@ func (h *Handler) answer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) confirmAnswer(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -361,7 +361,7 @@ func (h *Handler) confirmAnswer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) acceptFailure(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -382,7 +382,7 @@ func (h *Handler) acceptFailure(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) revealAnswer(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -415,7 +415,7 @@ func (h *Handler) revealAnswer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) gradeAnswer(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -440,7 +440,7 @@ func (h *Handler) gradeAnswer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) markCorrect(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -461,7 +461,7 @@ func (h *Handler) markCorrect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) showAnswer(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -478,7 +478,7 @@ func (h *Handler) showAnswer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) addSynonym(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -581,7 +581,7 @@ func (h *Handler) finishCompletedReview(w http.ResponseWriter, r *http.Request, 
 }
 
 func (h *Handler) continueReview(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -591,11 +591,6 @@ func (h *Handler) continueReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.respondAfterReviewAction(w, r, sessionID, "", false)
-}
-
-func parseID(r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	return id, err == nil && id > 0
 }
 
 func (h *Handler) parseAnswer(w http.ResponseWriter, r *http.Request, sessionID int64) (int64, string, bool) {

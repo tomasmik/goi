@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -49,8 +48,8 @@ func (h *Handler) page(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) hideMistake(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
+	id, ok := internalweb.PathID(r)
+	if !ok {
 		h.notFound(w)
 		return
 	}

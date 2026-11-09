@@ -15,7 +15,6 @@ import (
 
 type Store struct {
 	db         *sql.DB
-	location   *time.Location
 	lessons    *lessons.Store
 	reviews    *reviews.Store
 	statistics *statistics.Store
@@ -94,17 +93,12 @@ type MistakeItem struct {
 
 func NewStore(
 	db *sql.DB,
-	location *time.Location,
 	lessons *lessons.Store,
 	reviews *reviews.Store,
 	statistics *statistics.Store,
 ) *Store {
-	if location == nil {
-		location = time.UTC
-	}
 	return &Store{
 		db:         db,
-		location:   location,
 		lessons:    lessons,
 		reviews:    reviews,
 		statistics: statistics,
@@ -136,11 +130,11 @@ func (s *Store) ReviewCompletion(ctx context.Context, sessionID int64) (ReviewCo
 
 func (s *Store) Summary(ctx context.Context, now time.Time) (Summary, error) {
 	var summary Summary
-	location, err := s.currentLocation(ctx)
+	location, err := s.statistics.CurrentLocation(ctx)
 	if err != nil {
 		return Summary{}, err
 	}
-	weekStart := localWeekStart(now, location)
+	weekStart := statistics.LocalWeekStart(now, location)
 	summary.AvailableLessons, err = s.lessons.AvailableCount(ctx)
 	if err != nil {
 		return Summary{}, fmt.Errorf("load available lessons: %w", err)
@@ -197,7 +191,7 @@ func (s *Store) Summary(ctx context.Context, now time.Time) (Summary, error) {
 	summary.WeeklyReviews = weekly.Reviews
 	summary.WeeklyCorrect = weekly.Correct
 	summary.WeeklyTotal = weekly.Total
-	dayStart := localDayStart(now, location)
+	dayStart := statistics.LocalDayStart(now, location)
 	periods := []struct {
 		name  string
 		start time.Time
@@ -332,11 +326,11 @@ func (s *Store) upcomingReviews(ctx context.Context, now time.Time, location *ti
 }
 
 func (s *Store) ReviewForecast(ctx context.Context, now time.Time) ([]ForecastDay, error) {
-	location, err := s.currentLocation(ctx)
+	location, err := s.statistics.CurrentLocation(ctx)
 	if err != nil {
 		return nil, err
 	}
-	today := localDayStart(now, location)
+	today := statistics.LocalDayStart(now, location)
 	days := make([]ForecastDay, 7)
 	for index := range days {
 		day := today.AddDate(0, 0, index)
@@ -379,22 +373,6 @@ func (s *Store) ReviewForecast(ctx context.Context, now time.Time) ([]ForecastDa
 		days[index].Count += days[index-1].Count
 	}
 	return days, nil
-}
-
-func (s *Store) currentLocation(ctx context.Context) (*time.Location, error) {
-	var timeZone string
-	err := s.db.QueryRowContext(ctx, "SELECT time_zone FROM user_settings WHERE id = 1").Scan(&timeZone)
-	if errors.Is(err, sql.ErrNoRows) {
-		return s.location, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("load configured time zone: %w", err)
-	}
-	location, err := time.LoadLocation(timeZone)
-	if err != nil {
-		return nil, fmt.Errorf("load configured time zone %q: %w", timeZone, err)
-	}
-	return location, nil
 }
 
 func (s *Store) StageWords(ctx context.Context) ([]StageWords, error) {
@@ -461,23 +439,12 @@ func (s *Store) StageCounts(ctx context.Context) ([]StageCount, error) {
 	return result, nil
 }
 
-func localDayStart(now time.Time, location *time.Location) time.Time {
-	local := now.In(location)
-	return time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
-}
-
-func localWeekStart(now time.Time, location *time.Location) time.Time {
-	local := localDayStart(now, location)
-	daysSinceMonday := (int(local.Weekday()) + 6) % 7
-	return local.AddDate(0, 0, -daysSinceMonday)
-}
-
 func upcomingReviewLabel(due, now time.Time) string {
 	if reviewHourKey(due) == reviewHourKey(now) {
 		return "Within the hour"
 	}
-	today := localDayStart(now, now.Location())
-	dueDay := localDayStart(due, due.Location())
+	today := statistics.LocalDayStart(now, now.Location())
+	dueDay := statistics.LocalDayStart(due, due.Location())
 	switch {
 	case dueDay.Equal(today):
 		return "Today · " + due.Format("15:00")

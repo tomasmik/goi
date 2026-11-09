@@ -18,6 +18,7 @@ import (
 
 	"github.com/tomasmik/goi/internal/contextio"
 	"github.com/tomasmik/goi/internal/database"
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 const (
@@ -106,7 +107,7 @@ func CreateBundle(ctx context.Context, databasePath, outputPath string, createdA
 	if err := os.Chtimes(temporaryPath, createdAt, createdAt); err != nil {
 		return fmt.Errorf("set backup creation time: %w", err)
 	}
-	if err := syncFile(temporaryPath); err != nil {
+	if err := securefile.SyncFile(temporaryPath); err != nil {
 		return fmt.Errorf("sync backup bundle: %w", err)
 	}
 	if err := ValidateBundle(ctx, temporaryPath); err != nil {
@@ -116,7 +117,7 @@ func CreateBundle(ctx context.Context, databasePath, outputPath string, createdA
 		return fmt.Errorf("publish backup bundle: %w", err)
 	}
 	removeTemporary = false
-	if err := syncDirectory(directory); err != nil {
+	if err := securefile.SyncDirectory(directory); err != nil {
 		return fmt.Errorf("sync backup directory: %w", err)
 	}
 	return nil
@@ -189,7 +190,7 @@ func rewriteSnapshotChecksum(ctx context.Context, databasePath string) error {
 	if err := os.WriteFile(databasePath+".sha256", contents, 0o640); err != nil {
 		return fmt.Errorf("write backup snapshot checksum: %w", err)
 	}
-	if err := syncFile(databasePath + ".sha256"); err != nil {
+	if err := securefile.SyncFile(databasePath + ".sha256"); err != nil {
 		return fmt.Errorf("sync backup snapshot checksum: %w", err)
 	}
 	return nil
@@ -228,7 +229,7 @@ func cleanupInterruptedBundles(backupDir string, now time.Time) error {
 		removed = true
 	}
 	if removed {
-		if err := syncDirectory(backupDir); err != nil {
+		if err := securefile.SyncDirectory(backupDir); err != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("sync backup directory: %w", err))
 		}
 	}
@@ -495,20 +496,4 @@ func extractZipFile(ctx context.Context, entry *zip.File, outputPath string) err
 		return errors.Join(copyErr, closeErr)
 	}
 	return nil
-}
-
-func syncFile(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	return errors.Join(file.Sync(), file.Close())
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	return errors.Join(directory.Sync(), directory.Close())
 }

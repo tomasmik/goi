@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/tomasmik/goi/internal/sqlvalue"
 	"github.com/tomasmik/goi/internal/srs"
 )
 
@@ -179,8 +180,8 @@ func saveLeechStateTx(ctx context.Context, tx *sql.Tx, vocabularyID int64, state
 			auto_suspended_at = excluded.auto_suspended_at,
 			cleared_at = excluded.cleared_at,
 			reset_after_result_id = excluded.reset_after_result_id`,
-		vocabularyID, state.failuresTowardLeech, boolInt(state.active), boolInt(state.everLeech), nullableInt64(state.markedAt),
-		state.failuresSinceMark, state.correctStreak, nullableInt64(state.autoSuspendedAt), nullableInt64(state.clearedAt),
+		vocabularyID, state.failuresTowardLeech, sqlvalue.BoolInt(state.active), sqlvalue.BoolInt(state.everLeech), sqlvalue.Int64Arg(state.markedAt),
+		state.failuresSinceMark, state.correctStreak, sqlvalue.Int64Arg(state.autoSuspendedAt), sqlvalue.Int64Arg(state.clearedAt),
 		state.resetAfterReviewResult,
 	)
 	if err != nil {

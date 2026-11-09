@@ -212,7 +212,6 @@ func insertDashboardWord(t *testing.T, db *sql.DB, expression string, stage int,
 func newDashboardTestStore(db *sql.DB, location *time.Location) *Store {
 	return NewStore(
 		db,
-		location,
 		lessons.NewStore(db),
 		reviews.NewStore(db),
 		statistics.NewStore(db, location),

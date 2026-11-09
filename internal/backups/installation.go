@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 const (
@@ -22,7 +24,7 @@ func LoadOrCreateInstallationID(dataDir string) (string, error) {
 	path := filepath.Join(dataDir, installationIDFile)
 	installationID, err := readInstallationID(path)
 	if err == nil {
-		if err := syncDirectory(dataDir); err != nil {
+		if err := securefile.SyncDirectory(dataDir); err != nil {
 			return "", fmt.Errorf("sync installation ID directory: %w", err)
 		}
 		return installationID, nil
@@ -60,7 +62,7 @@ func LoadOrCreateInstallationID(dataDir string) (string, error) {
 	if err := os.Link(temporaryPath, path); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			removeErr := os.Remove(temporaryPath)
-			syncErr := syncDirectory(dataDir)
+			syncErr := securefile.SyncDirectory(dataDir)
 			if removeErr != nil || syncErr != nil {
 				return "", fmt.Errorf("finalize concurrent installation ID: %w", errors.Join(removeErr, syncErr))
 			}
@@ -73,7 +75,7 @@ func LoadOrCreateInstallationID(dataDir string) (string, error) {
 		return "", fmt.Errorf("save installation ID: %w", err)
 	}
 	removeErr := os.Remove(temporaryPath)
-	syncErr := syncDirectory(dataDir)
+	syncErr := securefile.SyncDirectory(dataDir)
 	if removeErr != nil || syncErr != nil {
 		return "", fmt.Errorf("finalize installation ID: %w", errors.Join(removeErr, syncErr))
 	}

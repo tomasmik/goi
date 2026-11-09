@@ -3,6 +3,7 @@ package textnorm
 import (
 	"strings"
 
+	"github.com/tomasmik/goi/internal/kana"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -10,4 +11,8 @@ import (
 // Changing this behavior requires migrating existing normalized values.
 func Normalize(value string) string {
 	return strings.ToLower(strings.TrimSpace(norm.NFKC.String(value)))
+}
+
+func Reading(value string) string {
+	return kana.ToHiragana(Normalize(value))
 }

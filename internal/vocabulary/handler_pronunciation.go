@@ -21,7 +21,7 @@ type pronunciationProvider interface {
 }
 
 func (h *Handler) previewPronunciation(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	recordingID, recordingOK := pronunciationRecordingID(r)
 	if !ok || !recordingOK || h.recordings == nil {
 		h.notFound(w)
@@ -49,7 +49,7 @@ func (h *Handler) previewPronunciation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) searchPronunciations(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok || h.recordings == nil {
 		h.notFound(w)
 		return
@@ -112,7 +112,7 @@ func (h *Handler) searchPronunciations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	recordingID, recordingOK := pronunciationRecordingID(r)
 	if !ok || !recordingOK || h.recordings == nil {
 		h.notFound(w)

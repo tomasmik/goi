@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 type pendingImport struct {
@@ -179,7 +181,7 @@ func createSnapshot(ctx context.Context, sourcePath, stagedPath string) (string,
 	if err := verified.Close(); err != nil {
 		return "", fmt.Errorf("close database snapshot: %w", err)
 	}
-	if err := syncFile(stagedPath); err != nil {
+	if err := securefile.SyncFile(stagedPath); err != nil {
 		return "", fmt.Errorf("sync database snapshot: %w", err)
 	}
 
@@ -292,7 +294,7 @@ func publishBackup(stagedPath, outputPath string) error {
 		}
 		item.published = true
 	}
-	if err := syncDirectory(filepath.Dir(outputPath)); err != nil {
+	if err := securefile.SyncDirectory(filepath.Dir(outputPath)); err != nil {
 		return rollback(fmt.Errorf("sync backup directory: %w", err))
 	}
 	return nil

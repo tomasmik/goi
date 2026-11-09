@@ -19,7 +19,6 @@ import (
 	sqliteDriver "github.com/ncruces/go-sqlite3/driver"
 	_ "github.com/ncruces/go-sqlite3/embed"
 
-	"github.com/tomasmik/goi/internal/kana"
 	"github.com/tomasmik/goi/internal/textnorm"
 )
 
@@ -194,7 +193,7 @@ func (c *cache) importCSV(ctx context.Context, reader io.Reader, source SourceSt
 			utf8.RuneCountInString(row[0]) > maxWordRunes || utf8.RuneCountInString(row[1]) > maxWordRunes {
 			return source, fmt.Errorf("Jiten %s CSV record %d: invalid word or reading", source.Corpus, record)
 		}
-		written, reading := textnorm.Normalize(row[0]), normalizeReading(row[1])
+		written, reading := textnorm.Normalize(row[0]), textnorm.Reading(row[1])
 		rank, err := strconv.ParseInt(row[2], 10, 32)
 		if err != nil || rank <= 0 || written == "" || reading == "" {
 			return source, fmt.Errorf("Jiten %s CSV record %d: expected word, reading, and positive integer rank", source.Corpus, record)
@@ -239,7 +238,7 @@ func (c *cache) lookup(ctx context.Context, pairs []Pair) ([]Ranks, error) {
 		if written == "" {
 			written = textnorm.Normalize(pair.Reading)
 		}
-		if err := statement.QueryRowContext(ctx, written, normalizeReading(pair.Reading)).Scan(&result[index].Global, &result[index].Novel); err != nil {
+		if err := statement.QueryRowContext(ctx, written, textnorm.Reading(pair.Reading)).Scan(&result[index].Global, &result[index].Novel); err != nil {
 			return nil, err
 		}
 	}
@@ -247,8 +246,4 @@ func (c *cache) lookup(ctx context.Context, pairs []Pair) ([]Ranks, error) {
 		return nil, err
 	}
 	return result, nil
-}
-
-func normalizeReading(value string) string {
-	return kana.ToHiragana(textnorm.Normalize(value))
 }

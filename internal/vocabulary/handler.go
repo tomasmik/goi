@@ -125,7 +125,7 @@ func (h *Handler) redirectToCapture(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) edit(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -143,7 +143,7 @@ func (h *Handler) edit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -173,7 +173,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) action(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -216,7 +216,7 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) detail(w http.ResponseWriter, r *http.Request) {
-	id, ok := vocabularyID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -433,11 +433,6 @@ func inputFromRequest(w http.ResponseWriter, r *http.Request) (CreateInput, erro
 		*field.target = &upload
 	}
 	return input, nil
-}
-
-func vocabularyID(r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	return id, err == nil && id > 0
 }
 
 func exampleID(r *http.Request) (int64, bool) {

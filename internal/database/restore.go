@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/ncruces/go-sqlite3"
+	"github.com/tomasmik/goi/internal/securefile"
 )
 
 var (
@@ -169,7 +170,7 @@ func prepareStagedRestore(ctx context.Context, stagedPath string) (returnErr err
 	if closeErr != nil {
 		return fmt.Errorf("close staged restore database: %w", closeErr)
 	}
-	if err := syncFile(stagedPath); err != nil {
+	if err := securefile.SyncFile(stagedPath); err != nil {
 		return fmt.Errorf("sync staged restore database: %w", err)
 	}
 	return nil
@@ -280,7 +281,7 @@ func stagePendingImports(ctx context.Context, backupPath, stagedDatabasePath, st
 	if err := db.Close(); err != nil {
 		return nil, "", fmt.Errorf("close staged restore database: %w", err)
 	}
-	if err := syncFile(stagedDatabasePath); err != nil {
+	if err := securefile.SyncFile(stagedDatabasePath); err != nil {
 		return nil, "", fmt.Errorf("sync staged restore database: %w", err)
 	}
 	cleanup = false
@@ -437,7 +438,7 @@ func removePublishedRestoreWorkspace(path string) error {
 	if err := os.RemoveAll(path); err != nil {
 		return err
 	}
-	return syncDirectory(filepath.Dir(path))
+	return securefile.SyncDirectory(filepath.Dir(path))
 }
 
 func removePublishedImports(imports []stagedImport) []error {
@@ -480,7 +481,7 @@ func publishRestoredDatabase(stagedPath, databasePath, workspace string, preserv
 		if err := os.Rename(stagedPath, databasePath); err != nil {
 			return fmt.Errorf("publish restored database: %w", err)
 		}
-		if err := syncDirectory(filepath.Dir(databasePath)); err != nil {
+		if err := securefile.SyncDirectory(filepath.Dir(databasePath)); err != nil {
 			rollbackError := os.Rename(databasePath, stagedPath)
 			syncError := syncParentDirectories(databasePath, stagedPath)
 			if rollbackError != nil {
@@ -557,7 +558,7 @@ func publishRestoredDatabase(stagedPath, databasePath, workspace string, preserv
 		return rollback(fmt.Errorf("publish restored database: %w", err))
 	}
 	published = true
-	if err := syncDirectory(filepath.Dir(databasePath)); err != nil {
+	if err := securefile.SyncDirectory(filepath.Dir(databasePath)); err != nil {
 		return rollback(fmt.Errorf("sync restored database directory: %w", err))
 	}
 	return nil

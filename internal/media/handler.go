@@ -25,8 +25,8 @@ func (h *Handler) Routes(r chi.Router) {
 }
 
 func (h *Handler) serve(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil || id <= 0 {
+	id, ok := internalweb.PathID(r)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}

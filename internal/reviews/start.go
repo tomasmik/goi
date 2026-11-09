@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/tomasmik/goi/internal/sqlvalue"
+	"github.com/tomasmik/goi/internal/studyerror"
 )
 
 const normalSessionLimit = 20
@@ -243,7 +246,7 @@ func (s *Store) startSessionWithPreferences(ctx context.Context, kind string, id
 		}
 		itemResult, err := tx.ExecContext(ctx, `
 			INSERT INTO review_session_items (session_id, vocabulary_id, position, srs_applied, status)
-			VALUES (?, ?, ?, ?, 'pending')`, sessionID, vocabularyID, position, boolInt(kind == "normal"))
+			VALUES (?, ?, ?, ?, 'pending')`, sessionID, vocabularyID, position, sqlvalue.BoolInt(kind == "normal"))
 		if err != nil {
 			return 0, fmt.Errorf("insert study item: %w", err)
 		}
@@ -305,22 +308,22 @@ func validateNormalReviewTx(ctx context.Context, tx *sql.Tx, ids []int64, now in
 			LEFT JOIN srs_states ss ON ss.vocabulary_id = v.id
 			WHERE v.id = ?`, id).Scan(&status, &stage, &dueAt, &suspendedAt)
 		if errors.Is(err, sql.ErrNoRows) {
-			return stateErrorf("vocabulary %d no longer exists", id)
+			return studyerror.Errorf("vocabulary %d no longer exists", id)
 		}
 		if err != nil {
 			return fmt.Errorf("validate vocabulary %d for review: %w", id, err)
 		}
 		if status != "active" {
-			return stateErrorf("vocabulary %d is no longer active for review", id)
+			return studyerror.Errorf("vocabulary %d is no longer active for review", id)
 		}
 		if !stage.Valid {
-			return stateErrorf("vocabulary %d has no SRS state", id)
+			return studyerror.Errorf("vocabulary %d has no SRS state", id)
 		}
 		if suspendedAt.Valid {
-			return stateErrorf("vocabulary %d is suspended from review", id)
+			return studyerror.Errorf("vocabulary %d is suspended from review", id)
 		}
 		if !dueAt.Valid || dueAt.Int64 > now {
-			return stateErrorf("vocabulary %d is no longer due for review", id)
+			return studyerror.Errorf("vocabulary %d is no longer due for review", id)
 		}
 	}
 	return nil
@@ -342,13 +345,13 @@ func validateExtraStudyTx(ctx context.Context, tx *sql.Tx, ids []int64) error {
 			LEFT JOIN leech_states ls ON ls.vocabulary_id = v.id
 			WHERE v.id = ?`, id).Scan(&status, &activeLeech)
 		if errors.Is(err, sql.ErrNoRows) {
-			return stateErrorf("vocabulary %d no longer exists", id)
+			return studyerror.Errorf("vocabulary %d no longer exists", id)
 		}
 		if err != nil {
 			return fmt.Errorf("validate vocabulary %d for extra study: %w", id, err)
 		}
 		if status != "active" && !(status == "suspended" && activeLeech) {
-			return stateErrorf("vocabulary %d is no longer active for extra study", id)
+			return studyerror.Errorf("vocabulary %d is no longer active for extra study", id)
 		}
 	}
 	return nil

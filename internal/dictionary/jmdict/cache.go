@@ -16,6 +16,8 @@ import (
 	sqliteDriver "github.com/ncruces/go-sqlite3/driver"
 	_ "github.com/ncruces/go-sqlite3/embed"
 
+	"github.com/tomasmik/goi/internal/securefile"
+	"github.com/tomasmik/goi/internal/sqlvalue"
 	"github.com/tomasmik/goi/internal/textnorm"
 )
 
@@ -203,7 +205,7 @@ func Build(ctx context.Context, reader io.ReadSeeker, path string, source Source
 	if err := os.Chmod(path, 0o640); err != nil {
 		return Metadata{}, fmt.Errorf("secure JMdict cache: %w", err)
 	}
-	if err := syncFile(path); err != nil {
+	if err := securefile.SyncFile(path); err != nil {
 		return Metadata{}, fmt.Errorf("sync JMdict cache: %w", err)
 	}
 	succeeded = true
@@ -346,7 +348,7 @@ func (w cacheWriter) insertEntry(entry Entry) error {
 	for index, item := range entry.Readings {
 		result, err := w.tx.ExecContext(w.ctx, `
 			INSERT INTO jmdict_readings (ent_seq, position, text, normalized_hiragana, no_kanji, priority_rank)
-			VALUES (?, ?, ?, ?, ?, ?)`, entry.Sequence, index, item.Text, normalizeReading(item.Text), boolInt(item.NoKanji), priorityRank(item.Priorities))
+			VALUES (?, ?, ?, ?, ?, ?)`, entry.Sequence, index, item.Text, textnorm.Reading(item.Text), sqlvalue.BoolInt(item.NoKanji), priorityRank(item.Priorities))
 		if err != nil {
 			return fmt.Errorf("insert reading for JMdict entry %d: %w", entry.Sequence, err)
 		}
@@ -438,17 +440,6 @@ func ensureNewPrivateFile(path string) error {
 	return nil
 }
 
-func syncFile(path string) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		return errors.Join(err, file.Close())
-	}
-	return file.Close()
-}
-
 func openSQLite(path string, readOnly bool) (*sql.DB, error) {
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
@@ -483,13 +474,6 @@ func openSQLite(path string, readOnly bool) (*sql.DB, error) {
 		return nil, errors.Join(err, db.Close())
 	}
 	return db, nil
-}
-
-func boolInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
 }
 
 func priorityRank(values []string) int {

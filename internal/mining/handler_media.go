@@ -22,7 +22,7 @@ type pronunciationProvider interface {
 }
 
 func (h *Handler) addMedia(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -50,7 +50,7 @@ func (h *Handler) addMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) removeMedia(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -77,7 +77,7 @@ func (h *Handler) removeMedia(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) previewPronunciation(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -105,7 +105,7 @@ func (h *Handler) previewPronunciation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) findPronunciation(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok || h.recordings == nil {
 		h.notFound(w)
 		return
@@ -156,7 +156,7 @@ func (h *Handler) findPronunciation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) usePronunciation(w http.ResponseWriter, r *http.Request) {
-	id, ok := captureID(r)
+	id, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return

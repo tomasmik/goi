@@ -237,7 +237,7 @@ func (h *Handler) startNext(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) session(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -272,7 +272,7 @@ func (h *Handler) session(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) returnToQueue(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -296,7 +296,7 @@ func (h *Handler) returnToQueue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) review(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -359,7 +359,7 @@ func (h *Handler) review(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) studyWord(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -386,7 +386,7 @@ func (h *Handler) studyWord(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) legacyStudyWord(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseID(r)
+	sessionID, ok := internalweb.PathID(r)
 	if !ok {
 		h.notFound(w)
 		return
@@ -402,11 +402,6 @@ func (h *Handler) notFound(w http.ResponseWriter) {
 		ReturnURL:   "/lessons",
 		ReturnLabel: "Back to lessons",
 	})
-}
-
-func parseID(r *http.Request) (int64, bool) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	return id, err == nil && id > 0
 }
 
 func (h *Handler) writeStoreError(w http.ResponseWriter, r *http.Request, err error, fallback string, sessionID int64) {

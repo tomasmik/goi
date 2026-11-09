@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/tomasmik/goi/internal/sqlvalue"
 )
 
 const queuePositionOffset = 1_000_000
@@ -229,7 +231,7 @@ func validateUndoSRSStateTx(ctx context.Context, tx *sql.Tx, result undoResult) 
 func restoreUndoSRSStateTx(ctx context.Context, tx *sql.Tx, result undoResult) error {
 	update, err := tx.ExecContext(ctx, `
 		UPDATE srs_states SET stage = ?, due_at = ?, last_reviewed_at = ? WHERE vocabulary_id = ?`,
-		result.stageBefore.Int64, nullableInt64(result.dueBefore), nullableInt64(result.lastReviewedBefore), result.vocabularyID,
+		result.stageBefore.Int64, sqlvalue.Int64Arg(result.dueBefore), sqlvalue.Int64Arg(result.lastReviewedBefore), result.vocabularyID,
 	)
 	if err != nil {
 		return fmt.Errorf("restore SRS state: %w", err)
@@ -290,7 +292,7 @@ func restoreMistakeVisibilityTx(ctx context.Context, tx *sql.Tx, vocabularyID in
 		UPDATE mistake_visibility
 		SET hidden_at = ?, leech_hidden_at = ?
 		WHERE vocabulary_id = ?`,
-		nullableInt64(snapshot.before.hiddenAt), nullableInt64(snapshot.before.leechHiddenAt), vocabularyID,
+		sqlvalue.Int64Arg(snapshot.before.hiddenAt), sqlvalue.Int64Arg(snapshot.before.leechHiddenAt), vocabularyID,
 	)
 	if err != nil {
 		return fmt.Errorf("restore mistake visibility: %w", err)

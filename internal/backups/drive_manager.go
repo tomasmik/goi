@@ -192,7 +192,7 @@ func (m *GoogleDriveManager) RemoveClient() error {
 	if err := os.Remove(m.clientConfigPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove Google OAuth client: %w", err)
 	}
-	if err := syncDirectory(filepath.Dir(m.clientConfigPath)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := securefile.SyncDirectory(filepath.Dir(m.clientConfigPath)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("sync Google OAuth client directory: %w", err)
 	}
 	next, err := NewGoogleDrive(m.baseConfig)
